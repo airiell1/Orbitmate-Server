@@ -1,0 +1,53 @@
+const oracledb = require('oracledb');
+require('dotenv').config();
+
+// 데이터베이스 설정
+const dbConfig = {
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    connectString: process.env.DB_CONNECT_STRING,
+    poolMin: 10,
+    poolMax: 10,
+    poolIncrement: 0
+};
+
+// Oracle Thick 모드 활성화 (Instant Client 경로 지정 필요)
+async function initOracleClient() {
+    try {
+        oracledb.initOracleClient({ libDir: 'C:\\oracle\\instantclient_23_7' });
+        console.log('Oracle Thick 모드가 활성화되었습니다.');
+    } catch (err) {
+        console.error('Oracle Client 초기화 실패:', err);
+        console.error('Thick 모드를 사용하려면 Oracle Instant Client가 필요하며, 경로 설정이 정확해야 합니다.');
+        process.exit(1);
+    }
+}
+
+// DB 연결 풀 초기화
+async function initializeDbPool() {
+    try {
+        console.log('Initializing database connection pool...');
+        await oracledb.createPool(dbConfig);
+        console.log('Database pool initialized successfully.');
+    } catch (err) {
+        console.error('Error initializing database pool:', err);
+        process.exit(1);
+    }
+}
+
+// DB 연결 가져오기
+async function getConnection() {
+    try {
+        return await oracledb.getConnection();
+    } catch (err) {
+        console.error('DB 연결 가져오기 실패:', err);
+        throw err;
+    }
+}
+
+module.exports = {
+    initOracleClient,
+    initializeDbPool,
+    getConnection,
+    oracledb
+};

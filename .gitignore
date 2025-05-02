@@ -1,0 +1,14 @@
+node_modules/
+.env
+
+# Oracle Instant Client zip file
+instantclient-basic-windows.x64-23.7.0.25.01.zip
+
+# Coverage reports
+coverage/
+
+# Secret key directory
+my-precious-secret-key/
+
+# Uploads directory
+uploads/

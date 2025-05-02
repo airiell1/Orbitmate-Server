@@ -1,0 +1,32 @@
+# Orbitmate API 문서 테스트 시나리오
+
+## 1. 상태 확인 (Health Check)
+- [ ] GET /api/health 요청 시 200 OK와 status, timestamp 필드가 포함된 응답을 받는다.
+- [ ] GET /api/health 요청 시 Content-Type이 application/json임을 확인한다.
+
+## 2. 사용자 관리 (User Management)
+- [ ] POST /api/users/register에 username, email, password 필드로 요청 시 201 Created와 user 정보가 반환된다.
+- [ ] POST /api/users/register에 username만 누락하고 요청 시 400 Bad Request가 반환된다.
+- [ ] POST /api/users/register에 email만 누락하고 요청 시 400 Bad Request가 반환된다.
+- [ ] POST /api/users/register에 password만 누락하고 요청 시 400 Bad Request가 반환된다.
+- [ ] POST /api/users/register에 이미 등록된 이메일로 요청 시 409 Conflict가 반환된다.
+- [ ] POST /api/users/login에 올바른 정보로 요청 시 200 OK와 user 정보가 반환된다.
+- [ ] POST /api/users/login에 잘못된 비밀번호로 요청 시 401 Unauthorized가 반환된다.
+- [ ] POST /api/users/login에 존재하지 않는 이메일로 요청 시 401 Unauthorized가 반환된다.
+- [ ] POST /api/users/login에 email만 누락하고 요청 시 400 Bad Request가 반환된다.
+- [ ] POST /api/users/login에 password만 누락하고 요청 시 400 Bad Request가 반환된다.
+- [ ] POST /api/users/login에 비활성화 계정으로 요청 시 403 Forbidden이 반환된다.
+
+## 3. 채팅 세션 (Chat Sessions)
+- [ ] POST /api/chat/sessions에 userId, title 필드로 요청 시 201 Created와 세션 정보가 반환된다.
+- [ ] POST /api/chat/sessions에 userId만 누락하고 요청 시 400 Bad Request가 반환된다.
+- [ ] POST /api/chat/sessions에 title만 누락하고 요청 시 400 Bad Request가 반환된다.
+- [ ] GET /api/users/:user_id/chat/sessions 요청 시 200 OK와 세션 목록이 반환된다.
+- [ ] GET /api/users/:user_id/chat/sessions에 존재하지 않는 user_id로 요청 시 빈 배열 또는 200 OK가 반환된다.
+- [ ] PUT /api/chat/sessions/:session_id에 title, category, is_archived 중 일부만 포함해도 200 OK가 반환된다.
+- [ ] PUT /api/chat/sessions/:session_id에 수정 필드 없이 요청 시 400 Bad Request가 반환된다.
+- [ ] PUT /api/chat/sessions/:session_id에 존재하지 않는 session_id로 요청 시 500 또는 404가 반환된다.
+
+## 4. 채팅 메시지 (Chat Messages)
+- [ ] GET /api/chat/sessions/:session_id/messages 요청 시 200 OK와 메시지 목록이 반환된다.
+- [ ] GET /api/chat/sessions/:session_id/messages에 존재하지 않는 session_id로 요청 시 빈 배열 또는 200
