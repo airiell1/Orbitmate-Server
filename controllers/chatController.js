@@ -1,22 +1,27 @@
-const { getChatHistoryFromDB, saveUserMessageToDB, saveAiMessageToDB, deleteUserMessageFromDB } = require('../models/chat');
+const { getChatHistoryFromDB, saveUserMessageToDB, saveAiMessageToDB, deleteUserMessageFromDB, saveAttachmentToDB } = require('../models/chat');
 const { getAiResponse } = require('../config/vertexai');
 const { getConnection, oracledb } = require('../config/database');
 const chatModel = require('../models/chat');
 const path = require('path');
+const fs = require('fs');
 
 // 채팅 메시지 전송 및 AI 응답 받기 컨트롤러
 async function sendMessageController(req, res) {
   const sessionId = req.params.session_id;
   const { message } = req.body;
 
-  if (!message || message.trim() === '') {
-    return res.status(400).json({ error: '메시지 내용은 비어 있을 수 없습니다.' });
+  if (!message || typeof message !== 'string' || message.trim() === '') {
+    console.error('Error in sendMessageController: Message is required and must be a non-empty string.');
+    return res.status(400).json({ error: '메시지는 필수이며 빈 문자열이 아니어야 합니다.' });
   }
 
   try {
     // 1. 사용자 메시지 DB 저장
     const userMessageId = await saveUserMessageToDB(sessionId, message);
-    console.log(`[${sessionId}] 사용자 메시지 저장 완료 (ID: ${userMessageId})`);
+    if (!userMessageId) {
+      console.error('Error in sendMessageController: Failed to save user message.');
+      return res.status(500).json({ error: '사용자 메시지 저장에 실패했습니다.' });
+    }
 
     // 2. 해당 세션의 전체 대화 기록 조회
     const history = await getChatHistoryFromDB(sessionId);
@@ -28,23 +33,20 @@ async function sendMessageController(req, res) {
 
     // 4. AI 응답 DB 저장
     const aiMessageId = await saveAiMessageToDB(sessionId, aiResponse);
-    console.log(`[${sessionId}] AI 메시지 저장 완료 (ID: ${aiMessageId})`);
-
-    // 5. 응답 반환
-    res.json({
+    if (!aiMessageId) {
+      console.error('Error in sendMessageController: Failed to save AI message.');
+      return res.status(500).json({ error: 'AI 메시지 저장에 실패했습니다.' });
+    }
+    
+    // 클라이언트가 기대하는 형식으로 응답
+    res.status(201).json({
       message: aiResponse,
       user_message_id: userMessageId,
-      ai_message_id: aiMessageId,
-      created_at: new Date().toISOString()
+      ai_message_id: aiMessageId
     });
-
   } catch (err) {
-    console.error('메시지 처리 실패:', err);
-    // Vertex AI 안전 설정 차단 오류 처리
-    if (err.message.includes('안전 설정에 의해 차단')) {
-      return res.status(400).json({ error: err.message });
-    }
-    res.status(500).json({ error: `메시지 처리 중 오류 발생: ${err.message}` });
+    console.error(`Error in sendMessageController for session ${sessionId}:`, err);
+    res.status(500).json({ error: `메시지 전송 중 오류 발생: ${err.message}` });
   }
 }
 
@@ -53,62 +55,53 @@ async function editMessageController(req, res) {
   const messageId = req.params.message_id;
   const { content } = req.body;
   
-  if (!content) {
-    return res.status(400).json({ error: '메시지 내용이 필요합니다.' });
+  if (!content || typeof content !== 'string' || content.trim() === '') {
+    console.error('Error in editMessageController: Content is required and must be a non-empty string.');
+    return res.status(400).json({ error: '메시지 내용은 필수이며 빈 문자열이 아니어야 합니다.' });
+  }
+  if (!messageId) {
+    console.error('Error in editMessageController: Message ID is required.');
+    return res.status(400).json({ error: '메시지 ID가 필요합니다.' });
   }
   
   let connection;
   try {
     connection = await getConnection();
-    
-    // 메시지 업데이트
-    await connection.execute(
-      `UPDATE chat_messages 
-       SET message_content = :content, is_edited = 1, edited_at = SYSTIMESTAMP 
-       WHERE message_id = :messageId`,
-      { 
-        messageId: messageId,
-        content: content
-      },
+    // TODO: 사용자 인증 및 메시지 소유권 확인 로직 추가 (인가)
+    const result = await connection.execute(
+      `UPDATE chat_messages SET message_content = :content, edited_at = SYSTIMESTAMP, is_edited = 1 WHERE message_id = :messageId`,
+      { content, messageId },
       { autoCommit: true }
     );
-    
-    // 업데이트된 메시지 조회
-    const result = await connection.execute(
-      `SELECT message_id, user_id, message_type, message_content, created_at,
-              reaction, is_edited, edited_at, parent_message_id, session_id
-       FROM chat_messages
-       WHERE message_id = :messageId`,
-      { messageId: messageId },
-      { outFormat: oracledb.OUT_FORMAT_OBJECT }
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: '메시지를 찾을 수 없습니다.' });
+
+    if (result.rowsAffected === 0) {
+      console.warn(`Warning in editMessageController: Message with ID ${messageId} not found or not updated.`);
+      return res.status(404).json({ error: '메시지를 찾을 수 없거나 업데이트되지 않았습니다.' });
     }
-    
-    const message = result.rows[0];
-    
-    res.json({
-      message_id: message.MESSAGE_ID,
-      user_id: message.USER_ID,
-      message_type: message.MESSAGE_TYPE,
-      message_content: message.MESSAGE_CONTENT,
-      created_at: message.CREATED_AT,
-      edited_at: message.EDITED_AT,
-      is_edited: message.IS_EDITED === 1,
-      session_id: message.SESSION_ID
-    });
-    
+    // 편집된 메시지 정보 다시 조회 (선택 사항)
+    const editedMessageResult = await connection.execute(
+        `SELECT message_id, session_id, user_id, message_type, message_content, created_at, edited_at 
+         FROM chat_messages 
+         WHERE message_id = :messageId`,
+        { messageId },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    if (editedMessageResult.rows.length === 0) {
+        console.error(`Error in editMessageController: Edited message with ID ${messageId} not found after update.`);
+        return res.status(404).json({ error: '편집된 메시지를 찾을 수 없습니다.' });
+    }
+
+    res.status(200).json({ message: '메시지가 성공적으로 수정되었습니다.', updatedMessage: editedMessageResult.rows[0] });
   } catch (err) {
-    console.error('메시지 편집 실패:', err);
-    res.status(500).json({ error: `메시지 편집 중 오류 발생: ${err.message}` });
+    console.error(`Error in editMessageController for message ${messageId}:`, err);
+    res.status(500).json({ error: `메시지 수정 중 오류 발생: ${err.message}` });
   } finally {
     if (connection) {
       try {
         await connection.close();
       } catch (err) {
-        console.error('연결 닫기 실패:', err);
+        console.error('Error closing connection in editMessageController:', err);
       }
     }
   }
@@ -117,41 +110,43 @@ async function editMessageController(req, res) {
 // 메시지 리액션 추가 컨트롤러
 async function addReactionController(req, res) {
   const messageId = req.params.message_id;
-  const { reaction } = req.body;
+  const { reaction } = req.body; // 예: reaction = "👍"
   
-  if (!reaction) {
-    return res.status(400).json({ error: '리액션 값이 필요합니다.' });
+  if (!reaction || typeof reaction !== 'string' || reaction.trim() === '') {
+    console.error('Error in addReactionController: Reaction is required and must be a non-empty string.');
+    return res.status(400).json({ error: '리액션은 필수이며 빈 문자열이 아니어야 합니다.' });
+  }
+   if (!messageId) {
+    console.error('Error in addReactionController: Message ID is required.');
+    return res.status(400).json({ error: '메시지 ID가 필요합니다.' });
   }
   
   let connection;
   try {
     connection = await getConnection();
-    
-    // 리액션 업데이트
-    await connection.execute(
+    // TODO: 사용자 인증 로직 추가
+    // TODO: 리액션 저장 로직 구현 (reactions 테이블 또는 chat_messages 테이블 확장)
+    // 이 예시에서는 chat_messages에 reaction 컬럼이 있다고 가정 (실제 스키마에 맞게 수정 필요)
+    const result = await connection.execute(
       `UPDATE chat_messages SET reaction = :reaction WHERE message_id = :messageId`,
-      { 
-        messageId: messageId,
-        reaction: reaction
-      },
+      { reaction, messageId },
       { autoCommit: true }
     );
-    
-    res.json({
-      message_id: messageId,
-      reaction: reaction,
-      updated_at: new Date().toISOString()
-    });
-    
+
+    if (result.rowsAffected === 0) {
+      console.warn(`Warning in addReactionController: Message with ID ${messageId} not found or reaction not added.`);
+      return res.status(404).json({ error: '메시지를 찾을 수 없거나 리액션이 추가되지 않았습니다.' });
+    }
+    res.status(200).json({ message: '리액션이 성공적으로 추가되었습니다.' });
   } catch (err) {
-    console.error('리액션 추가 실패:', err);
+    console.error(`Error in addReactionController for message ${messageId}:`, err);
     res.status(500).json({ error: `리액션 추가 중 오류 발생: ${err.message}` });
   } finally {
     if (connection) {
       try {
         await connection.close();
       } catch (err) {
-        console.error('연결 닫기 실패:', err);
+        console.error('Error closing connection in addReactionController:', err);
       }
     }
   }
@@ -160,48 +155,40 @@ async function addReactionController(req, res) {
 // 메시지 리액션 제거 컨트롤러
 async function removeReactionController(req, res) {
   const messageId = req.params.message_id;
-  // const userId = req.user.userId; // 인증된 사용자 ID, 필요시 인가 로직에 사용
+  // const { userId } = req.user; // 인증된 사용자 ID (인증 구현 후 사용)
+
+  if (!messageId) {
+    console.error('Error in removeReactionController: Message ID is required.');
+    return res.status(400).json({ error: '메시지 ID가 필요합니다.' });
+  }
 
   let connection;
   try {
     connection = await getConnection();
-
-    // TODO: (선택 사항) 해당 세션 참여자인지 확인하는 로직 추가
-    // 예: 메시지 ID로 세션 ID 조회 -> 세션 ID와 사용자 ID로 참여 여부 확인
-
-    // 리액션 제거 (NULL로 업데이트)
+    // TODO: 사용자 인증 및 리액션 소유권 확인 로직 추가 (인가)
+    // 이 예시에서는 chat_messages에 reaction 컬럼이 있다고 가정하고 null로 설정
     const result = await connection.execute(
       `UPDATE chat_messages SET reaction = NULL WHERE message_id = :messageId`,
-      { messageId: messageId },
+      // `UPDATE chat_messages SET reaction = NULL WHERE message_id = :messageId AND user_id = :userId`, // 사용자 확인 추가 시
+      { messageId },
+      // { messageId, userId }, // 사용자 확인 추가 시
       { autoCommit: true }
     );
 
     if (result.rowsAffected === 0) {
-      // 메시지가 없거나 이미 리액션이 없는 경우 등
-      // 404를 반환할 수도 있지만, 멱등성을 고려하여 성공으로 처리할 수도 있음
-      // 여기서는 메시지 자체가 없을 경우를 대비해 404 반환
-      const checkMessage = await connection.execute(
-          `SELECT 1 FROM chat_messages WHERE message_id = :messageId`,
-          { messageId: messageId }
-      );
-      if (checkMessage.rows.length === 0) {
-          return res.status(404).json({ error: '메시지를 찾을 수 없습니다.' });
-      }
-      // 메시지는 있지만 업데이트가 안 된 경우 (이미 NULL 등) - 성공으로 간주
+      console.warn(`Warning in removeReactionController: Message with ID ${messageId} not found or reaction not removed.`);
+      return res.status(404).json({ error: '메시지를 찾을 수 없거나 리액션이 제거되지 않았습니다. 해당 메시지에 리액션이 없거나, 다른 사용자의 리액션일 수 있습니다.' });
     }
-
-    console.log(`메시지 리액션 제거 완료 (ID: ${messageId})`);
-    res.status(200).json({ message: '리액션이 성공적으로 제거되었습니다.', message_id: messageId });
-
+    res.status(200).json({ message: '리액션이 성공적으로 제거되었습니다.' });
   } catch (err) {
-    console.error('리액션 제거 실패:', err);
+    console.error(`Error in removeReactionController for message ${messageId}:`, err);
     res.status(500).json({ error: `리액션 제거 중 오류 발생: ${err.message}` });
   } finally {
     if (connection) {
       try {
         await connection.close();
       } catch (err) {
-        console.error('연결 닫기 실패:', err);
+        console.error('Error closing connection in removeReactionController:', err);
       }
     }
   }
@@ -210,29 +197,25 @@ async function removeReactionController(req, res) {
 // 메시지 삭제 컨트롤러
 async function deleteMessageController(req, res) {
   const messageId = req.params.message_id;
-  const userId = req.user.userId; // JWT 미들웨어에서 추가된 사용자 ID
+  // const userId = req.user.userId; // 인증된 사용자 ID (인증 구현 후 사용)
 
-  if (!userId) {
-    return res.status(401).json({ error: '인증되지 않은 사용자입니다.' });
-  }
   if (!messageId) {
+    console.error('Error in deleteMessageController: Message ID is required.');
     return res.status(400).json({ error: '메시지 ID가 필요합니다.' });
   }
-
   try {
-    // 모델 함수를 사용하여 메시지 삭제 및 소유권 확인
-    const deletedCount = await deleteUserMessageFromDB(messageId, userId);
+    // 모델 함수를 사용하여 메시지 삭제 (내부적으로 인가 확인 가정)
+    // README.AI에 따라 인가 최소화, 여기서는 userId를 deleteUserMessageFromDB에 전달하지 않음
+    const deleted = await deleteUserMessageFromDB(messageId); 
 
-    if (deletedCount === 0) {
-      // 메시지가 없거나, 사용자가 해당 메시지의 소유자가 아니거나, AI 메시지인 경우
-      // AI 메시지는 이 API로 삭제할 수 없다고 가정
-      return res.status(404).json({ error: '삭제할 메시지를 찾을 수 없거나 권한이 없습니다.' });
+    if (!deleted) {
+      console.warn(`Warning in deleteMessageController: Message with ID ${messageId} not found or not deleted.`);
+      // 사용자가 자신의 메시지만 삭제 가능하도록 로직이 모델에 있다면, 403 Forbidden 또는 404 Not Found 반환 가능
+      return res.status(404).json({ error: '메시지를 찾을 수 없거나 삭제할 수 없습니다. 이미 삭제되었거나 다른 사용자의 메시지일 수 있습니다.' });
     }
-
     res.status(200).json({ message: '메시지가 성공적으로 삭제되었습니다.' });
-
   } catch (err) {
-    console.error('메시지 삭제 컨트롤러 오류:', err);
+    console.error(`Error in deleteMessageController for message ${messageId}:`, err);
     res.status(500).json({ error: `메시지 삭제 중 오류 발생: ${err.message}` });
   }
 }
@@ -277,66 +260,103 @@ async function saveUserMessage(sessionId, userId, message) {
 async function saveAiMessage(sessionId, message) {
   // TODO: DB에 AI 메시지 저장 로직 구현 (models/chat.js 등 활용)
   const aiUserId = 'ai-system'; // AI를 나타내는 고정 ID 또는 다른 방식 사용
-  console.log(`[DB] AI 메시지 저장 시도: ${sessionId}, ${message}`);
-  // 예: await ChatModel.saveMessage({ sessionId, userId: aiUserId, messageType: 'ai', messageContent: message });
+  // console.log(`[DB] AI 메시지 저장 시도: ${sessionId}, ${message}`);
+  // await saveAiMessageToDB(sessionId, message, aiUserId); // 수정된 함수 호출
 }
 
 // 파일 업로드 처리 함수
 async function uploadFile(req, res) {
-    const { session_id } = req.params;
-    const userId = req.user.userId; // authMiddleware에서 설정된 사용자 ID
-    const file = req.file; // multer가 처리한 파일 정보
+  const sessionId = req.params.session_id;
+  // const userId = req.user.userId; // 인증된 사용자 ID
 
-    if (!file) {
-        return res.status(400).json({ error: '파일이 업로드되지 않았습니다.' });
+  if (!req.file) {
+    console.error('Error in uploadFile: No file uploaded.');
+    return res.status(400).json({ error: '업로드할 파일이 없습니다.' });
+  }
+  if (!sessionId) {
+    console.error('Error in uploadFile: Session ID is required.');
+    return res.status(400).json({ error: '세션 ID가 필요합니다.' });
+  }
+  // 사용자 요청: 인증/보안 기능 최소화. userId는 임시로 'guest' 또는 요청에서 가져오도록 처리 (실제 환경에서는 인증 필요)
+  const userId = req.body.userId || 'guest'; // 임시 userId, 실제로는 인증 통해 받아야 함
+
+  const file = req.file;
+  const messageContent = `파일 업로드: ${file.originalname}`; // 또는 파일 정보를 담은 JSON 문자열
+
+  let connection;
+  try {
+    connection = await getConnection();
+    await connection.beginTransaction(); // 트랜잭션 시작
+
+    // 1. chat_messages 테이블에 파일 메시지 저장
+    const messageResult = await connection.execute(
+      `INSERT INTO chat_messages (session_id, user_id, message_type, message_content)
+       VALUES (:sessionId, :userId, 'file', :messageContent)
+       RETURNING message_id INTO :messageId`,
+      {
+        sessionId: sessionId,
+        userId: userId, // 실제로는 인증된 사용자 ID 사용
+        messageContent: messageContent,
+        messageId: { type: oracledb.STRING, dir: oracledb.BIND_OUT }
+      }
+    );
+
+    const messageId = messageResult.outBinds.messageId[0];
+    if (!messageId) {
+        await connection.rollback(); // 오류 발생 시 롤백
+        console.error('Error in uploadFile: Failed to save file message to chat_messages.');
+        return res.status(500).json({ error: '파일 메시지 저장 중 오류가 발생했습니다.' });
     }
 
-    try {
-        // 1. 파일 정보를 포함하는 메시지 생성 (예: "파일 [파일명]이 업로드되었습니다.")
-        //    실제 파일 내용을 AI에게 보내는 것은 아니므로, 간단한 텍스트 메시지로 처리
-        const messageContent = `파일 업로드: ${file.originalname}`;
-        const messageType = 'file'; // 메시지 타입을 'file'로 지정
-
-        // 2. 파일 정보와 함께 메시지를 DB에 저장
-        //    chatModel.saveUserMessageToDB 함수를 수정하거나 새 함수를 만들어야 함
-        //    여기서는 file 객체의 정보 (filename, path, mimetype, size 등)를 함께 저장한다고 가정
-        const messageData = {
-            session_id: parseInt(session_id, 10),
-            user_id: userId,
-            content: messageContent,
-            message_type: messageType, // 메시지 타입 추가
-            file_path: file.path, // 서버 내 저장 경로
-            original_filename: file.originalname,
-            mime_type: file.mimetype,
-            file_size: file.size
-        };
-
-        const savedMessage = await chatModel.saveMessageToDB(messageData); // 수정된 또는 새 함수 호출
-
-        // 3. 클라이언트에 성공 응답 전송 (저장된 메시지 정보 포함)
-        res.status(201).json({
-            message: '파일이 성공적으로 업로드되었습니다.',
-            uploadedFile: {
-                message_id: savedMessage.message_id,
-                filename: file.originalname,
-                mimetype: file.mimetype,
-                size: file.size,
-                upload_timestamp: savedMessage.created_at // DB에서 반환된 타임스탬프 사용
-            }
-        });
-
-    } catch (error) {
-        console.error('파일 업로드 처리 중 오류 발생:', error);
-        // 파일 시스템에 저장된 파일 삭제 (롤백)
-        if (file && file.path) {
-            const fs = require('fs');
-            fs.unlink(file.path, (err) => {
-                if (err) console.error('업로드 실패 후 파일 삭제 중 오류:', err);
-            });
-        }
-        res.status(500).json({ error: '파일 업로드 중 서버 오류가 발생했습니다.' });
+    // 2. attachments 테이블에 첨부 파일 정보 저장 (saveAttachmentToDB 모델 함수 사용)
+    // saveAttachmentToDB 함수는 messageId와 file 객체를 인자로 받음
+    const attachment = await saveAttachmentToDB(messageId, file, connection); // connection 전달
+    if (!attachment) {
+        await connection.rollback();
+        // 파일 시스템에서 파일 삭제 시도 (선택적)
+        // fs.unlinkSync(file.path); 
+        console.error('Error in uploadFile: Failed to save attachment details.');
+        return res.status(500).json({ error: '첨부 파일 정보 저장 중 오류가 발생했습니다.' });
     }
-};
+
+    await connection.commit(); // 트랜잭션 커밋
+
+    // 업로드된 파일 정보와 메시지 ID 반환
+    res.status(201).json({ 
+      message: '파일이 성공적으로 업로드되었습니다.', 
+      messageId: messageId,
+      fileInfo: {
+        originalname: file.originalname,
+        filename: file.filename, // 저장된 파일명 (multer에서 생성)
+        path: file.path,         // 저장된 전체 경로
+        mimetype: file.mimetype,
+        size: file.size
+      }
+    });
+
+  } catch (err) {
+    if (connection) await connection.rollback(); // 오류 발생 시 롤백
+    // 업로드된 파일 삭제 (오류 발생 시)
+    if (req.file && req.file.path) {
+      try {
+        fs.unlinkSync(req.file.path);
+        console.log(`Cleaned up uploaded file: ${req.file.path}`);
+      } catch (unlinkErr) {
+        console.error(`Error cleaning up file ${req.file.path}:`, unlinkErr);
+      }
+    }
+    console.error(`Error in uploadFile for session ${sessionId}:`, err);
+    res.status(500).json({ error: `파일 업로드 중 오류 발생: ${err.message}` });
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (err) {
+        console.error('Error closing connection in uploadFile:', err);
+      }
+    }
+  }
+}
 
 module.exports = {
   sendMessageController,

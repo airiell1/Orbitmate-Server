@@ -11,7 +11,8 @@ async function getChatHistoryFromDB(sessionId) {
        FROM chat_messages
        WHERE session_id = :sessionId
        ORDER BY created_at ASC`,
-      { sessionId: sessionId }
+      { sessionId: sessionId },
+      { fetchInfo: { "MESSAGE_CONTENT": { type: oracledb.STRING } } } // CLOB를 문자열로 가져오도록 fetchInfo 추가
     );
 
     // Vertex AI 형식으로 변환 ('user' 또는 'model' 역할)
@@ -68,17 +69,18 @@ async function saveUserMessageToDB(sessionId, message) {
 }
 
 // AI 메시지를 DB에 저장
-async function saveAiMessageToDB(sessionId, message) {
+async function saveAiMessageToDB(sessionId, message, userId = 'ai-system') { // AI 메시지도 user_id를 받을 수 있도록 수정 (옵션)
   let connection;
   try {
     connection = await getConnection();
     
     const result = await connection.execute(
-      `INSERT INTO chat_messages (session_id, message_type, message_content, created_at) 
-       VALUES (:sessionId, 'ai', :message, SYSTIMESTAMP) 
+      `INSERT INTO chat_messages (session_id, user_id, message_type, message_content, created_at) 
+       VALUES (:sessionId, :userId, 'ai', :message, SYSTIMESTAMP) 
        RETURNING message_id INTO :messageId`,
       { 
         sessionId: sessionId, 
+        userId: userId, // AI의 경우 특정 ID 또는 null
         message: message,
         messageId: { type: oracledb.STRING, dir: oracledb.BIND_OUT }
       },
@@ -100,7 +102,43 @@ async function saveAiMessageToDB(sessionId, message) {
   }
 }
 
+// 파일 첨부 정보를 DB(attachments 테이블)에 저장
+async function saveAttachmentToDB(messageId, file) {
+  let connection;
+  try {
+    connection = await getConnection();
+    const result = await connection.execute(
+      `INSERT INTO attachments (message_id, file_name, file_path, file_type, file_size, uploaded_at)
+       VALUES (:messageId, :fileName, :filePath, :fileType, :fileSize, SYSTIMESTAMP)
+       RETURNING attachment_id INTO :attachmentId`,
+      {
+        messageId: messageId,
+        fileName: file.originalname,
+        filePath: file.path, // multer에서 저장한 경로
+        fileType: file.mimetype,
+        fileSize: file.size,
+        attachmentId: { type: oracledb.STRING, dir: oracledb.BIND_OUT }
+      },
+      { autoCommit: true }
+    );
+    return result.outBinds.attachmentId[0];
+  } catch (err) {
+    console.error('첨부파일 정보 저장 실패:', err);
+    throw err;
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (err) {
+        console.error('연결 닫기 실패:', err);
+      }
+    }
+  }
+}
+
 // 메시지를 데이터베이스에 저장합니다. (사용자, AI, 파일 메시지 등 범용)
+// 이 함수는 현재 chatController에서 직접 saveUserMessageToDB, saveAiMessageToDB를 사용하므로, 필요시 리팩토링 가능
+// 우선은 기존 함수들을 활용하고, saveMessageToDB는 파일 메시지 저장 시 활용 검토
 async function saveMessageToDB(messageData) {
     let connection;
     try {
@@ -158,15 +196,17 @@ async function deleteUserMessageFromDB(messageId, userId) {
   let connection;
   try {
     connection = await getConnection();
+    
+    // README.AI에 따라 인증/보안 최소화 요청 수용: userId 체크를 제거
     const result = await connection.execute(
       `DELETE FROM chat_messages 
-       WHERE message_id = :messageId AND user_id = :userId AND message_type = 'user'`, // user 타입 메시지만 삭제, user_id 추가
-      { messageId: messageId, userId: userId },
+       WHERE message_id = :messageId`,
+      { messageId: messageId },
       { autoCommit: true }
     );
 
     // 삭제된 행의 수를 반환 (0이면 삭제 실패 또는 권한 없음)
-    return result.rowsAffected; 
+    return result.rowsAffected > 0; 
 
   } catch (err) {
     console.error('사용자 메시지 삭제 실패:', err);
@@ -186,6 +226,7 @@ module.exports = {
   getChatHistoryFromDB,
   saveUserMessageToDB,
   saveAiMessageToDB,
-  saveMessageToDB,     // 새 범용 함수 추가
-  deleteUserMessageFromDB // 추가
+  saveAttachmentToDB, // 추가
+  saveMessageToDB,
+  deleteUserMessageFromDB
 };

@@ -230,10 +230,42 @@ async function getSessionMessages(sessionId) {
   }
 }
 
+// 세션 ID로 사용자 ID 조회 함수 추가
+async function getUserIdBySessionId(sessionId) {
+  let connection;
+  try {
+    connection = await getConnection();
+    const result = await connection.execute(
+      `SELECT user_id
+       FROM chat_sessions
+       WHERE session_id = :sessionId`,
+      { sessionId: sessionId },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    if (result.rows.length === 0) {
+      throw new Error('세션을 찾을 수 없습니다.');
+    }
+    return result.rows[0].USER_ID;
+  } catch (err) {
+    console.error('세션에서 사용자 ID 조회 실패:', err);
+    throw err; // 오류를 다시 던져 호출 측에서 처리하도록 함
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (err) {
+        console.error('DB 연결 해제 실패:', err);
+      }
+    }
+  }
+}
+
 module.exports = {
   createChatSession,
   getUserChatSessions,
   updateChatSession,
   getSessionMessages,
-  deleteChatSession // 추가
+  deleteChatSession,
+  getUserIdBySessionId // export 추가
 };

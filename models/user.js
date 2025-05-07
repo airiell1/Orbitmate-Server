@@ -22,7 +22,7 @@ async function registerUser(username, email, password) {
         passwordHash: passwordHash,
         userId: { type: oracledb.STRING, dir: oracledb.BIND_OUT }
       },
-      { autoCommit: true }
+      { autoCommit: false } // 트랜잭션 관리를 위해 autoCommit 해제
     );
     
     const userId = result.outBinds.userId[0];
@@ -30,10 +30,20 @@ async function registerUser(username, email, password) {
     // 사용자 설정 기본값 생성
     await connection.execute(
       `INSERT INTO user_settings (user_id) VALUES (:userId)`,
-      { userId: userId },
-      { autoCommit: true }
+      { userId: userId }
+    );    // 사용자 프로필 기본값 생성
+    await connection.execute(
+      `INSERT INTO user_profiles (user_id, theme_preference, bio, badge, level, experience)
+       VALUES (:userId, :theme, :bio, :badge, :level, :experience)`,
+      {
+        userId: userId,
+        theme: 'light',        bio: null,        badge: null,        level: 1, // 기본 레벨
+        experience: 0 // 기본 경험치
+      }
     );
     
+    await connection.commit(); // 모든 INSERT 작업 후 커밋
+
     return {
       user_id: userId,
       username: username,
@@ -66,8 +76,8 @@ async function loginUser(email, password) {
 
     // 사용자 조회
     const result = await connection.execute(
-      `SELECT user_id, username, password_hash, is_active, email
-       FROM users
+      `SELECT user_id, username, password_hash, is_active, email 
+       FROM users 
        WHERE email = :email`,
       { email: email },
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
@@ -124,20 +134,25 @@ async function getUserSettings(userId) {
     connection = await getConnection();
     
     const result = await connection.execute(
-      `SELECT theme, language, font_size, notifications_enabled, ai_model_preference
-       FROM user_settings
+      `SELECT user_id, theme, language, font_size, notifications_enabled, ai_model_preference, updated_at 
+       FROM user_settings 
        WHERE user_id = :userId`,
       { userId: userId },
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
     
     if (result.rows.length === 0) {
+      // 사용자가 존재하지만 설정이 없는 경우 (이론적으로 registerUser에서 생성되어야 함)
+      // 기본값을 생성하거나 오류를 반환할 수 있습니다.
+      // 여기서는 오류 대신 기본값과 유사한 구조를 반환하거나,
+      // 혹은 registerUser에서 반드시 생성되므로 이 경우는 없다고 가정합니다.
       throw new Error('사용자 설정을 찾을 수 없습니다.');
     }
     
     const settings = result.rows[0];
     
     return {
+      user_id: settings.USER_ID, // user_id 추가 반환
       theme: settings.THEME,
       language: settings.LANGUAGE,
       font_size: settings.FONT_SIZE,
@@ -216,9 +231,213 @@ async function updateUserSettings(userId, settings) {
   }
 }
 
+// 사용자 프로필 이미지 경로 업데이트 함수
+async function updateUserProfileImage(userId, profileImagePath) {
+  let connection;
+  try {
+    connection = await getConnection();
+    await connection.execute(
+      `UPDATE users SET profile_image_path = :profileImagePath WHERE user_id = :userId`,
+      { profileImagePath: profileImagePath, userId: userId },
+      { autoCommit: true }
+    );
+  } catch (err) {
+    console.error('프로필 이미지 경로 업데이트 실패:', err);
+    throw err;
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (err) {
+        console.error('DB 연결 해제 실패:', err);
+      }
+    }
+  }
+}
+
+// 사용자 프로필 조회 함수
+async function getUserProfile(userId) {
+  let connection;
+  try {    connection = await getConnection();
+    const result = await connection.execute(
+      `SELECT u.user_id, u.username, u.email, u.created_at, u.is_active, u.profile_image_path, 
+              p.theme_preference as theme, p.bio, p.badge, p.experience, p.level
+       FROM users u
+       LEFT JOIN user_profiles p ON u.user_id = p.user_id
+       WHERE u.user_id = :userId`,
+      { userId: userId },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+    return result.rows[0];
+  } catch (err) {
+    console.error('Error getting user profile:', err);
+    throw err;
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (err) {
+        console.error('Error closing connection:', err);
+      }
+    }
+  }
+}
+
+// 사용자 프로필 업데이트 함수
+async function updateUserProfile(userId, profileData) {
+  const { theme, bio, badge } = profileData; // level, experience는 직접 수정하지 않음
+  let connection;
+  try {    connection = await getConnection();
+    
+    let updateQuery = 'UPDATE user_profiles SET';
+    const bindParams = { userId: userId };    let hasChanges = false;
+    
+    if (theme !== undefined) {
+      updateQuery += hasChanges ? ', theme_preference = :theme' : ' theme_preference = :theme';
+      bindParams.theme = theme;
+      hasChanges = true;
+    }
+    if (bio !== undefined) {
+      updateQuery += hasChanges ? ', bio = :bio' : ' bio = :bio';
+      bindParams.bio = bio;
+      hasChanges = true;
+    }
+    if (badge !== undefined) {
+      updateQuery += hasChanges ? ', badge = :badge' : ' badge = :badge';
+      bindParams.badge = badge;
+      hasChanges = true;
+    }
+      updateQuery += ' WHERE user_id = :userId';
+
+    if (!hasChanges) { // 업데이트할 필드가 없는 경우
+        return await getUserProfile(userId); // 변경 없이 현재 프로필 반환
+    }
+    
+    await connection.execute(updateQuery, bindParams, { autoCommit: true });
+    
+    return await getUserProfile(userId); // 업데이트된 프로필 정보 반환
+  } catch (err) {
+    console.error('프로필 업데이트 실패:', err);
+    throw err;
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (err) {
+        console.error('DB 연결 해제 실패:', err);
+      }
+    }
+  }
+}
+
+// 경험치 추가 및 레벨 업데이트 함수
+async function addUserExperience(userId, points) {
+  let connection;
+  try {
+    connection = await getConnection();
+    await connection.execute(
+      `UPDATE user_profiles
+       SET experience = experience + :points
+       WHERE user_id = :userId`,
+      { userId, points },
+      { autoCommit: false } // 레벨 업데이트와 함께 트랜잭션 처리
+    );
+
+    // 현재 경험치 및 레벨 가져오기
+    const profileResult = await connection.execute(
+      `SELECT level, experience FROM user_profiles WHERE user_id = :userId`,
+      { userId },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    if (profileResult.rows.length === 0) {
+      throw new Error('사용자 프로필을 찾을 수 없습니다.');
+    }
+
+    let currentLevel = profileResult.rows[0].LEVEL;
+    let currentExperience = profileResult.rows[0].EXPERIENCE;
+
+    // 레벨업 로직 (예: 100 경험치당 1레벨업)
+    const experienceForNextLevel = 100; // 레벨업에 필요한 경험치
+    while (currentExperience >= experienceForNextLevel) {
+      currentLevel += 1;
+      currentExperience -= experienceForNextLevel;
+    }
+
+    // 레벨 및 경험치 업데이트
+    await connection.execute(
+      `UPDATE user_profiles
+       SET level = :level, experience = :experience
+       WHERE user_id = :userId`,
+      { userId, level: currentLevel, experience: currentExperience },
+      { autoCommit: false }
+    );
+
+    await connection.commit();
+    return { level: currentLevel, experience: currentExperience };
+
+  } catch (err) {
+    if (connection) await connection.rollback();
+    console.error('경험치 추가 및 레벨 업데이트 실패:', err);
+    throw err;
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (err) {
+        console.error('DB 연결 해제 실패:', err);
+      }
+    }
+  }
+}
+
+// 회원 탈퇴 (계정 데이터 삭제) 함수
+async function deleteUser(userId) {
+  let connection;
+  try {
+    connection = await getConnection();
+    // 사용자와 관련된 모든 데이터는 DB의 ON DELETE CASCADE 제약조건에 의해 자동으로 삭제될 것으로 예상됩니다.
+    // (chat_sessions, user_settings, user_profiles)
+    // chat_messages의 user_id는 ON DELETE SET NULL이므로, 해당 메시지는 유지됩니다.
+    // attachments는 chat_messages에 CASCADE되어 있으므로 메시지 삭제 시 함께 삭제됩니다.
+    const result = await connection.execute(
+      `DELETE FROM users WHERE user_id = :userId`,
+      { userId: userId },
+      { autoCommit: true }
+    );
+
+    if (result.rowsAffected === 0) {
+      throw new Error('삭제할 사용자를 찾을 수 없습니다.');
+    }
+
+    // console.log(`User ${userId} and related data (via CASCADE) deleted successfully.`);
+    return { message: `User ${userId} and related data deleted successfully.` };
+  } catch (err) {
+    console.error('회원 탈퇴 실패:', err);
+    throw err;
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (err) {
+        console.error('DB 연결 해제 실패:', err);
+      }
+    }
+  }
+}
+
 module.exports = {
   registerUser,
   loginUser,
   getUserSettings,
-  updateUserSettings
+  updateUserSettings,
+  updateUserProfileImage,
+  deleteUser,
+  getUserProfile,
+  updateUserProfile,
+  addUserExperience // 추가
 };

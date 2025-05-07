@@ -1,7 +1,9 @@
 const bcrypt = require('bcrypt');
 const { getConnection, oracledb } = require('../config/database');
-const { generateToken } = require('../middleware/auth'); // JWT 생성 함수 가져오기
-const { registerUser, loginUser, getUserSettings, updateUserSettings } = require('../models/user');
+const { generateToken } = require('../middleware/auth');
+const { registerUser, loginUser, getUserSettings, updateUserSettings, updateUserProfileImage, deleteUser, getUserProfile, updateUserProfile } = require('../models/user');
+const fs = require('fs');
+const path = require('path');
 
 // 사용자 등록 컨트롤러
 async function registerUserController(req, res) {
@@ -87,15 +89,15 @@ async function getUserSettingsController(req, res) {
 // 사용자 설정 업데이트 컨트롤러
 async function updateUserSettingsController(req, res) {
   const requestedUserId = req.params.user_id;
-  const authenticatedUserId = req.user.userId; // JWT 미들웨어에서 추가된 사용자 ID
+  // const authenticatedUserId = req.user.userId; // 인증 생략
+  const authenticatedUserId = requestedUserId; // 임시로 요청된 ID를 사용
   const settings = req.body;
 
-  // 인가 확인: 요청된 user_id와 인증된 user_id가 동일한지 확인
-  if (requestedUserId !== authenticatedUserId) {
-    return res.status(403).json({ error: '자신의 설정만 수정할 수 있습니다.' }); // Forbidden
-  }
+  // 인가 확인 생략
+  // if (requestedUserId !== authenticatedUserId) {
+  //   return res.status(403).json({ error: '자신의 설정만 수정할 수 있습니다.' });
+  // }
 
-  // 유효성 검사: 업데이트할 설정 데이터가 있는지 확인
   if (Object.keys(settings).length === 0) {
     return res.status(400).json({ error: '수정할 설정 내용이 없습니다.' });
   }
@@ -109,68 +111,98 @@ async function updateUserSettingsController(req, res) {
   }
 }
 
-// loginUser 함수는 컨트롤러에서 직접 호출하지 않고, 내부 로직으로 남겨두거나
-// 서비스 계층으로 분리하는 것이 더 좋습니다. 여기서는 설명을 위해 그대로 둡니다.
-async function loginUser(email, password) {
-  let connection;
+// 사용자 프로필 이미지 업로드 컨트롤러
+async function uploadProfileImageController(req, res) {
+  const userId = req.params.user_id;
+  const file = req.file;
+
+  if (!file) {
+    return res.status(400).json({ error: '프로필 이미지가 업로드되지 않았습니다.' });
+  }
+
+  // 실제 파일 저장 경로는 /uploads/profiles/[user_id]/filename 형태로 구성하거나, DB에 파일 경로 저장
+  // 여기서는 단순화를 위해 파일명만 DB에 저장한다고 가정하고, 실제 파일은 uploads 폴더에 저장됨
+  // 필요시 사용자별 폴더 생성 로직 추가
+  const profileImagePath = `/uploads/${file.filename}`; // 예시 경로
+
   try {
-    connection = await getConnection();
-
-    // 사용자 조회
-    const result = await connection.execute(
-      `SELECT user_id, username, password_hash, is_active, email
-       FROM users
-       WHERE email = :email`,
-      { email: email },
-      { outFormat: oracledb.OUT_FORMAT_OBJECT }
-    );
-
-    if (result.rows.length === 0) {
-      throw new Error('이메일 또는 비밀번호가 올바르지 않습니다.');
-    }
-
-    const user = result.rows[0];
-
-    // 계정이 비활성화된 경우
-    if (user.IS_ACTIVE !== 1) {
-      throw new Error('계정이 비활성화되었습니다.');
-    }
-
-    // 비밀번호 검증
-    const match = await bcrypt.compare(password, user.PASSWORD_HASH);
-    if (!match) {
-      throw new Error('이메일 또는 비밀번호가 올바르지 않습니다.');
-    }
-
-    // 로그인 시간 업데이트
-    await connection.execute(
-      `UPDATE users SET last_login = SYSTIMESTAMP WHERE user_id = :userId`,
-      { userId: user.USER_ID },
-      { autoCommit: true }
-    );
-
-    // 컨트롤러에서 토큰 생성을 위해 필요한 사용자 정보만 반환
-    return {
-      user_id: user.USER_ID,
-      username: user.USERNAME,
-      email: user.EMAIL
-    };
+    await updateUserProfileImage(userId, profileImagePath);
+    res.json({ 
+      message: '프로필 이미지가 성공적으로 업데이트되었습니다.', 
+      userId: userId,
+      profile_image_path: profileImagePath 
+    });
   } catch (err) {
-    console.error('로그인 실패 (모델):', err);
-    // 특정 오류 메시지를 컨트롤러로 전달
-    if (err.message.includes('이메일 또는 비밀번호') || err.message.includes('계정이 비활성화')) {
-        throw err;
+    console.error('프로필 이미지 업데이트 실패:', err);
+    // 업로드된 파일 삭제 (오류 시)
+    if (req.file && req.file.path) {
+      fs.unlink(req.file.path, (unlinkErr) => {
+        if (unlinkErr) console.error('임시 프로필 이미지 삭제 실패:', unlinkErr);
+      });
     }
-    // 그 외 오류는 일반적인 오류로 처리
-    throw new Error('로그인 처리 중 오류가 발생했습니다.');
-  } finally {
-    if (connection) {
-      try {
-        await connection.close();
-      } catch (err) {
-        console.error('DB 연결 닫기 실패 (로그인):', err);
-      }
+    res.status(500).json({ error: `프로필 이미지 업데이트 중 오류 발생: ${err.message}` });
+  }
+}
+
+// 회원 탈퇴 (계정 데이터 삭제) 컨트롤러
+async function deleteUserController(req, res) {
+  const userId = req.params.user_id;
+  // 실제 운영에서는 본인 확인 절차 또는 관리자 권한 확인이 필요합니다.
+  // 여기서는 인증을 생략하므로 바로 삭제 로직 진행
+
+  try {
+    await deleteUser(userId);
+    res.status(200).json({ message: '사용자 계정이 성공적으로 삭제되었습니다.', userId: userId });
+  } catch (err) {
+    console.error('회원 탈퇴 처리 실패:', err);
+    res.status(500).json({ error: `회원 탈퇴 처리 중 오류 발생: ${err.message}` });
+  }
+}
+
+// 사용자 프로필 조회 컨트롤러
+async function getUserProfileController(req, res) {
+  const userId = req.params.user_id;
+  // 인증/인가 로직은 현재 최소화되어 있습니다.
+
+  try {
+    const profile = await getUserProfile(userId);
+    if (!profile) {
+      // 사용자는 존재하지만 프로필이 없는 경우 (정상적인 상황은 아님, registerUser에서 생성)
+      // 또는 초기 데이터 마이그레이션 등으로 프로필이 없을 수 있음.
+      // 이 경우, 빈 프로필 객체 또는 404를 반환할 수 있습니다.
+      // README.AI 지침에 따라 인증/보안을 최소화하므로, 여기서는 404를 반환합니다.
+      return res.status(404).json({ error: '사용자 프로필을 찾을 수 없습니다.' });
     }
+    res.json(profile);
+  } catch (err) {
+    console.error('프로필 조회 컨트롤러 오류:', err);
+    res.status(500).json({ error: `프로필 조회 중 오류 발생: ${err.message}` });
+  }
+}
+
+// 사용자 프로필 업데이트 컨트롤러
+async function updateUserProfileController(req, res) {
+  const userId = req.params.user_id;
+  const profileData = req.body;
+  // 인증/인가 로직 최소화
+
+  // 요청 본문이 비어 있는지 확인 (profileData가 null이거나 빈 객체일 수 있음)
+  if (!profileData || Object.keys(profileData).length === 0) {
+    return res.status(400).json({ error: '수정할 프로필 내용이 없습니다.' });
+  }
+
+  try {
+    const updatedProfile = await updateUserProfile(userId, profileData);
+    res.json(updatedProfile);
+  } catch (err) {
+    console.error('프로필 업데이트 컨트롤러 오류:', err);
+    if (err.message.includes('프로필을 찾을 수 없거나 업데이트할 내용이 없습니다')) {
+        return res.status(404).json({ error: err.message });
+    }
+    if (err.message.includes('수정할 프로필 내용이 없습니다')) { // 모델에서 발생시킨 경우
+        return res.status(400).json({ error: err.message });
+    }
+    res.status(500).json({ error: `프로필 업데이트 중 오류 발생: ${err.message}` });
   }
 }
 
@@ -178,5 +210,9 @@ module.exports = {
   registerUserController,
   loginUserController,
   getUserSettingsController,
-  updateUserSettingsController
+  updateUserSettingsController,
+  uploadProfileImageController,
+  deleteUserController,
+  getUserProfileController, // 추가
+  updateUserProfileController // 추가
 };

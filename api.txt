@@ -1,7 +1,7 @@
 # Orbitmate API 문서
 
 ## 공통 사항
-- Base URL: 서버 주소 http://localhost:7777
+- Base URL: 서버 주소 http://192.168.10.77:7777
 - 모든 요청/응답 본문은 JSON 형식
 - 오류 발생 시 응답 본문에 `{ "error": "오류 메시지" }` 형식으로 오류 내용이 포함됨
 
@@ -66,6 +66,7 @@
     "username": "testuser",
     "email": "test@example.com",
     "logged_in_at": "2023-10-27T10:05:00.000Z"
+    // 실제 응답에는 JWT 토큰 등이 포함될 수 있습니다.
   }
   ```
 - **오류 응답**:
@@ -83,9 +84,9 @@
 - **요청 본문**:
   ```json
   {
-    "userId": "test-user-id",
-    "title": "새로운 대화",
-    "category": "일반"
+    "userId": "user-id-example",
+    "title": "새로운 채팅 세션 제목",
+    "category": "일반" // 선택 사항
   }
   ```
 - **필수 필드**: `userId`, `title`
@@ -93,14 +94,17 @@
 - **성공 응답 (201 Created)**:
   ```json
   {
-    "session_id": "new-session-id",
-    "title": "새로운 대화",
+    "session_id": "generated-session-id",
+    "user_id": "user-id-example",
+    "title": "새로운 채팅 세션 제목",
     "category": "일반",
-    "created_at": "2023-10-27T10:10:00.000Z"
+    "created_at": "2023-10-27T10:10:00.000Z",
+    "updated_at": "2023-10-27T10:10:00.000Z",
+    "is_archived": false
   }
   ```
 - **오류 응답**:
-    - `400 Bad Request`: 필수 필드가 누락된 경우
+    - `400 Bad Request`: 필수 필드(`userId`, `title`)가 누락된 경우
     - `500 Internal Server Error`: 서버 오류
 
 ### `GET /api/users/:user_id/chat/sessions`

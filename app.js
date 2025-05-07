@@ -19,15 +19,23 @@ app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization']
-})); // 모든 출처 허용 (개발용)
-// 프로덕션 환경에서는 특정 출처만 허용하도록 설정해야 합니다.
-// 예: app.use(cors({ origin: 'http://your-frontend-domain.com' }));
+}));
 
 app.use(express.json()); // JSON 요청 본문 파싱
 app.use(express.urlencoded({ extended: true })); // URL-encoded 요청 본문 파싱
 
 // 정적 파일 제공 (HTML, CSS, JS)
 app.use(express.static(path.join(__dirname, 'public')));
+
+// 기본 경로('/')에 대한 라우트 추가
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// 테스트 페이지를 위한 라우트 추가
+app.get('/test', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'test.html'));
+});
 
 // 업로드 디렉토리 생성 (없으면)
 const uploadDir = path.join(__dirname, 'uploads');
@@ -72,7 +80,6 @@ async function startServer() {
     const port = process.env.PORT || 7777;
     app.listen(port, () => {
       console.log(`서버가 http://localhost:${port} 에서 실행 중입니다.`);
-      console.log(`테스트 UI는 http://localhost:${port} 에서 확인 가능합니다.`); // 안내 메시지 추가
     });
   } catch (err) {
     console.error('서버 시작 실패:', err);
