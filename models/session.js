@@ -1,4 +1,5 @@
 const { getConnection, oracledb } = require('../config/database');
+const { clobToString } = require('./chat'); // clobToString 함수 import
 
 // 새 채팅 세션 생성
 async function createChatSession(userId, title, category) {
@@ -205,17 +206,20 @@ async function getSessionMessages(sessionId) {
       { sessionId: sessionId }
     );
     
-    return result.rows.map(row => ({
+    // CLOB 변환을 포함하도록 수정
+    const messages = await Promise.all(result.rows.map(async (row) => ({
       message_id: row[0],
       user_id: row[1],
       message_type: row[2],
-      message_content: row[3],
+      message_content: await clobToString(row[3]), // CLOB을 문자열로 변환
       created_at: row[4],
       reaction: row[5],
       is_edited: row[6] === 1,
       edited_at: row[7],
       parent_message_id: row[8]
-    }));
+    })));
+    
+    return messages;
   } catch (err) {
     console.error('메시지 목록 조회 실패:', err);
     throw err;

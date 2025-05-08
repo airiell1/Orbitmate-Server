@@ -1,19 +1,24 @@
 <!DOCTYPE html>
 <html lang="ko">
-<head>
-    <meta charset="UTF-8">
+<head>    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Orbitmate 채팅</title>
+    <title>Orbitmate API</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="promptAndEdit.css">
 </head>
 <body>
     <div class="header">
-        <h1>Orbitmate</h1>
-        <p>AI 대화 서비스</p>
+        <img src="assets/Orbitmate.png" alt="Orbitmate Logo" class="logo" width="100" height="100">
+        <div class="header-text-content">  <h1>Orbitmate API</h1>
+            <p>AI 대화 서비스</p>
+        </div>
         <a href="/test" class="test-button">API 테스트 페이지</a>
     </div>
-    
-    <div id="chat-container">
+      <div id="chat-container">
+        <div class="chat-controls">
+            <button id="refresh-messages-button" title="채팅 내용을 새로고침합니다">💬 새로고침</button>
+            <button id="reset-session-button" title="새 세션을 시작합니다">🔄 새 세션</button>
+        </div>
         <div id="chat-box"></div>
         <div id="input-area">
             <input type="text" id="message-input" placeholder="메시지를 입력하세요...">
@@ -22,9 +27,9 @@
     </div>
 
     <div class="footer">
-        <p>© 2025 Orbitmate - AI 채팅 서비스</p>
-    </div>
+        <p>© 2025 Orbitmate - AI 채팅 서비스</p>    </div>
 
     <script src="script.js"></script>
+    <script src="promptFeature.js"></script>
 </body>
 </html>

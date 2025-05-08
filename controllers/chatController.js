@@ -1,52 +1,74 @@
-const { getChatHistoryFromDB, saveUserMessageToDB, saveAiMessageToDB, deleteUserMessageFromDB, saveAttachmentToDB } = require('../models/chat');
+const { getChatHistoryFromDB, saveUserMessageToDB, saveAiMessageToDB, deleteUserMessageFromDB, saveAttachmentToDB, getSessionMessagesForClient } = require('../models/chat');
 const { getAiResponse } = require('../config/vertexai');
 const { getConnection, oracledb } = require('../config/database');
 const chatModel = require('../models/chat');
 const path = require('path');
 const fs = require('fs');
+// 오류 처리 유틸리티 추가
+const { createErrorResponse, getHttpStatusByErrorCode, handleOracleError, logError } = require('../utils/errorHandler');
 
 // 채팅 메시지 전송 및 AI 응답 받기 컨트롤러
 async function sendMessageController(req, res) {
   const sessionId = req.params.session_id;
-  const { message } = req.body;
+  const { message } = req.body; // 클라이언트에서 보낸 메시지
 
   if (!message || typeof message !== 'string' || message.trim() === '') {
-    console.error('Error in sendMessageController: Message is required and must be a non-empty string.');
-    return res.status(400).json({ error: '메시지는 필수이며 빈 문자열이 아니어야 합니다.' });
+    return res.status(400).json({ error: '메시지 내용은 필수이며 빈 문자열이 아니어야 합니다.' });
   }
+  
+  // let connection; // 각 DB 호출 함수가 자체적으로 관리하므로 여기서는 불필요.
 
   try {
-    // 1. 사용자 메시지 DB 저장
+    // 1. 사용자 메시지 저장
     const userMessageId = await saveUserMessageToDB(sessionId, message);
-    if (!userMessageId) {
-      console.error('Error in sendMessageController: Failed to save user message.');
-      return res.status(500).json({ error: '사용자 메시지 저장에 실패했습니다.' });
-    }
 
-    // 2. 해당 세션의 전체 대화 기록 조회
-    const history = await getChatHistoryFromDB(sessionId);
-    console.log(`[${sessionId}] 대화 기록 조회 완료 (메시지 ${history.length}개)`);
-
-    // 3. 대화 기록과 새 메시지를 Vertex AI에 전송
-    const aiResponse = await getAiResponse(message, history);
-    console.log(`[${sessionId}] AI 응답 수신 완료`);
-
-    // 4. AI 응답 DB 저장
-    const aiMessageId = await saveAiMessageToDB(sessionId, aiResponse);
-    if (!aiMessageId) {
-      console.error('Error in sendMessageController: Failed to save AI message.');
-      return res.status(500).json({ error: 'AI 메시지 저장에 실패했습니다.' });
-    }
+    // 2. 이전 대화 기록 가져오기 (Vertex AI에 전달하기 위함)
+    // getChatHistoryFromDB는 Vertex AI가 이해하는 형식으로 반환해야 합니다.
+    let chatHistory = await getChatHistoryFromDB(sessionId); 
     
-    // 클라이언트가 기대하는 형식으로 응답
-    res.status(201).json({
-      message: aiResponse,
+    // chatHistory의 마지막 메시지가 현재 사용자의 메시지와 동일하다면 제거 (중복 방지)
+    // chatHistory의 각 요소는 { role: 'user'/'model', parts: [{ text: '...' }] } 형태임
+    if (chatHistory.length > 0) {
+        const lastMessageInHistory = chatHistory[chatHistory.length - 1];
+        if (lastMessageInHistory.role === 'user' && 
+            lastMessageInHistory.parts && 
+            lastMessageInHistory.parts.length > 0 && 
+            lastMessageInHistory.parts[0].text === message) {
+            chatHistory.pop();
+        }
+    }
+
+    // 3. Vertex AI로부터 응답 받기
+    // message는 현재 사용자의 메시지, chatHistory는 이 메시지를 제외한 이전 대화 내용이어야 합니다.
+    // getAiResponse 함수가 이 부분을 적절히 처리한다고 가정합니다.
+    const aiResponseText = await getAiResponse(message, chatHistory); // sessionId 파라미터 제거
+
+    // 4. AI 메시지 저장
+    // saveAiMessageToDB는 이제 { messageId, content, createdAt } 객체를 반환
+    const aiMessageDetails = await saveAiMessageToDB(sessionId, aiResponseText);
+
+    // 5. 클라이언트에 응답 전송 (요청된 새로운 형식)
+    res.status(200).json({
       user_message_id: userMessageId,
-      ai_message_id: aiMessageId
+      ai_message_id: aiMessageDetails.messageId,
+      content: aiMessageDetails.content, // DB에 저장된 AI 메시지 내용
+      created_at: aiMessageDetails.createdAt // DB에 저장된 AI 메시지 생성 시간
     });
+
   } catch (err) {
     console.error(`Error in sendMessageController for session ${sessionId}:`, err);
-    res.status(500).json({ error: `메시지 전송 중 오류 발생: ${err.message}` });
+    // 오류 유형에 따라 다른 HTTP 상태 코드 및 메시지 반환 가능
+    if (err.code === 'SESSION_NOT_FOUND') { // saveUserMessageToDB 등에서 발생 가능
+        return res.status(404).json(createErrorResponse('SESSION_NOT_FOUND', '세션을 찾을 수 없습니다.'));
+    }
+    // Oracle 특정 오류 처리 (예시, 실제로는 errorHandler 유틸리티 사용 권장)
+    if (err.errorNum && err.errorNum === 2291) { // ORA-02291: integrity constraint violated - parent key not found
+        logError(err, `sendMessageController - 무결성 제약 조건 위반 (세션 ID: ${sessionId})`);
+        return res.status(400).json(createErrorResponse('INVALID_SESSION_ID', '유효하지 않은 세션 ID입니다.'));
+    }
+    logError(err, `sendMessageController (세션 ID: ${sessionId})`); // errorHandler.js의 logError 사용
+    // 기본 오류 응답은 errorHandler 유틸리티를 사용하는 것이 좋습니다.
+    res.status(getHttpStatusByErrorCode(err.code || 'UNKNOWN_ERROR')).json(createErrorResponse(err.code || 'SEND_MESSAGE_FAILED', `메시지 전송 중 예측하지 못한 오류 발생: ${err.message}`));
   }
 }
 
@@ -323,7 +345,7 @@ async function uploadFile(req, res) {
 
     // 업로드된 파일 정보와 메시지 ID 반환
     res.status(201).json({ 
-      message: '파일이 성공적으로 업로드되었습니다.', 
+      message: '파일이 성공적으로 업로드되었습니다.',
       messageId: messageId,
       fileInfo: {
         originalname: file.originalname,
@@ -354,7 +376,27 @@ async function uploadFile(req, res) {
       } catch (err) {
         console.error('Error closing connection in uploadFile:', err);
       }
-    }
+    }  }
+}
+
+// 세션의 메시지 목록 조회 컨트롤러
+async function getSessionMessagesController(req, res) {
+  const sessionId = req.params.session_id;
+  
+  if (!sessionId) {
+    console.error('Error in getSessionMessagesController: Session ID is required.');
+    return res.status(400).json({ error: '세션 ID가 필요합니다.' });
+  }
+  
+  try {
+    // 세션에 속한 메시지 조회
+    const messages = await getSessionMessagesForClient(sessionId);
+    
+    // 세션이 없거나 메시지가 없어도 빈 배열 반환 (404가 아님)
+    res.status(200).json(messages);
+  } catch (err) {
+    console.error(`Error in getSessionMessagesController for session ${sessionId}:`, err);
+    res.status(500).json({ error: `메시지 목록 조회 중 오류 발생: ${err.message}` });
   }
 }
 
@@ -365,5 +407,6 @@ module.exports = {
   deleteMessageController,
   removeReactionController, // 추가
   handleChatMessage, // 예시 함수 export
-  uploadFile
+  uploadFile,
+  getSessionMessagesController // 추가
 };

@@ -59,17 +59,58 @@ const deleteMessageButton = document.getElementById('delete-message-button');
 const uploadFileButton = document.getElementById('upload-file-button');
 
 // --- Chat Functions ---
-// 페이지 로드 시 새 세션 생성 또는 기존 세션 ID 사용 로직 (간단하게 구현)
+// 페이지 로드 시 새 세션 생성 또는 기존 세션 ID 사용 로직
 async function initializeSession() {
     try {
-        // GUEST_USER_ID를 사용하여 세션 생성 (테스트용)
+        // 로컬 스토리지에서 세션 ID 확인
+        const savedSessionId = localStorage.getItem('currentTestSessionId');
+        const forceNewSession = localStorage.getItem('forceNewTestSession') === 'true';
+        
+        // 강제로 새 세션을 만들어야 하는 경우 저장된 세션 ID를 무시
+        if (forceNewSession) {
+            localStorage.removeItem('currentTestSessionId');
+            localStorage.removeItem('forceNewTestSession');
+            console.log('새 세션 생성 요청이 있습니다. 저장된 세션 무시.');
+        } else if (savedSessionId) {
+            // 저장된 세션이 있으면 재사용 시도
+            try {
+                // 세션이 유효한지 확인 (세션 정보 조회)
+                const checkResponse = await fetch(`/api/chat/sessions/${savedSessionId}/messages`);
+                
+                if (checkResponse.ok) {
+                    currentSessionId = savedSessionId;
+                    console.log('기존 테스트 세션 사용:', currentSessionId);
+                    addMessage('시스템', `저장된 테스트 세션 사용 중 (ID: ${currentSessionId})`, null, 'system-message');
+                    
+                    // 세션 ID 자동 입력
+                    if (sessionIdInput) {
+                        sessionIdInput.value = currentSessionId;
+                    }
+                    if (uploadFileSessionIdInput) {
+                        uploadFileSessionIdInput.value = currentSessionId;
+                    }
+                    return; // 세션 재사용 성공, 함수 종료
+                } else {
+                    console.warn('저장된 세션이 유효하지 않습니다. 새 세션을 생성합니다.');
+                    localStorage.removeItem('currentTestSessionId'); // 유효하지 않은 세션 ID 제거
+                }
+            } catch (error) {
+                console.warn('세션 유효성 검사 실패:', error);
+                localStorage.removeItem('currentTestSessionId'); // 오류 발생 시 세션 ID 제거
+            }
+        }
+        
+        // 새 세션 생성
         const response = await fetch('/api/chat/sessions', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
             // userId를 GUEST_USER_ID로 설정
-            body: JSON.stringify({ userId: GUEST_USER_ID, title: 'Test Session' })
+            body: JSON.stringify({ 
+                userId: GUEST_USER_ID, 
+                title: `Test Session ${new Date().toISOString().slice(0, 16).replace('T', ' ')}` 
+            })
         });
         if (!response.ok) {
             const errorData = await response.json();
@@ -77,8 +118,12 @@ async function initializeSession() {
         }
         const data = await response.json();
         currentSessionId = data.session_id;
+        
+        // 세션 ID 저장
+        localStorage.setItem('currentTestSessionId', currentSessionId);
+        
         console.log('새 테스트 세션 생성됨:', currentSessionId);
-        addMessage('시스템', `테스트 세션 시작 (ID: ${currentSessionId})`);
+        addMessage('시스템', `새로운 테스트 세션 시작 (ID: ${currentSessionId})`, null, 'system-message');
         
         // 세션 ID 자동 입력
         if (sessionIdInput) {
@@ -89,13 +134,21 @@ async function initializeSession() {
         }
     } catch (error) {
         console.error('세션 초기화 오류:', error);
-        addMessage('시스템', '세션 초기화 중 오류가 발생했습니다: ' + error.message);
+        addMessage('시스템', '세션 초기화 중 오류가 발생했습니다: ' + error.message, null, 'system-message');
     }
 }
 
-function addMessage(sender, text, messageId = null) {
+function addMessage(sender, text, messageId = null, className = null) {
     const messageElement = document.createElement('div');
     messageElement.classList.add('message');
+    
+    if (className) {
+        messageElement.classList.add(className);
+    } else if (sender === 'user') {
+        messageElement.classList.add('user-message');
+    } else if (sender === 'ai') {
+        messageElement.classList.add('ai-message');
+    }
     
     if (messageId) {
         messageElement.dataset.messageId = messageId;
@@ -109,10 +162,8 @@ function addMessage(sender, text, messageId = null) {
     contentSpan.classList.add('message-content');
     
     if (sender === 'user') {
-        messageElement.classList.add('user-message');
         contentSpan.textContent = `나: ${text}`;
     } else if (sender === 'ai') {
-        messageElement.classList.add('ai-message');
         contentSpan.textContent = `AI: ${text}`;
     } else { // 시스템 메시지 등
          contentSpan.textContent = `[${sender}] ${text}`;
@@ -123,6 +174,7 @@ function addMessage(sender, text, messageId = null) {
     chatBox.scrollTop = chatBox.scrollHeight; // 맨 아래로 스크롤
 }
 
+let isMessageSending = false;
 async function sendMessage() {
     const messageText = messageInput.value.trim();
     if (!messageText) return;
@@ -130,11 +182,18 @@ async function sendMessage() {
         addMessage('시스템', '세션이 아직 준비되지 않았습니다. 잠시 후 다시 시도해주세요.');
         return;
     }
-
+    if (isMessageSending) {
+        console.log('메시지 전송 중입니다. 잠시 기다려주세요.');
+        return;
+    }
+    isMessageSending = true;
     // 사용자 메시지를 먼저 표시 (ID 없이)
     addMessage('user', messageText);
-    messageInput.value = ''; // 입력 필드 초기화
-
+    messageInput.value = '';
+    if (sendButton) {
+        sendButton.disabled = true;
+        sendButton.textContent = '전송 중...';
+    }
     try {
         const response = await fetch(`/api/chat/sessions/${currentSessionId}/messages`, {
             method: 'POST',
@@ -143,25 +202,25 @@ async function sendMessage() {
             },
             body: JSON.stringify({
                 message: messageText,
-                // user_id: GUEST_USER_ID // sendMessageController에서 처리하도록 수정
             }),
         });
-
         if (!response.ok) {
             const errorData = await response.json();
             throw new Error(`메시지 전송 실패: ${errorData.error || response.statusText || '알 수 없는 서버 오류'}`);
         }
-
         const data = await response.json();
-        
-        // API 응답 패널에도 표시
         displayApiResponse(data);
-        
-        if (data && data.message) {
-            // AI 응답 표시 (AI 메시지 ID와 함께)
-            addMessage('ai', data.message, data.ai_message_id);
-            
-            // 이전에 추가된 사용자 메시지 ID 업데이트
+        // 새로고침 시점에 메시지 목록을 강제로 불러와 UI 동기화
+        if (data && data.content) {
+            // AI 응답이 너무 길면 앞부분만 표시하고 전체는 API 응답 패널에서 확인하도록 안내
+            let aiText = data.content;
+            const MAX_AI_DISPLAY_LENGTH = 1200;
+            if (typeof aiText === 'string' && aiText.length > MAX_AI_DISPLAY_LENGTH) {
+                addMessage('ai', aiText.slice(0, MAX_AI_DISPLAY_LENGTH) + '\n...(이하 생략, 전체는 API 응답에서 확인)', data.ai_message_id);
+            } else {
+                addMessage('ai', aiText, data.ai_message_id);
+            }
+            // 사용자 메시지 ID 표시
             const userMessages = chatBox.querySelectorAll('.user-message');
             if (userMessages.length > 0) {
                 const lastUserMessage = userMessages[userMessages.length - 1];
@@ -173,22 +232,29 @@ async function sendMessage() {
                     lastUserMessage.insertBefore(idSpan, lastUserMessage.firstChild);
                 }
             }
-            
-            // 메시지 ID 폼에 자동 입력
             if (messageIdInput) {
                 messageIdInput.value = data.ai_message_id;
             }
             if (reactionMessageIdInput) {
                 reactionMessageIdInput.value = data.ai_message_id;
             }
+            // 메시지 새로고침 강제 동기화
+            if (currentSessionId) {
+                await refreshSessionMessages(currentSessionId);
+            }
         } else {
             addMessage('시스템', 'AI로부터 유효한 응답 메시지를 받지 못했습니다.');
             console.warn('서버로부터 받은 응답 데이터:', data);
         }
-
     } catch (error) {
         console.error('메시지 전송/응답 처리 오류:', error);
         addMessage('시스템', `오류 발생: ${error.message}`);
+    } finally {
+        isMessageSending = false;
+        if (sendButton) {
+            sendButton.disabled = false;
+            sendButton.textContent = '전송';
+        }
     }
 }
 
@@ -427,17 +493,19 @@ async function deleteChatSession() {
     if (!sessionId) {
         displayApiResponse({ error: '세션 ID를 입력하세요.' });
         return;
-    }
-    if (!confirm(`정말로 세션 ID '${sessionId}'를 삭제하시겠습니까? 모든 관련 메시지가 삭제됩니다.`)) {
+    }    if (!confirm(`정말로 세션 ID '${sessionId}'를 삭제하시겠습니까?`)) {
         return;
     }
     try {
         const response = await fetch(`/api/chat/sessions/${sessionId}`, { method: 'DELETE' });
         const data = await response.json();
         displayApiResponse(data);
-        if (response.ok) {
-            console.log(`세션 ${sessionId} 삭제됨.`);
-            if (sessionIdInput.value === sessionId) sessionIdInput.value = '';
+        
+        // 현재 사용 중인 세션이 삭제되면 로컬 스토리지에서도 제거
+        if (sessionId === currentSessionId) {
+            localStorage.removeItem('currentTestSessionId');
+            currentSessionId = null;
+            addMessage('시스템', '현재 세션이 삭제되었습니다. 페이지를 새로고침하여 새 세션을 생성하세요.');
         }
     } catch (error) {
         displayApiResponse({ error: error.message });
@@ -672,13 +740,26 @@ async function refreshSessionMessages(sessionId) {
         const messagesContainer = document.getElementById('chat-box');
         if (messagesContainer) {
             messagesContainer.innerHTML = '';
+            addMessage('시스템', `세션 ID: ${sessionId}의 메시지`, null, 'system-message');
         }
         
         // 메시지 추가
         if (data && Array.isArray(data)) {
+            if (data.length === 0) {
+                addMessage('시스템', '이 세션에는 아직 메시지가 없습니다.', null, 'system-message');
+                return;
+            }
+            
             data.forEach(msg => {
+                if (!msg.MESSAGE_CONTENT) {
+                    console.warn('메시지 내용이 없는 메시지 발견:', msg);
+                    return; // 메시지 내용이 없는 경우 건너뜀
+                }
+                
                 const sender = msg.MESSAGE_TYPE === 'user' ? 'user' : 'ai';
-                addMessage(sender, msg.MESSAGE_CONTENT, msg.MESSAGE_ID);
+                const content = typeof msg.MESSAGE_CONTENT === 'string' ? msg.MESSAGE_CONTENT : '(내용 없음)';
+                
+                addMessage(sender, content, msg.MESSAGE_ID);
                 
                 // 리액션이 있으면 추가
                 if (msg.REACTION) {
@@ -740,6 +821,38 @@ if (sendButton) {
     messageInput.addEventListener('keypress', function(e) {
         if (e.key === 'Enter') {
             sendMessage();
+        }
+    });
+}
+
+// 세션 관리 버튼 추가
+const resetSessionButton = document.getElementById('reset-session-button');
+const refreshMessagesButton = document.getElementById('refresh-messages-button');
+
+// 세션 초기화 버튼
+if (resetSessionButton) {
+    resetSessionButton.addEventListener('click', async () => {
+        if (confirm('현재 세션을 초기화하고 새 테스트 세션을 시작하시겠습니까?')) {
+            // 강제 새 세션 플래그 설정
+            localStorage.setItem('forceNewTestSession', 'true');
+            localStorage.removeItem('currentTestSessionId');
+            currentSessionId = null;
+            chatBox.innerHTML = ''; // 채팅 내용 비우기
+            await initializeSession();
+            
+            // API 응답 패널 초기화
+            apiResponse.textContent = '';
+        }
+    });
+}
+
+// 메시지 새로고침 버튼
+if (refreshMessagesButton) {
+    refreshMessagesButton.addEventListener('click', () => {
+        if (currentSessionId) {
+            refreshSessionMessages(currentSessionId);
+        } else {
+            addMessage('시스템', '활성화된 세션이 없습니다.');
         }
     });
 }

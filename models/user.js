@@ -9,9 +9,7 @@ async function registerUser(username, email, password) {
 
     // 비밀번호 해싱
     const saltRounds = 10;
-    const passwordHash = await bcrypt.hash(password, saltRounds);
-
-    // 사용자 생성
+    const passwordHash = await bcrypt.hash(password, saltRounds);    // 사용자 생성
     const result = await connection.execute(
       `INSERT INTO users (username, email, password_hash)
        VALUES (:username, :email, :passwordHash)
@@ -29,18 +27,24 @@ async function registerUser(username, email, password) {
     
     // 사용자 설정 기본값 생성
     await connection.execute(
-      `INSERT INTO user_settings (user_id) VALUES (:userId)`,
+      `INSERT INTO user_settings (user_id, theme, language, font_size, notifications_enabled)
+       VALUES (:userId, 'light', 'ko', 14, 1)`,
       { userId: userId }
-    );    // 사용자 프로필 기본값 생성
-    await connection.execute(
-      `INSERT INTO user_profiles (user_id, theme_preference, bio, badge, level, experience)
-       VALUES (:userId, :theme, :bio, :badge, :level, :experience)`,
-      {
-        userId: userId,
-        theme: 'light',        bio: null,        badge: null,        level: 1, // 기본 레벨
-        experience: 0 // 기본 경험치
-      }
     );
+    
+    // 사용자 프로필이 이미 존재하는지 확인
+    const profileCheck = await connection.execute(
+      `SELECT COUNT(*) FROM user_profiles WHERE user_id = :userId`,
+      { userId: userId }
+    );
+      // 프로필이 없는 경우에만 생성
+    if (profileCheck.rows[0][0] === 0) {
+      await connection.execute(
+        `INSERT INTO user_profiles (user_id, theme_preference, bio, badge, level, experience)
+         VALUES (:userId, 'light', NULL, NULL, 1, 0)`,
+        { userId: userId }
+      );
+    }
     
     await connection.commit(); // 모든 INSERT 작업 후 커밋
 
@@ -74,11 +78,11 @@ async function loginUser(email, password) {
   try {
     connection = await getConnection();
 
-    // 사용자 조회
+    // 사용자 조회 - 테이블 별칭 사용으로 'user' 예약어 충돌 방지
     const result = await connection.execute(
-      `SELECT user_id, username, password_hash, is_active, email 
-       FROM users 
-       WHERE email = :email`,
+      `SELECT u.user_id, u.username, u.password_hash, u.is_active, u.email 
+       FROM users u
+       WHERE u.email = :email`,
       { email: email },
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
@@ -134,9 +138,9 @@ async function getUserSettings(userId) {
     connection = await getConnection();
     
     const result = await connection.execute(
-      `SELECT user_id, theme, language, font_size, notifications_enabled, ai_model_preference, updated_at 
-       FROM user_settings 
-       WHERE user_id = :userId`,
+      `SELECT us.user_id, us.theme, us.language, us.font_size, us.notifications_enabled, us.ai_model_preference, us.updated_at 
+       FROM user_settings us
+       WHERE us.user_id = :userId`,
       { userId: userId },
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
@@ -340,16 +344,16 @@ async function addUserExperience(userId, points) {
   try {
     connection = await getConnection();
     await connection.execute(
-      `UPDATE user_profiles
-       SET experience = experience + :points
-       WHERE user_id = :userId`,
+      `UPDATE user_profiles up
+       SET up.experience = up.experience + :points
+       WHERE up.user_id = :userId`,
       { userId, points },
       { autoCommit: false } // 레벨 업데이트와 함께 트랜잭션 처리
     );
 
     // 현재 경험치 및 레벨 가져오기
     const profileResult = await connection.execute(
-      `SELECT level, experience FROM user_profiles WHERE user_id = :userId`,
+      `SELECT up.level, up.experience FROM user_profiles up WHERE up.user_id = :userId`,
       { userId },
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
@@ -366,13 +370,11 @@ async function addUserExperience(userId, points) {
     while (currentExperience >= experienceForNextLevel) {
       currentLevel += 1;
       currentExperience -= experienceForNextLevel;
-    }
-
-    // 레벨 및 경험치 업데이트
+    }    // 레벨 및 경험치 업데이트
     await connection.execute(
-      `UPDATE user_profiles
-       SET level = :level, experience = :experience
-       WHERE user_id = :userId`,
+      `UPDATE user_profiles up
+       SET up.level = :level, up.experience = :experience
+       WHERE up.user_id = :userId`,
       { userId, level: currentLevel, experience: currentExperience },
       { autoCommit: false }
     );

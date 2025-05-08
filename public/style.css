@@ -22,6 +22,28 @@ body {
     margin-bottom: 30px; /* 테스트 패널과의 간격 */
 }
 
+.chat-controls {
+    display: flex;
+    justify-content: flex-end;
+    padding: 8px;
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+#refresh-messages-button {
+    padding: 5px 10px;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+}
+
+#refresh-messages-button:hover {
+    background-color: #45a049;
+}
+
 #chat-box {
     flex-grow: 1;
     overflow-y: auto;
@@ -122,7 +144,7 @@ body {
 h1 {
     color: #333;
     text-align: center;
-    margin-bottom: 20px;
+    /* margin-bottom: 20px; */
 }
 
 #api-test-container {
@@ -226,33 +248,41 @@ h1 {
     border: 1px solid #eee;
     padding: 15px;
     border-radius: 5px;
-    white-space: pre-wrap; /* 줄바꿈 및 공백 유지 */
-    word-wrap: break-word; /* 긴 내용 자동 줄바꿈 */
-    max-height: 400px; /* 최대 높이 제한 */
-    overflow-y: auto; /* 내용 많으면 스크롤 */
-    font-family: "Courier New", Courier, monospace; /* 고정폭 글꼴 */
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    max-height: 400px;
+    overflow-y: auto;
+    font-family: "Courier New", Courier, monospace;
     font-size: 0.9em;
 }
 
-/* 헤더 및 푸터 스타일 */
 .header {
-    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: left;
     margin-bottom: 20px;
     color: #333;
 }
 
-.header h1 {
+.header img.logo {
+    margin-right: 15px;
+}
+
+.header-text-content h1 {
+    margin-top: 0;
     margin-bottom: 5px;
     color: #007bff;
 }
 
-.header p {
+.header-text-content p {
     margin-top: 0;
+    margin-bottom: 0;
     color: #6c757d;
-    margin-bottom: 15px;
 }
 
 .test-button {
+    margin-left: 10px;
     display: inline-block;
     background-color: #17a2b8;
     color: white;

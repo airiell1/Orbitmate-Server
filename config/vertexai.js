@@ -31,7 +31,7 @@ const generativeModel = vertex_ai.getGenerativeModel({
 });
 
 // Vertex AI에 요청 보내고 응답 받는 함수
-async function getAiResponse(prompt, history = []) {
+async function getAiResponse(prompt, history = []) { // sessionId 파라미터 제거
     const contents = [...history, { role: 'user', parts: [{ text: prompt }] }];
 
     const request = {
@@ -41,8 +41,6 @@ async function getAiResponse(prompt, history = []) {
     console.log('Vertex AI 요청 내용:', JSON.stringify(request, null, 2));
 
     try {
-        // generateContent 호출 시 safetySettings를 모델 초기화 때 설정했으므로 여기서 또 넘길 필요는 없어.
-        // 만약 호출 시마다 다르게 하고 싶다면 request 객체 안에 safetySettings를 포함시키면 돼.
         const resp = await generativeModel.generateContent(request);
 
         if (resp && resp.response && resp.response.candidates && resp.response.candidates.length > 0
@@ -64,7 +62,7 @@ async function getAiResponse(prompt, history = []) {
     } catch (error) {
         console.error('Vertex AI 호출 중 오류 발생:', error);
         throw error;
-    }
+    } 
 }
 
 module.exports = {

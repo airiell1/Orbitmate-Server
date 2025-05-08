@@ -1,3 +1,7 @@
+-- 통합 SQL 스크립트 (sqldb.sql, db_schema_update.sql, db_fixes.sql 병합)
+-- 실행 순서를 고려하여 구성됨
+
+-- 기존 테이블 및 인덱스 삭제
 DROP INDEX idx_attachment_message;
 DROP INDEX idx_chat_parent;
 DROP INDEX idx_chat_user;
@@ -13,6 +17,7 @@ DROP TABLE chat_messages;
 DROP TABLE chat_sessions;
 DROP TABLE users CASCADE CONSTRAINTS;
 
+-- 테이블 생성
 CREATE TABLE users (
   user_id VARCHAR2(36) DEFAULT SYS_GUID() PRIMARY KEY,
   username VARCHAR2(100) NOT NULL,
@@ -35,12 +40,13 @@ CREATE TABLE chat_sessions (
   FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE -- 사용자가 삭제되면 세션도 삭제 (또는 SET NULL)
 );
 
+-- chat_messages 테이블을 VARCHAR2(4000) 메시지 타입으로 생성 (CLOB 대신)
 CREATE TABLE chat_messages (
   message_id VARCHAR2(36) DEFAULT SYS_GUID() PRIMARY KEY,
   session_id VARCHAR2(36) NOT NULL,
   user_id VARCHAR2(36), -- AI 메시지 등을 위해 NOT NULL 제약조건 제거 또는 'ai-system' 같은 특별한 ID 사용
   message_type VARCHAR2(10) NOT NULL,
-  message_content CLOB NOT NULL,
+  message_content CLOB NOT NULL, -- 긴 메시지 지원을 위해 CLOB 사용
   created_at TIMESTAMP DEFAULT SYSTIMESTAMP,
   reaction VARCHAR2(50),
   is_edited NUMBER(1) DEFAULT 0,
@@ -73,6 +79,19 @@ CREATE TABLE attachments (
   FOREIGN KEY (message_id) REFERENCES chat_messages(message_id) ON DELETE CASCADE
 );
 
+-- 사용자 프로필 테이블 추가
+CREATE TABLE user_profiles (
+  user_id VARCHAR2(36) NOT NULL PRIMARY KEY,
+  theme_preference VARCHAR2(50) DEFAULT 'light',
+  bio CLOB,
+  badge VARCHAR2(100),
+  experience NUMBER DEFAULT 0,
+  "level" NUMBER DEFAULT 1,
+  updated_at TIMESTAMP DEFAULT SYSTIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+);
+
+-- 인덱스 생성
 CREATE INDEX idx_chat_session ON chat_messages(session_id);
 CREATE INDEX idx_chat_user ON chat_messages(user_id);
 CREATE INDEX idx_chat_parent ON chat_messages(parent_message_id);
@@ -80,23 +99,11 @@ CREATE INDEX idx_attachment_message ON attachments(message_id);
 CREATE INDEX idx_chat_msg_session_created ON chat_messages (session_id, created_at);
 CREATE INDEX idx_chat_sessions_user ON chat_sessions (user_id);
 
+-- 제약 조건 추가
 ALTER TABLE chat_messages DROP CONSTRAINT chk_message_type;
 ALTER TABLE chat_messages ADD CONSTRAINT chk_message_type CHECK (message_type IN ('user', 'ai', 'system', 'file'));
-ALTER TABLE user_profiles RENAME COLUMN theme TO theme_preference;
-ALTER TABLE user_profiles ADD updated_at TIMESTAMP DEFAULT SYSTIMESTAMP;
 
--- 사용자 프로필 테이블 추가
-CREATE TABLE user_profiles (
-  user_id VARCHAR2(36) NOT NULL PRIMARY KEY,
-  theme_preference VARCHAR2(50) DEFAULT 'light',
-  bio CLOB,
-  badge VARCHAR2(100),
-  experience NUMBER DEFAULT 0, -- 경험치 컬럼 추가
-  level NUMBER DEFAULT 1,      -- 레벨 컬럼 추가
-  updated_at TIMESTAMP DEFAULT SYSTIMESTAMP, -- 업데이트 시간 컬럼 추가
-  FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
-);
-
+-- 초기 사용자 데이터 추가
 -- 게스트 사용자 추가
 INSERT INTO users (user_id, username, email, password_hash, is_active)
 VALUES ('guest', 'Guest User', 'guest@example.com', 'no_password_needed', 1);
@@ -112,5 +119,21 @@ VALUES ('test-user-frontend', 'Test Frontend User', 'testfrontend@example.com', 
 
 INSERT INTO users (user_id, username, email, password_hash, is_active)
 VALUES ('test-guest', 'Test Guest User', 'testguest@example.com', 'dummy_password_hash', 1);
+
+-- Oracle 예약어 관련 주의사항
+-- 'USER'는 Oracle의 예약어이므로 테이블 또는 컬럼 이름으로 직접 사용할 수 없습니다.
+-- 쿼리 작성 시 다음과 같은 방식으로 사용하세요:
+
+-- 1. 테이블 이름에 쌍따옴표 추가하거나 별칭 사용
+-- 좋은 예:
+-- SELECT * FROM users WHERE user_id = :userId;
+-- SELECT u.* FROM users u WHERE u.user_id = :userId;
+
+-- 2. 조인에서 예약어 처리
+-- 좋은 예:
+-- SELECT u.username, s.theme
+-- FROM users u
+-- JOIN user_settings s ON u.user_id = s.user_id
+-- WHERE u.user_id = :userId;
 
 COMMIT;
