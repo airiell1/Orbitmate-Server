@@ -1,7 +1,8 @@
 const { createChatSession, getUserChatSessions, updateChatSession, getSessionMessages, deleteChatSession } = require('../models/session');
 
 // 새 채팅 세션 생성 컨트롤러
-async function createSessionController(req, res) {
+async function createSessionController(req, res) { // todo: 인자 3개로 수정하기
+  
   const { userId, title, category } = req.body;
   
   if (!userId || typeof userId !== 'string' || userId.trim() === '') {

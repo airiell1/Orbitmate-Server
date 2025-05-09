@@ -4,6 +4,8 @@ const { generateToken } = require('../middleware/auth');
 const { registerUser, loginUser, getUserSettings, updateUserSettings, updateUserProfileImage, deleteUser, getUserProfile, updateUserProfile } = require('../models/user');
 const fs = require('fs');
 const path = require('path');
+const userModel = require('../models/user');
+const { standardizeApiResponse } = require('../utils/apiResponse');
 
 // 사용자 등록 컨트롤러
 async function registerUserController(req, res) {
@@ -15,13 +17,30 @@ async function registerUserController(req, res) {
 
   try {
     const user = await registerUser(username, email, password);
+    if (user && user.already_registered) {
+      // 이미 가입된 사용자 정보 반환 (201 Created 아님)
+      return res.status(200).json({
+        message: '이미 가입된 이메일입니다.',
+        user_id: user.user_id,
+        username: user.username,
+        email: user.email,
+        already_registered: true
+      });
+    }
     res.status(201).json(user);
   } catch (err) {
-    if (err.message === '이미 등록된 이메일입니다.') {
-      return res.status(409).json({ error: err.message });
+    // 공통 에러 핸들러 사용 (utils/errorHandler)
+    const { createErrorResponse, handleOracleError, logError } = require('../utils/errorHandler');
+    logError('registerUserController', err);
+    // 이메일 중복 등 고유 제약 위반
+    if (err.message === '이미 등록된 이메일입니다.' || err.errorNum === 1 || (err.code && err.code === 'ORA-00001')) {
+      return res.status(409).json(createErrorResponse('UNIQUE_CONSTRAINT_VIOLATED', '이미 등록된 이메일입니다.'));
     }
-    console.error('사용자 등록 컨트롤러 오류:', err);
-    res.status(500).json({ error: `사용자 등록 중 오류 발생: ${err.message}` });
+    // 기타 DB 오류
+    if (err.errorNum) {
+      return res.status(500).json(handleOracleError(err));
+    }
+    res.status(500).json(createErrorResponse('SERVER_ERROR', `사용자 등록 중 오류 발생: ${err.message}`));
   }
 }
 
@@ -65,24 +84,15 @@ async function loginUserController(req, res) {
 
 // 사용자 설정 조회 컨트롤러
 async function getUserSettingsController(req, res) {
-  const requestedUserId = req.params.user_id;
-  const authenticatedUserId = req.user.userId; // JWT 미들웨어에서 추가된 사용자 ID
-
-  // 인가 확인: 요청된 user_id와 인증된 user_id가 동일한지 확인
-  if (requestedUserId !== authenticatedUserId) {
-    return res.status(403).json({ error: '자신의 설정만 조회할 수 있습니다.' }); // Forbidden
-  }
-
   try {
-    const settings = await getUserSettings(authenticatedUserId);
-    res.json(settings);
+    const userId = req.params.user_id;
+    const settings = await getUserSettings(userId);
+    
+    // 응답 데이터 표준화
+    res.json(standardizeApiResponse(settings));
   } catch (err) {
-    console.error('설정 조회 컨트롤러 오류:', err);
-    // 특정 오류 메시지 처리 (예: 설정 없음)
-    if (err.message.includes('설정을 찾을 수 없습니다')) {
-      return res.status(404).json({ error: err.message });
-    }
-    res.status(500).json({ error: `설정 조회 중 오류 발생: ${err.message}` });
+    console.error('사용자 설정 조회 실패:', err);
+    res.status(500).json({ error: err.message });
   }
 }
 
@@ -104,7 +114,7 @@ async function updateUserSettingsController(req, res) {
 
   try {
     const updatedSettings = await updateUserSettings(authenticatedUserId, settings);
-    res.json(updatedSettings);
+    res.status(200).json(updatedSettings);
   } catch (err) {
     console.error('설정 업데이트 컨트롤러 오류:', err);
     res.status(500).json({ error: `설정 업데이트 중 오류 발생: ${err.message}` });
@@ -129,7 +139,7 @@ async function uploadProfileImageController(req, res) {
     await updateUserProfileImage(userId, profileImagePath);
     res.json({ 
       message: '프로필 이미지가 성공적으로 업데이트되었습니다.', 
-      userId: userId,
+      user_id: userId,
       profile_image_path: profileImagePath 
     });
   } catch (err) {
@@ -152,7 +162,7 @@ async function deleteUserController(req, res) {
 
   try {
     await deleteUser(userId);
-    res.status(200).json({ message: '사용자 계정이 성공적으로 삭제되었습니다.', userId: userId });
+    res.status(200).json({ message: '사용자 계정이 성공적으로 삭제되었습니다.', user_id: userId });
   } catch (err) {
     console.error('회원 탈퇴 처리 실패:', err);
     res.status(500).json({ error: `회원 탈퇴 처리 중 오류 발생: ${err.message}` });
@@ -165,15 +175,21 @@ async function getUserProfileController(req, res) {
   // 인증/인가 로직은 현재 최소화되어 있습니다.
 
   try {
-    const profile = await getUserProfile(userId);
-    if (!profile) {
+    const userProfile = await userModel.getUserProfile(userId);
+    if (!userProfile) {
       // 사용자는 존재하지만 프로필이 없는 경우 (정상적인 상황은 아님, registerUser에서 생성)
       // 또는 초기 데이터 마이그레이션 등으로 프로필이 없을 수 있음.
       // 이 경우, 빈 프로필 객체 또는 404를 반환할 수 있습니다.
       // README.AI 지침에 따라 인증/보안을 최소화하므로, 여기서는 404를 반환합니다.
       return res.status(404).json({ error: '사용자 프로필을 찾을 수 없습니다.' });
     }
-    res.json(profile);
+    // CLOB(BIO 등) → 문자열 변환 (casing도 일관성)
+    const { clobToString } = require('../models/chat');
+    const profileObj = { ...userProfile };
+    if (profileObj.BIO && typeof profileObj.BIO === 'object') {
+      profileObj.BIO = await clobToString(profileObj.BIO);
+    }
+    res.json(profileObj);
   } catch (err) {
     console.error('프로필 조회 컨트롤러 오류:', err);
     res.status(500).json({ error: `프로필 조회 중 오류 발생: ${err.message}` });
@@ -193,7 +209,13 @@ async function updateUserProfileController(req, res) {
 
   try {
     const updatedProfile = await updateUserProfile(userId, profileData);
-    res.json(updatedProfile);
+    // CLOB(BIO 등) → 문자열 변환 (casing도 일관성)
+    const { clobToString } = require('../models/chat');
+    const profileObj = { ...updatedProfile };
+    if (profileObj.BIO && typeof profileObj.BIO === 'object') {
+      profileObj.BIO = await clobToString(profileObj.BIO);
+    }
+    res.json(profileObj);
   } catch (err) {
     console.error('프로필 업데이트 컨트롤러 오류:', err);
     if (err.message.includes('프로필을 찾을 수 없거나 업데이트할 내용이 없습니다')) {

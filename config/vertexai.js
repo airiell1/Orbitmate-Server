@@ -19,7 +19,7 @@ const generativeModel = vertex_ai.getGenerativeModel({
     generationConfig: {
       temperature: 0.8,
       topP: 0.95,
-      maxOutputTokens: 2048,
+      maxOutputTokens: 65535, // 최대 출력 토큰 수 (최대값 65535)
     },
     safetySettings: [
       { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, // 증오 발언 관련
@@ -30,39 +30,99 @@ const generativeModel = vertex_ai.getGenerativeModel({
     ],
 });
 
-// Vertex AI에 요청 보내고 응답 받는 함수
-async function getAiResponse(prompt, history = []) { // sessionId 파라미터 제거
-    const contents = [...history, { role: 'user', parts: [{ text: prompt }] }];
+// AI 응답을 가져오는 함수
+async function getAiResponse(currentUserMessage, history = [], systemMessageText = null, specialModeType = null, streamResponseCallback = null) { // 새 시그니처 + specialModeType + streamResponseCallback
+    let conversationContents = [];
+    let finalSystemMessageText = systemMessageText; // systemMessageText가 prompt와 systemPrompt를 통합한 값으로 간주
+
+    if (specialModeType === 'canvas') {
+        // 캔버스 모드일 때 시스템 프롬프트 강화
+        finalSystemMessageText = (finalSystemMessageText ? finalSystemMessageText + "\n\n" : "") +
+            "중요: 당신은 HTML, CSS, JavaScript 코드를 생성하는 AI입니다. " +
+            "사용자의 요청에 따라 웹 페이지의 구조(HTML)와 스타일(CSS)을 제공해야 합니다. " +
+            "각 코드는 반드시 마크다운 코드 블록(예: ```html ... ```, ```css ... ```)으로 감싸서 제공해주세요. " +
+            "HTML에는 기본적인 구조를 포함하고, CSS는 해당 HTML을 스타일링하는 내용을 포함해야 합니다. " +
+            "JavaScript가 필요하다면 그것도 코드 블록으로 제공해주세요. " +
+            "만약 사용자가 '캔버스에 그림 그려줘' 같이 모호하게 요청하면, 구체적으로 어떤 그림인지 되묻거나 간단한 예시를 제시할 수 있습니다. " +
+            "생성된 코드는 바로 웹페이지에 적용될 수 있도록 완전한 형태로 제공하는 것을 목표로 합니다.";
+        console.log("캔버스 모드 활성화. 강화된 시스템 프롬프트 적용.");
+    } else if (specialModeType === 'search') {
+        // 검색 모드 관련 프롬프트 (실제 검색 기능은 별도 구현 필요)
+        const searchPrompt = "Please answer based on web search results if necessary. Provide concise answers with relevant information found.";
+        finalSystemMessageText = finalSystemMessageText ? `${finalSystemMessageText}\n${searchPrompt}` : searchPrompt;
+    } else if (specialModeType === 'stream') {
+        // 스트림 모드 관련 프롬프트 (실제 스트리밍 로직은 별도 구현 필요)
+        console.log("Stream mode activated. System prompt will be used as is. Specific stream-related prompt adjustments can be added here if needed.");
+        // 예: const streamPrompt = "Provide your response in a continuous stream.";
+        // finalSystemMessageText = finalSystemMessageText ? `${finalSystemMessageText}\n${streamPrompt}` : streamPrompt;
+    }
+
+
+    // 1. 시스템 메시지 (선택 사항, systemInstruction으로 전달)
+    const systemInstruction = (finalSystemMessageText && typeof finalSystemMessageText === 'string' && finalSystemMessageText.trim() !== '')
+        ? { parts: [{ text: finalSystemMessageText }] }
+        : null;
+
+    if (systemInstruction) {
+        console.log("적용된 시스템 지침:", JSON.stringify(systemInstruction, null, 2));
+    }
+    
+    // 2. 이전 대화 내역 (history는 {role, parts} 객체의 배열이어야 함)
+    conversationContents = [...history];
+
+    // 3. 현재 사용자 입력 중복 방지
+    const lastMsg = conversationContents[conversationContents.length - 1];
+    if (
+        !lastMsg ||
+        lastMsg.role !== 'user' ||
+        !lastMsg.parts ||
+        !lastMsg.parts[0] ||
+        lastMsg.parts[0].text !== currentUserMessage
+    ) {
+        conversationContents.push({ role: 'user', parts: [{ text: currentUserMessage }] });
+    }
 
     const request = {
-        contents: contents,
+        contents: conversationContents,
+        ...(systemInstruction && { system: systemInstruction }),
     };
 
-    console.log('Vertex AI 요청 내용:', JSON.stringify(request, null, 2));
+    console.log('Vertex AI 요청 내용 (systemInstruction 방식):', JSON.stringify(request, null, 2));
 
     try {
-        const resp = await generativeModel.generateContent(request);
-
-        if (resp && resp.response && resp.response.candidates && resp.response.candidates.length > 0
-            && resp.response.candidates[0].content && resp.response.candidates[0].content.parts && resp.response.candidates[0].content.parts.length > 0)
-        {
-            const aiText = resp.response.candidates[0].content.parts[0].text;
-            console.log('Vertex AI 응답:', aiText);
-            return aiText;
-        } else {
-            console.error('Vertex AI로부터 유효한 응답을 받지 못했습니다.', resp.response);
-            // promptFeedback을 확인하여 차단 여부 및 사유 확인
-            if (resp && resp.response && resp.response.promptFeedback && resp.response.promptFeedback.blockReason) {
-                console.error('차단 사유:', resp.response.promptFeedback.blockReason);
-                console.error('차단 관련 안전 등급:', resp.response.promptFeedback.safetyRatings);
-                throw new Error(`콘텐츠 생성 요청이 안전 설정에 의해 차단되었습니다. 사유: ${resp.response.promptFeedback.blockReason}`);
+        if (specialModeType === 'stream' && typeof streamResponseCallback === 'function') {
+            const streamResult = await generativeModel.generateContentStream(request);
+            for await (const item of streamResult.stream) {
+                if (item.candidates && item.candidates[0].content && item.candidates[0].content.parts) {
+                    const chunkText = item.candidates[0].content.parts.map(part => part.text).join("");
+                    streamResponseCallback(chunkText);
+                }
             }
-            throw new Error('Vertex AI로부터 유효한 응답을 받지 못했습니다 (응답 구조 확인 필요).');
+            return null; // 스트리밍의 경우 전체 응답을 반환하지 않음
+        } else {
+            const result = await generativeModel.generateContent(request);
+            if (result && result.response && result.response.candidates && result.response.candidates.length > 0 &&
+                result.response.candidates[0].content && result.response.candidates[0].content.parts &&
+                result.response.candidates[0].content.parts.length > 0) {
+                const aiResponseText = result.response.candidates[0].content.parts.map(part => part.text).join("");
+                console.log('Vertex AI 응답 (일반):', aiResponseText);
+                return { content: aiResponseText };
+            } else {
+                console.error('Vertex AI로부터 유효한 응답을 받지 못했습니다. 응답 구조:', JSON.stringify(result, null, 2));
+                return 'AI로부터 유효한 응답을 받지 못했습니다.';
+            }
         }
     } catch (error) {
-        console.error('Vertex AI 호출 중 오류 발생:', error);
-        throw error;
-    } 
+        console.error('Vertex AI 요청 중 오류 발생:', error);
+        if (error.response && error.response.data) {
+            console.error('오류 응답 데이터:', error.response.data);
+        }
+        // 스트리밍 콜백이 있다면 오류도 전달할 수 있도록 처리
+        if (specialModeType === 'stream' && typeof streamResponseCallback === 'function') {
+            streamResponseCallback(null, error); // 오류 객체를 콜백으로 전달
+        }
+        throw new Error(`Vertex AI API 호출 실패: ${error.message}`);
+    }
 }
 
 module.exports = {

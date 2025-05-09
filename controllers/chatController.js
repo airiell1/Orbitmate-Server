@@ -4,71 +4,144 @@ const { getConnection, oracledb } = require('../config/database');
 const chatModel = require('../models/chat');
 const path = require('path');
 const fs = require('fs');
+
 // 오류 처리 유틸리티 추가
 const { createErrorResponse, getHttpStatusByErrorCode, handleOracleError, logError } = require('../utils/errorHandler');
 
 // 채팅 메시지 전송 및 AI 응답 받기 컨트롤러
 async function sendMessageController(req, res) {
   const sessionId = req.params.session_id;
-  const { message } = req.body; // 클라이언트에서 보낸 메시지
+  const GUEST_USER_ID = 'guest';
+  const { message, systemPrompt, specialModeType } = req.body;
 
   if (!message || typeof message !== 'string' || message.trim() === '') {
-    return res.status(400).json({ error: '메시지 내용은 필수이며 빈 문자열이 아니어야 합니다.' });
+    return res.status(400).json(createErrorResponse('INVALID_INPUT', '메시지를 입력해주세요.'));
   }
-  
-  // let connection; // 각 DB 호출 함수가 자체적으로 관리하므로 여기서는 불필요.
+  const userId = req.user ? req.user.userId : GUEST_USER_ID;
+
+  let connection; // Ensure connection is declared at the function scope
 
   try {
+    connection = await getConnection();
+
     // 1. 사용자 메시지 저장
-    const userMessageId = await saveUserMessageToDB(sessionId, message);
+    const userMessageResult = await saveUserMessageToDB(connection, sessionId, userId, message);
+    if (!userMessageResult || !userMessageResult.user_message_id) {
+      await connection.rollback();
+      return res.status(500).json(createErrorResponse('DB_ERROR', '사용자 메시지 저장에 실패했습니다.'));
+    }
+    const userMessageId = userMessageResult.user_message_id;
 
-    // 2. 이전 대화 기록 가져오기 (Vertex AI에 전달하기 위함)
-    // getChatHistoryFromDB는 Vertex AI가 이해하는 형식으로 반환해야 합니다.
-    let chatHistory = await getChatHistoryFromDB(sessionId); 
+    // 2. 대화 기록 가져오기 (현재 사용자 메시지 포함)
+    let chatHistoryForAI = await getChatHistoryFromDB(connection, sessionId, false);
+
+    // 3. Vertex AI에 요청
+    const effectiveSystemPrompt = systemPrompt && systemPrompt.trim() ? systemPrompt.trim() : null;
     
-    // chatHistory의 마지막 메시지가 현재 사용자의 메시지와 동일하다면 제거 (중복 방지)
-    // chatHistory의 각 요소는 { role: 'user'/'model', parts: [{ text: '...' }] } 형태임
-    if (chatHistory.length > 0) {
-        const lastMessageInHistory = chatHistory[chatHistory.length - 1];
-        if (lastMessageInHistory.role === 'user' && 
-            lastMessageInHistory.parts && 
-            lastMessageInHistory.parts.length > 0 && 
-            lastMessageInHistory.parts[0].text === message) {
-            chatHistory.pop();
-        }
+    const aiResponseFull = await getAiResponse(message, chatHistoryForAI, effectiveSystemPrompt, specialModeType);
+
+    if (!aiResponseFull || typeof aiResponseFull.content !== 'string' || aiResponseFull.content.trim() === '') {
+      await connection.rollback();
+      console.error('Invalid AI response received from Vertex AI:', aiResponseFull);
+      return res.status(500).json(createErrorResponse('AI_RESPONSE_ERROR', 'AI로부터 유효한 응답을 받지 못했습니다. 응답 내용이 비어있거나 형식이 잘못되었습니다.'));
     }
+    const aiContentFromVertex = aiResponseFull.content;
 
-    // 3. Vertex AI로부터 응답 받기
-    // message는 현재 사용자의 메시지, chatHistory는 이 메시지를 제외한 이전 대화 내용이어야 합니다.
-    // getAiResponse 함수가 이 부분을 적절히 처리한다고 가정합니다.
-    const aiResponseText = await getAiResponse(message, chatHistory); // sessionId 파라미터 제거
+    // 4. AI 응답 저장
+    const aiMessageResult = await saveAiMessageToDB(connection, sessionId, GUEST_USER_ID, aiContentFromVertex); // Assuming AI messages are stored with a generic AI user ID
+    if (!aiMessageResult || !aiMessageResult.ai_message_id) {
+      await connection.rollback();
+      return res.status(500).json(createErrorResponse('DB_ERROR', 'AI 메시지 저장에 실패했습니다.'));
+    }
+    const aiMessageId = aiMessageResult.ai_message_id.toString();
+    const aiCreatedAt = aiMessageResult.created_at;
+    const actualAiContentSaved = aiMessageResult.content; // Content confirmed from DB save
 
-    // 4. AI 메시지 저장
-    // saveAiMessageToDB는 이제 { messageId, content, createdAt } 객체를 반환
-    const aiMessageDetails = await saveAiMessageToDB(sessionId, aiResponseText);
+    await connection.commit(); // Commit transaction
 
-    // 5. 클라이언트에 응답 전송 (요청된 새로운 형식)
-    res.status(200).json({
-      user_message_id: userMessageId,
-      ai_message_id: aiMessageDetails.messageId,
-      content: aiMessageDetails.content, // DB에 저장된 AI 메시지 내용
-      created_at: aiMessageDetails.createdAt // DB에 저장된 AI 메시지 생성 시간
-    });
+    // 5. 클라이언트에 응답 전송
+    const responseData = {
+      user_message_id: userMessageId.toString(),
+      ai_message_id: aiMessageId,
+      message: actualAiContentSaved, // AI 응답 내용 (공통 필드로 사용)
+      created_at: aiCreatedAt ? new Date(aiCreatedAt).toISOString() : new Date().toISOString()
+    };
 
+    if (specialModeType === 'stream') {
+      // 스트리밍 응답 처리 (이 부분은 네가 원하는 JSON 형식이 아니니 기존 로직 유지)
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.flushHeaders();
+
+      // ID 전송
+      res.write(`event: ids\\ndata: ${JSON.stringify({ userMessageId: responseData.user_message_id, aiMessageId: responseData.ai_message_id })}\\n\\n`);
+
+      // 메시지 스트리밍
+      const chunkSize = 100; // 청크 크기 설정 (원하는대로 조절)
+      for (let i = 0; i < responseData.message.length; i += chunkSize) {
+        const chunk = responseData.message.substring(i, i + chunkSize);
+        // 각 청크 데이터를 'data:' 접두사와 함께 전송
+        res.write(`data: ${JSON.stringify({ type: 'chunk', content: chunk })}\\n\\n`);
+        // 적절한 지연 시간을 두어 클라이언트에서 부드럽게 보이도록 조정 (원하는대로 조절)
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      // 스트림 종료 이벤트 전송
+      res.write(`event: end\\ndata: ${JSON.stringify({ message: 'Stream ended' })}\\n\\n`);
+
+      // 스트리밍 완료 후 함수 종료
+      return; // 이 요청 처리를 여기서 끝냄
+
+    } else { // 'canvas' 모드 또는 기본 모드 (스트리밍이 아닌 경우)
+      // 'canvas' 모드일 경우 Canvas 데이터 파싱 및 추가
+      if (specialModeType === 'canvas') {
+        const htmlRegex = /```html\n([\s\S]*?)\n```/;
+        const cssRegex = /```css\n([\s\S]*?)\n```/;
+        const jsRegex = /```javascript\n([\s\S]*?)\n```/;
+
+        const htmlMatch = actualAiContentSaved.match(htmlRegex);
+        const cssMatch = actualAiContentSaved.match(cssRegex);
+        const jsMatch = actualAiContentSaved.match(jsRegex);
+  
+        // responseData 객체에 Canvas 데이터 필드 추가
+        responseData.canvas_html = htmlMatch ? htmlMatch[1].trim() : '';
+        responseData.canvas_css = cssMatch ? cssMatch[1].trim() : '';
+        responseData.canvas_js = jsMatch ? jsMatch[1].trim() : '';
+      }
+
+      // 스트리밍이 아닌 경우, 공통 응답 객체 (필요시 canvas 데이터 포함)를 JSON 형태로 전송
+      res.json(responseData);
+    }
   } catch (err) {
-    console.error(`Error in sendMessageController for session ${sessionId}:`, err);
-    // 오류 유형에 따라 다른 HTTP 상태 코드 및 메시지 반환 가능
-    if (err.code === 'SESSION_NOT_FOUND') { // saveUserMessageToDB 등에서 발생 가능
-        return res.status(404).json(createErrorResponse('SESSION_NOT_FOUND', '세션을 찾을 수 없습니다.'));
+    logError(err, req);
+    if (connection) {
+      try {
+        await connection.rollback(); // Rollback on any error if transaction started
+      } catch (rollbackError) {
+        logError(rollbackError, req, 'Rollback failed');
+      }
     }
-    // Oracle 특정 오류 처리 (예시, 실제로는 errorHandler 유틸리티 사용 권장)
-    if (err.errorNum && err.errorNum === 2291) { // ORA-02291: integrity constraint violated - parent key not found
-        logError(err, `sendMessageController - 무결성 제약 조건 위반 (세션 ID: ${sessionId})`);
-        return res.status(400).json(createErrorResponse('INVALID_SESSION_ID', '유효하지 않은 세션 ID입니다.'));
+    // Specific error handling (can be expanded)
+    if (err.code === 'NJS-044' || (err.message && err.message.includes('NJS-044'))) {
+        return res.status(500).json(createErrorResponse('DB_BIND_ERROR', `데이터베이스 바인딩 오류: ${err.message}`));
     }
-    logError(err, `sendMessageController (세션 ID: ${sessionId})`); // errorHandler.js의 logError 사용
-    // 기본 오류 응답은 errorHandler 유틸리티를 사용하는 것이 좋습니다.
-    res.status(getHttpStatusByErrorCode(err.code || 'UNKNOWN_ERROR')).json(createErrorResponse(err.code || 'SEND_MESSAGE_FAILED', `메시지 전송 중 예측하지 못한 오류 발생: ${err.message}`));
+    if (err.message && err.message.startsWith("세션 ID")) { 
+        return res.status(404).json(createErrorResponse('SESSION_NOT_FOUND', err.message));
+    }
+    if (err.errorNum) { // Oracle specific errors
+      const handledError = handleOracleError(err, req);
+      return res.status(getHttpStatusByErrorCode(handledError.code)).json(handledError);
+    }
+    // Generic server error
+    res.status(500).json(createErrorResponse('SERVER_ERROR', `메시지 처리 중 서버 오류가 발생했습니다: ${err.message}`));
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (err) {
+        logError(err, req, 'DB connection close failed');
+      }
+    }
   }
 }
 
@@ -308,7 +381,6 @@ async function uploadFile(req, res) {
   let connection;
   try {
     connection = await getConnection();
-    await connection.beginTransaction(); // 트랜잭션 시작
 
     // 1. chat_messages 테이블에 파일 메시지 저장
     const messageResult = await connection.execute(

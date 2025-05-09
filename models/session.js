@@ -6,22 +6,80 @@ async function createChatSession(userId, title, category) {
   let connection;
   try {
     connection = await getConnection();
-    
-    const result = await connection.execute(
-      `INSERT INTO chat_sessions (user_id, title, category) 
-       VALUES (:userId, :title, :category) 
-       RETURNING session_id INTO :sessionId`,
-      { 
-        userId: userId, 
-        title: title,
-        category: category || null,
-        sessionId: { type: oracledb.STRING, dir: oracledb.BIND_OUT }
-      },
-      { autoCommit: true }
-    );
-    
-    const sessionId = result.outBinds.sessionId[0];
-    
+
+    let sessionId;
+    if (userId === 'API_TEST_USER_ID') {
+      // 기존에 같은 세션ID/메시지ID가 있으면 삭제(덮어쓰기 보장)
+      const testSessionId = 'API_TEST_SESSION_ID';
+      const testUserMsgId = 'API_TEST_USER_MESSAGE_ID';
+      const testAiMsgId = 'API_TEST_AI_MESSAGE_ID';
+      await connection.execute(
+        `DELETE FROM chat_messages WHERE message_id IN (:userMsgId, :aiMsgId) OR session_id = :sessionId`,
+        { userMsgId: testUserMsgId, aiMsgId: testAiMsgId, sessionId: testSessionId },
+        { autoCommit: false }
+      );
+      await connection.execute(
+        `DELETE FROM chat_sessions WHERE session_id = :sessionId OR (user_id = :userId AND title = :title)`,
+        { sessionId: testSessionId, userId, title },
+        { autoCommit: false }
+      );
+      // 새로 삽입 (고정 세션ID)
+      const result = await connection.execute(
+        `INSERT INTO chat_sessions (session_id, user_id, title, category)
+         VALUES (:sessionId, :userId, :title, :category)
+         RETURNING session_id INTO :sessionIdOut`,
+        {
+          sessionId: testSessionId,
+          userId,
+          title,
+          category: category || null,
+          sessionIdOut: { type: oracledb.STRING, dir: oracledb.BIND_OUT }
+        },
+        { autoCommit: false }
+      );
+      sessionId = result.outBinds.sessionIdOut[0];
+
+      // 테스트 메시지 2개 생성 (USER, AI)
+      const now = new Date();
+      await connection.execute(
+        `INSERT INTO chat_messages (message_id, session_id, user_id, message_type, message_content, created_at)
+         VALUES (:msgId, :sessionId, :userId, 'user', :content, :createdAt)`,
+        {
+          msgId: testUserMsgId,
+          sessionId: testSessionId,
+          userId: userId,
+          content: '이것은 테스트 유저 메시지입니다.',
+          createdAt: now
+        }
+      );
+      await connection.execute(
+        `INSERT INTO chat_messages (message_id, session_id, user_id, message_type, message_content, created_at)
+         VALUES (:msgId, :sessionId, :userId, 'ai', :content, :createdAt)`,
+        {
+          msgId: testAiMsgId,
+          sessionId: testSessionId,
+          userId: userId,
+          content: '이것은 테스트 AI 메시지입니다.',
+          createdAt: now
+        }
+      );
+      await connection.commit();
+    } else {
+      const result = await connection.execute(
+        `INSERT INTO chat_sessions (user_id, title, category) 
+         VALUES (:userId, :title, :category) 
+         RETURNING session_id INTO :sessionId`,
+        { 
+          userId: userId, 
+          title: title,
+          category: category || null,
+          sessionId: { type: oracledb.STRING, dir: oracledb.BIND_OUT }
+        },
+        { autoCommit: true }
+      );
+      sessionId = result.outBinds.sessionId[0];
+    }
+
     return { 
       session_id: sessionId,
       title: title,

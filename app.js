@@ -3,13 +3,15 @@ const cors = require('cors');
 const { initOracleClient, initializeDbPool } = require('./config/database');
 const path = require('path'); // path 모듈 추가
 const multer = require('multer'); // multer 추가
-const fs = require('fs'); // fs 모듈 추가
+const fs = require('fs'); // fs 모듈 추가 (중복 제거)
 require('dotenv').config();
 
 // 라우터 불러오기
 const usersRouter = require('./routes/users');
 const chatRouter = require('./routes/chat');
 const sessionsRouter = require('./routes/sessions');
+// 기존 docs 라우터 제거, 새로운 apiDocs 라우터 추가
+const apiDocsRouter = require('./routes/apiDocs');
 
 // Express 앱 초기화
 const app = express();
@@ -36,6 +38,9 @@ app.get('/', (req, res) => {
 app.get('/test', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'test.html'));
 });
+
+// 새로운 대화형 API 문서/테스트 라우터 등록
+app.use('/api/docs', apiDocsRouter);
 
 // 업로드 디렉토리 생성 (없으면)
 const uploadDir = path.join(__dirname, 'uploads');

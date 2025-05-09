@@ -1,3 +1,45 @@
+// 메시지 액션 버튼 추가 기능 (편집, 삭제 버튼)
+function addMessageActions(messageElement, messageId, sender) {
+    const existingActions = messageElement.querySelector('.message-actions');
+    if (existingActions) existingActions.remove();
+
+    const actionsDiv = document.createElement('div');
+    actionsDiv.classList.add('message-actions');
+
+    if (sender === 'user') { // 사용자 메시지만 수정 가능
+        const editButton = document.createElement('button');
+        editButton.textContent = '수정';
+        editButton.classList.add('edit-btn');
+        editButton.onclick = () => {
+            const currentContentElement = messageElement.querySelector('.message-content');
+            // HTML 태그가 아닌 순수 텍스트 내용을 가져오기 위해 innerText 또는 textContent 사용
+            // '나: ' 또는 'AI: ' 같은 접두사 제거 필요
+            let currentContent = currentContentElement.textContent || currentContentElement.innerText;
+            if (currentContent.startsWith('나: ')) {
+                currentContent = currentContent.substring(3);
+            }
+            
+            const newContent = prompt('메시지 수정:', currentContent.trim());
+            if (newContent !== null && newContent.trim() !== '') {
+                // saveEdit 함수는 messageElement를 직접 조작하므로 전달
+                saveEdit(messageId, newContent.trim(), messageElement);
+            }
+        };
+        actionsDiv.appendChild(editButton);
+    }
+
+    const deleteButton = document.createElement('button');
+    deleteButton.textContent = '삭제';
+    deleteButton.classList.add('delete-btn');
+    deleteButton.onclick = () => {
+        // deleteMessage 함수는 messageId만 필요함
+        deleteMessage(messageId); 
+    };
+    actionsDiv.appendChild(deleteButton);
+
+    // 메시지 내용 뒤에, 메시지 요소의 자식으로 추가
+    messageElement.appendChild(actionsDiv);
+}
 const chatBox = document.getElementById('chat-box');
 const messageInput = document.getElementById('message-input');
 const sendButton = document.getElementById('send-button');
@@ -64,74 +106,57 @@ async function initializeSession() {
     }
 }
 
-function addMessage(sender, text, messageId = null) {
+function addMessage(sender, text, messageId = null, isEdited = false) {
     const messageElement = document.createElement('div');
     messageElement.classList.add('message');
     
     if (messageId) {
-        messageElement.dataset.messageId = messageId;
+        messageElement.dataset.messageId = messageId; // 메시지 ID를 data 속성으로 저장
     }
 
     const contentSpan = document.createElement('span');
     contentSpan.classList.add('message-content');
     
+    // HTML 삽입 전에 특수문자 이스케이프 (XSS 방지) 후, \n을 <br>로 변경
+    const escapedText = text ? String(text).replace(/[&<>"']/g, function (match) {
+        return {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        }[match];
+    }) : '';
+    const formattedText = escapedText.replace(/\\n/g, '<br>');
+
     if (sender === 'user') {
         messageElement.classList.add('user-message');
-        contentSpan.textContent = `나: ${text}`;
-        
-        // 사용자 메시지에만 편집/삭제 버튼 추가
-        if (messageId) {
-            const actionsDiv = document.createElement('div');
-            actionsDiv.className = 'message-actions';
-            
-            const editButton = document.createElement('button');
-            editButton.className = 'edit-button';
-            editButton.textContent = '편집';
-            editButton.addEventListener('click', () => startEditing(messageElement, text));
-            actionsDiv.appendChild(editButton);
-            
-            const deleteButton = document.createElement('button');
-            deleteButton.className = 'delete-button';
-            deleteButton.textContent = '삭제';
-            deleteButton.addEventListener('click', () => deleteMessage(messageId));
-            actionsDiv.appendChild(deleteButton);
-            
-            messageElement.appendChild(actionsDiv);
-            
-            // 편집 입력 컨테이너 추가
-            const editInputContainer = document.createElement('div');
-            editInputContainer.className = 'edit-input-container';
-            
-            const editInput = document.createElement('input');
-            editInput.className = 'edit-input';
-            editInput.type = 'text';
-            editInput.value = text;
-            editInputContainer.appendChild(editInput);
-            
-            const saveButton = document.createElement('button');
-            saveButton.className = 'save-edit-button';
-            saveButton.textContent = '저장';
-            saveButton.addEventListener('click', () => saveEdit(messageId, editInput.value, messageElement));
-            editInputContainer.appendChild(saveButton);
-            
-            const cancelButton = document.createElement('button');
-            cancelButton.className = 'cancel-edit-button';
-            cancelButton.textContent = '취소';
-            cancelButton.addEventListener('click', () => cancelEditing(messageElement));
-            editInputContainer.appendChild(cancelButton);
-            
-            messageElement.appendChild(editInputContainer);
-        }
+        contentSpan.innerHTML = `나: ${formattedText}`;
     } else if (sender === 'ai') {
         messageElement.classList.add('ai-message');
-        contentSpan.textContent = `AI: ${text || '응답 없음'}`;
+        contentSpan.innerHTML = `AI: ${formattedText}`;
     } else { // 시스템 메시지 등
-         contentSpan.textContent = `[${sender}] ${text}`;
+        messageElement.classList.add('system-message');
+        contentSpan.innerHTML = `[${sender}] ${formattedText}`;
     }
-    
     messageElement.appendChild(contentSpan);
+
+    if (isEdited) {
+        const editedIndicator = document.createElement('span');
+        editedIndicator.classList.add('edited-indicator');
+        editedIndicator.textContent = '(편집됨)';
+        messageElement.appendChild(editedIndicator);
+    }
+
+    // 메시지 ID가 있고, 시스템 메시지가 아닌 경우 버튼 추가
+    if (messageId && sender !== 'system') {
+        addMessageActions(messageElement, messageId, sender); // text 인자 제거
+    }
+
     chatBox.appendChild(messageElement);
     chatBox.scrollTop = chatBox.scrollHeight; // 맨 아래로 스크롤
+
+    return messageElement; // 스트리밍 업데이트를 위해 요소 반환
 }
 
 // 메시지 편집 시작 함수
@@ -221,80 +246,168 @@ async function sendMessage() {
     const messageText = messageInput.value.trim();
     if (!messageText) return;
     if (!currentSessionId) {
-        addMessage('시스템', '세션이 아직 준비되지 않았습니다. 잠시 후 다시 시도해주세요.');
+        addMessage('system', '세션이 초기화되지 않았습니다. 페이지를 새로고침하거나 새 세션을 시작해주세요.');
         return;
     }
-    
+
     if (isMessageSending) {
-        console.log('메시지 전송 중입니다. 잠시 기다려주세요.');
+        console.log("메시지 전송 중입니다. 잠시 후 다시 시도해주세요.");
         return;
     }
-    
+
     isMessageSending = true;
     sendButton.disabled = true;
     sendButton.innerHTML = '전송 중...';
-    
-    const originalMessageText = messageText; // 서버로 보낼 메시지 텍스트
-    messageInput.value = ''; // 입력 필드 초기화
 
-    // promptFeature.js에서 설정한 selectedPrompt 값을 가져옴
-    const selectedPrompt = messageInput.dataset.selectedPrompt;
+    const originalMessageText = messageText;
+    // 사용자 메시지를 먼저 UI에 추가 (ID는 응답 후 업데이트)
+    const userMessageElement = addMessage('user', originalMessageText); 
+    messageInput.value = '';
+    
+    const selectedPrompt = messageInput.dataset.selectedPrompt || ''; // 저장된 프롬프트 사용
+    const systemPromptToSend = selectedPrompt; 
     if (selectedPrompt) {
-        console.log('Using prompt from dataset:', selectedPrompt);
-        // 더 이상 필요 없으므로 dataset에서 제거 (선택적)
-        // delete messageInput.dataset.selectedPrompt;
+        console.log("선택된 시스템 프롬프트 적용:", systemPromptToSend);
+        messageInput.dataset.selectedPrompt = ''; // 사용 후 초기화
+        // 프롬프트 버튼 UI 초기화 (선택 사항)
+        const promptButtons = document.querySelectorAll('.prompt-button.selected');
+        promptButtons.forEach(btn => btn.classList.remove('selected'));
     }
+
+
+    // 스트리밍 모드 확인 (UI 요소가 있다면 해당 값 사용, 여기서는 false로 고정)
+    const useStream = false; // 기본 채팅 페이지에서는 스트리밍 미사용 또는 별도 UI 필요
+    const useCanvas = false; // 기본 채팅 페이지에서는 캔버스 모드 미사용 또는 별도 UI 필요
 
     try {
         const requestBody = {
             message: originalMessageText,
+            systemPrompt: systemPromptToSend,
         };
-
-        if (selectedPrompt) {
-            requestBody.prompt = selectedPrompt; // 프롬프트가 있으면 요청 본문에 추가
-        }
+        // 스트림 또는 캔버스 모드 설정 (testScript.js와 유사하게 UI 요소 확인 필요)
+        // 예: const streamCheckbox = document.getElementById('stream-mode-checkbox-main');
+        // if (streamCheckbox && streamCheckbox.checked) requestBody.specialModeType = 'stream';
 
         const response = await fetch(`/api/chat/sessions/${currentSessionId}/messages`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                // 필요시 인증 토큰 추가
+                // 'Authorization': `Bearer ${localStorage.getItem('authToken')}`
             },
-            body: JSON.stringify(requestBody), // 수정된 요청 본문 사용
+            body: JSON.stringify(requestBody)
         });
 
         if (!response.ok) {
-            const errorData = await response.json();
-            // 오류 발생 시에도 사용자 입력은 화면에 표시 (선택적)
-            // addMessage('user', originalMessageText);
-            throw new Error(`메시지 전송 실패: ${errorData.error || response.statusText || '알 수 없는 서버 오류'}`);
-        }
-
-        const data = await response.json();
-        
-        // 서버 응답 후 사용자 메시지 추가 (ID와 함께)
-        if (data.user_message_id) {
-            addMessage('user', originalMessageText, data.user_message_id);
-        } else {
-            // 만약 user_message_id가 없다면 (정상적인 경우라면 없어야 함)
-            addMessage('user', originalMessageText);
+            const errorData = await response.json().catch(() => ({ error: '메시지 전송에 실패했습니다.' }));
+            console.error('메시지 전송 실패:', errorData);
+            addMessage('system', `오류: ${errorData.error.message || errorData.error}`);
+            // 실패한 사용자 메시지에 대한 처리가 필요할 수 있음 (예: 재전송 버튼)
+            if(userMessageElement) userMessageElement.classList.add('message-error');
+            return;
         }
         
-        if (data && data.message) {
-            addMessage('ai', data.message, data.ai_message_id);
+        // 스트리밍 응답 처리 (기본 채팅 페이지에서는 현재 비활성화)
+        if (useStream && response.body) {
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let aiMessageId = null;
+            let userMessageIdForStream = null;
+            let fullAiResponse = '';
             
-            console.log('응답 데이터:', data);
-            if (data.ai_message_id) console.log('AI 메시지 ID:', data.ai_message_id);
-            if (data.user_message_id) console.log('사용자 메시지 ID:', data.user_message_id);
+            const aiMessageElement = addMessage('ai', 'AI 응답 대기 중...');
+            const aiContentSpan = aiMessageElement.querySelector('.message-content');
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    if (aiMessageElement && aiMessageId) {
+                        aiMessageElement.dataset.messageId = aiMessageId;
+                        addMessageActions(aiMessageElement, aiMessageId, 'ai', fullAiResponse);
+                    }
+                    if (userMessageElement && userMessageIdForStream) {
+                         userMessageElement.dataset.messageId = userMessageIdForStream;
+                         addMessageActions(userMessageElement, userMessageIdForStream, 'user', originalMessageText);
+                    }
+                    console.log('Stream ended.');
+                    break;
+                }
+                buffer += decoder.decode(value, { stream: true });
+                let eventEndIndex;
+                while ((eventEndIndex = buffer.indexOf('\\n\\n')) !== -1) {
+                    const eventDataString = buffer.substring(0, eventEndIndex);
+                    buffer = buffer.substring(eventEndIndex + 2);
+
+                    if (eventDataString.startsWith('event: error')) {
+                        // 오류 처리
+                        const errorJsonString = eventDataString.substring(eventDataString.indexOf('data:') + 5);
+                        const errorData = JSON.parse(errorJsonString);
+                        if (aiContentSpan) aiContentSpan.innerHTML = `AI: 스트리밍 오류 - ${errorData.message || JSON.stringify(errorData)}`;
+                        aiMessageElement.classList.add('message-error');
+                        break; // while 루프 종료
+                    } else if (eventDataString.startsWith('event: end')) {
+                        // 종료 이벤트 처리
+                        const endJsonString = eventDataString.substring(eventDataString.indexOf('data:') + 5);
+                        const endData = JSON.parse(endJsonString);
+                        if (endData.ai_message_id) aiMessageId = endData.ai_message_id;
+                        // 스트림 종료 시 최종 ID로 버튼 다시 추가 (중복 방지 필요)
+                        if (userMessageElement && userMessageIdForStream && !userMessageElement.querySelector('.message-actions')) {
+                            addMessageActions(userMessageElement, userMessageIdForStream, 'user', originalMessageText);
+                        }
+                        if (aiMessageElement && aiMessageId && !aiMessageElement.querySelector('.message-actions')) {
+                            addMessageActions(aiMessageElement, aiMessageId, 'ai', fullAiResponse);
+                        }
+                        break; 
+                    } else if (eventDataString.startsWith('data:')) {
+                        const jsonString = eventDataString.substring(5);
+                        const data = JSON.parse(jsonString);
+                        if (data.user_message_id && !userMessageIdForStream) {
+                            userMessageIdForStream = data.user_message_id;
+                            if (userMessageElement) {
+                                userMessageElement.dataset.messageId = userMessageIdForStream;
+                                // 스트리밍 시작 시 사용자 메시지에 대한 버튼 추가 (중복 방지 필요)
+                                if (!userMessageElement.querySelector('.message-actions')) {
+                                   addMessageActions(userMessageElement, userMessageIdForStream, 'user', originalMessageText);
+                                }
+                            }
+                        }
+                        if (data.chunk) {
+                            fullAiResponse += data.chunk;
+                            if (aiContentSpan) aiContentSpan.innerHTML = `AI: ${fullAiResponse.replace(/\\n/g, '<br>')}`;
+                            chatBox.scrollTop = chatBox.scrollHeight;
+                        }
+                         if (data.ai_message_id) aiMessageId = data.ai_message_id; // 중간에 ID가 올 경우
+                    }
+                }
+                if (eventDataString && (eventDataString.startsWith('event: error') || eventDataString.startsWith('event: end'))) break; // while 루프 종료 조건
+            }
+
         } else {
-            addMessage('시스템', 'AI로부터 유효한 응답 메시지를 받지 못했습니다.');
-            console.warn('서버로부터 받은 응답 데이터:', data);
+            // 일반 응답 처리
+            const responseData = await response.json();
+            if (userMessageElement && responseData.user_message_id) {
+                userMessageElement.dataset.messageId = responseData.user_message_id;
+                // 사용자 메시지 전송 성공 후 버튼 추가
+                addMessageActions(userMessageElement, responseData.user_message_id, 'user', originalMessageText);
+            }
+            addMessage('ai', responseData.message, responseData.ai_message_id);
+            
+            // 캔버스 모드 처리 (기본 채팅 페이지에서는 현재 미구현, 필요시 testScript.js 참고)
+            if (responseData.specialModeType === 'canvas' || (responseData.canvas_html || responseData.canvas_css || responseData.canvas_js)) {
+                // 기본 페이지에서는 콘솔에만 로그를 남기거나 간단한 텍스트로 표시
+                console.log("Canvas data received:", responseData);
+                let canvasInfo = "AI가 Canvas 콘텐츠를 생성했습니다: ";
+                if(responseData.canvas_html) canvasInfo += "[HTML] ";
+                if(responseData.canvas_css) canvasInfo += "[CSS] ";
+                if(responseData.canvas_js) canvasInfo += "[JS] ";
+                addMessage('system', canvasInfo.trim());
+            }
         }
 
     } catch (error) {
-        console.error('메시지 전송/응답 처리 오류:', error);
-        // 오류 시 사용자 메시지를 표시하려면 여기서도 추가 가능
-        // addMessage('user', originalMessageText); 
-        addMessage('시스템', `오류 발생: ${error.message}`);
+        console.error('메시지 전송 중 네트워크 오류 또는 기타 오류:', error);
+        addMessage('error', `오류: ${error.message}`);
     } finally {
         isMessageSending = false;
         sendButton.disabled = false;
@@ -408,8 +521,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     // 새 세션 시작
                     await initializeSession();
                 }
-            });        }
-        
+            });
+        }
         window.sessionInitialized = true;
         console.log('세션 초기화 완료');
     }
