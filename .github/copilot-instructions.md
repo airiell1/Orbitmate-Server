@@ -68,28 +68,28 @@
     - 주요 함수:
       - `registerUser(username, email, password)`: 회원가입, 비밀번호 해시, 중복 체크, 기본 설정/프로필 생성
       - `loginUser(email, password)`: 로그인, 비밀번호 검증, 계정 활성화 체크, 로그인 시간 업데이트
-      - `getUserSettings(userId)`, `updateUserSettings(userId, settings)`: 사용자 설정 조회/수정
-      - `getUserProfile(userId)`, `updateUserProfile(userId, profileData)`: 프로필 조회/수정
-      - `updateUserProfileImage(userId, profileImagePath)`: 프로필 이미지 경로 업데이트
-      - `addUserExperience(userId, points)`: 경험치 추가 및 레벨업 처리
-      - `deleteUser(userId)`: 회원 탈퇴(계정 및 연관 데이터 삭제)
+      - `getUserSettings(user_id)`, `updateUserSettings(user_id, settings)`: 사용자 설정 조회/수정
+      - `getUserProfile(user_id)`, `updateUserProfile(user_id, profileData)`: 프로필 조회/수정
+      - `updateUserProfileImage(user_id, profileImagePath)`: 프로필 이미지 경로 업데이트
+      - `addUserExperience(user_id, points)`: 경험치 추가 및 레벨업 처리
+      - `deleteUser(user_id)`: 회원 탈퇴(계정 및 연관 데이터 삭제)
 
   - `models/chat.js`: 채팅 메시지, 첨부파일, CLOB 변환 등 채팅 관련 DB 접근 함수
     - 주요 함수:
       - `getChatHistoryFromDB(connection, sessionId, includeCurrentUserMessage)`: 세션별 대화 기록 조회 (Vertex AI 포맷)
-      - `saveUserMessageToDB(connection, sessionId, userId, message)`: 사용자 메시지 저장 (CLOB)
-      - `saveAiMessageToDB(connection, sessionId, userId, message)`: AI 메시지 저장 (CLOB, RETURNING)
+      - `saveUserMessageToDB(connection, sessionId, user_id, message)`: 사용자 메시지 저장 (CLOB)
+      - `saveAiMessageToDB(connection, sessionId, user_id, message)`: AI 메시지 저장 (CLOB, RETURNING)
       - `saveAttachmentToDB(messageId, file)`: 첨부파일 정보 저장
-      - `deleteUserMessageFromDB(messageId, userId)`: 메시지 삭제 (userId 체크 최소화)
+      - `deleteUserMessageFromDB(messageId, user_id)`: 메시지 삭제 (user_id 체크 최소화)
       - `getSessionMessagesForClient(sessionId)`: 세션 전체 메시지(첨부 포함) 조회 (CLOB 변환)
       - `clobToString(clob)`: Oracle CLOB → 문자열 변환 유틸
 
   - `models/session.js`: 채팅 세션 생성/조회/수정/삭제 등 세션 관련 DB 접근 함수
     - 주요 함수:
-      - `createChatSession(userId, title, category)`: 세션 생성
-      - `getUserChatSessions(userId)`: 사용자 세션 목록 조회
+      - `createChatSession(user_id, title, category)`: 세션 생성
+      - `getUserChatSessions(user_id)`: 사용자 세션 목록 조회
       - `updateChatSession(sessionId, updates)`: 세션 정보 수정 (제목, 카테고리, 보관 등)
-      - `deleteChatSession(sessionId, userId)`: 세션 삭제 (메시지/세션 트랜잭션)
+      - `deleteChatSession(sessionId, user_id)`: 세션 삭제 (메시지/세션 트랜잭션)
       - `getSessionMessages(sessionId)`: 세션 메시지 목록 조회 (CLOB 변환)
       - `getUserIdBySessionId(sessionId)`: 세션 ID로 사용자 ID 조회
 
@@ -267,7 +267,7 @@
   - 예시: `user_id`, `created_at`, `session_id`, `message_content`
 - **camelCase**:  
   - 프론트엔드 JS 코드 내부 변수/상태/함수명  
-  - 예시: `userId`, `createdAt`, `sessionId`, `messageContent`
+  - 예시: `user_id`, `createdAt`, `sessionId`, `messageContent`
 - **변환 규칙**:  
   - DB→백엔드→API 응답: snake_case로 통일  
   - 프론트엔드에서 필요시 camelCase로 변환(또는 snake_case 그대로 사용)
@@ -283,7 +283,7 @@
     ```
   - 프론트엔드 변수:
     ```js
-    const userId = response.user_id;
+    const user_id = response.user_id;
     ```
 
 ---

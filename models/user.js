@@ -1,6 +1,6 @@
 const bcrypt = require('bcrypt');
 const { getConnection, oracledb } = require('../config/database');
-const toSnakeCaseObj = require('../utils/toSnakeCase');
+const { clobToString, convertClobFields, toSnakeCaseObj } = require('../utils/dbUtils'); // 상단 import 수정
 
 // 사용자 등록 함수
 async function registerUser(username, email, password) {
@@ -22,7 +22,7 @@ async function registerUser(username, email, password) {
     const passwordHash = await bcrypt.hash(password, saltRounds);
 
     // 이미 가입된 이메일인지 확인 (이중 체크: 트랜잭션 내에서 잠금)
-    let userId;
+    let user_id;
     let alreadyRegisteredUser = null;
     await connection.execute('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
     const emailCheck = await connection.execute(
@@ -45,39 +45,39 @@ async function registerUser(username, email, password) {
         const testUserId = 'API_TEST_USER_ID';
         // 기존에 같은 UID가 있으면 삭제(덮어쓰기 보장)
         await connection.execute(
-          `DELETE FROM users WHERE user_id = :userId OR email = :email`,
-          { userId: testUserId, email: email },
+          `DELETE FROM users WHERE user_id = :user_id OR email = :email`,
+          { user_id: testUserId, email: email },
           { autoCommit: false }
         );
         // 새로 삽입
         const result = await connection.execute(
           `INSERT INTO users (user_id, username, email, password_hash)
-           VALUES (:userId, :username, :email, :passwordHash)
-           RETURNING user_id INTO :userIdOut`,
+           VALUES (:user_id, :username, :email, :passwordHash)
+           RETURNING user_id INTO :user_idOut`,
           {
-            userId: testUserId,
+            user_id: testUserId,
             username: username,
             email: email,
             passwordHash: passwordHash,
-            userIdOut: { type: oracledb.STRING, dir: oracledb.BIND_OUT }
+            user_idOut: { type: oracledb.STRING, dir: oracledb.BIND_OUT }
           },
           { autoCommit: false }
         );
-        userId = result.outBinds.userIdOut[0];
+        user_id = result.outBinds.user_idOut[0];
       } else {
         const result = await connection.execute(
           `INSERT INTO users (username, email, password_hash)
            VALUES (:username, :email, :passwordHash)
-           RETURNING user_id INTO :userId`,
+           RETURNING user_id INTO :user_id`,
           {
             username: username,
             email: email,
             passwordHash: passwordHash,
-            userId: { type: oracledb.STRING, dir: oracledb.BIND_OUT }
+            user_id: { type: oracledb.STRING, dir: oracledb.BIND_OUT }
           },
           { autoCommit: false }
         );
-        userId = result.outBinds.userId[0];
+        user_id = result.outBinds.user_id[0];
       }
     }
 
@@ -90,28 +90,28 @@ async function registerUser(username, email, password) {
     // 사용자 설정 기본값 생성
     await connection.execute(
       `INSERT INTO user_settings (user_id, theme, language, font_size, notifications_enabled)
-       VALUES (:userId, 'light', 'ko', 14, 1)`,
-      { userId: userId }
+       VALUES (:user_id, 'light', 'ko', 14, 1)`,
+      { user_id: user_id }
     );
 
     // 사용자 프로필이 이미 존재하는지 확인
     const profileCheck = await connection.execute(
-      `SELECT COUNT(*) FROM user_profiles WHERE user_id = :userId`,
-      { userId: userId }
+      `SELECT COUNT(*) FROM user_profiles WHERE user_id = :user_id`,
+      { user_id: user_id }
     );
     // 프로필이 없는 경우에만 생성
     if (profileCheck.rows[0][0] === 0) {
       await connection.execute(
         `INSERT INTO user_profiles (user_id, theme_preference, bio, badge, experience, "level")
-         VALUES (:userId, 'light', NULL, NULL, 0, 1)`,
-        { userId: userId }
+         VALUES (:user_id, 'light', NULL, NULL, 0, 1)`,
+        { user_id: user_id }
       );
     }
     
     await connection.commit(); // 모든 INSERT 작업 후 커밋
 
     return {
-      user_id: userId,
+      user_id: user_id,
       username: username,
       email: email,
       created_at: new Date().toISOString()
@@ -140,10 +140,11 @@ async function loginUser(email, password) {
   try {
     connection = await getConnection();
 
-    // 사용자 조회 - 테이블 별칭 사용으로 'user' 예약어 충돌 방지
+    // outFormat을 OBJECT로 지정
     const result = await connection.execute(
       `SELECT USER_ID, USERNAME, EMAIL, PASSWORD_HASH, IS_ACTIVE FROM USERS WHERE EMAIL = :email`,
-      [email]
+      { email: email },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
 
     if (result.rows.length === 0) {
@@ -165,14 +166,14 @@ async function loginUser(email, password) {
 
     // 로그인 시간 업데이트
     await connection.execute(
-      `UPDATE users SET last_login = SYSTIMESTAMP WHERE user_id = :userId`,
-      { userId: user.user_id || user.USER_ID },
+      `UPDATE users SET last_login = SYSTIMESTAMP WHERE user_id = :user_id`,
+      { user_id: user.USER_ID },
       { autoCommit: true }
     );
     return {
-      user_id: user.user_id || user.USER_ID,
-      username: user.username || user.USERNAME,
-      email: user.email || user.EMAIL,
+      user_id: user.USER_ID,
+      username: user.USERNAME,
+      email: user.EMAIL,
       logged_in_at: new Date().toISOString()
     };
   } catch (err) {
@@ -190,7 +191,7 @@ async function loginUser(email, password) {
 }
 
 // 사용자 설정 조회 함수
-async function getUserSettings(userId) {
+async function getUserSettings(user_id) {
   let connection;
   try {
     connection = await getConnection();
@@ -198,8 +199,8 @@ async function getUserSettings(userId) {
     const result = await connection.execute(
       `SELECT us.user_id, us.theme, us.language, us.font_size, us.notifications_enabled, us.ai_model_preference, us.updated_at 
        FROM user_settings us
-       WHERE us.user_id = :userId`,
-      { userId: userId },
+       WHERE us.user_id = :user_id`,
+      { user_id: user_id },
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
     
@@ -224,7 +225,7 @@ async function getUserSettings(userId) {
 }
 
 // 사용자 설정 업데이트 함수
-async function updateUserSettings(userId, settings) {
+async function updateUserSettings(user_id, settings) {
   const { theme, language, font_size, notifications_enabled, ai_model_preference } = settings;
   
   let connection;
@@ -233,7 +234,7 @@ async function updateUserSettings(userId, settings) {
     
     // 업데이트할 필드 구성
     let updateQuery = 'UPDATE user_settings SET updated_at = SYSTIMESTAMP';
-    const bindParams = { userId: userId };
+    const bindParams = { user_id: user_id };
     
     if (theme !== undefined) {
       updateQuery += ', theme = :theme';
@@ -260,13 +261,13 @@ async function updateUserSettings(userId, settings) {
       bindParams.ai_model_preference = ai_model_preference;
     }
     
-    updateQuery += ' WHERE user_id = :userId';
+    updateQuery += ' WHERE user_id = :user_id';
     
     // 쿼리 실행
     await connection.execute(updateQuery, bindParams, { autoCommit: true });
     
     // 업데이트된 설정 조회
-    const updatedSettings = await getUserSettings(userId);
+    const updatedSettings = await getUserSettings(user_id);
     // toSnakeCaseObj 함수 사용하여 케이싱 통일
     return toSnakeCaseObj(updatedSettings);
   } catch (err) {
@@ -284,13 +285,13 @@ async function updateUserSettings(userId, settings) {
 }
 
 // 사용자 프로필 이미지 경로 업데이트 함수
-async function updateUserProfileImage(userId, profileImagePath) {
+async function updateUserProfileImage(user_id, profileImagePath) {
   let connection;
   try {
     connection = await getConnection();
     await connection.execute(
-      `UPDATE users SET profile_image_path = :profileImagePath WHERE user_id = :userId`,
-      { profileImagePath: profileImagePath, userId: userId },
+      `UPDATE users SET profile_image_path = :profileImagePath WHERE user_id = :user_id`,
+      { profileImagePath: profileImagePath, user_id: user_id },
       { autoCommit: true }
     );
   } catch (err) {
@@ -308,23 +309,37 @@ async function updateUserProfileImage(userId, profileImagePath) {
 }
 
 // 사용자 프로필 조회 함수
-async function getUserProfile(userId) {
+async function getUserProfile(user_id) {
   let connection;
-  try {    connection = await getConnection();
+  try {
+    connection = await getConnection();
     const result = await connection.execute(
       `SELECT u.user_id, u.username, u.email, u.created_at, u.is_active, u.profile_image_path, 
               p.theme_preference, p.bio, p.badge, p.experience, p."level", p.updated_at
        FROM users u
        LEFT JOIN user_profiles p ON u.user_id = p.user_id
-       WHERE u.user_id = :userId`,
-      { userId: userId },
+       WHERE u.user_id = :user_id`,
+      { user_id: user_id },
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
 
     if (result.rows.length === 0) {
       return null;
     }
-    return toSnakeCaseObj(result.rows[0]);
+
+    // 모든 CLOB 필드 자동 변환
+    let row = await convertClobFields(result.rows[0]);
+
+    // TIMESTAMP(Date) 필드 문자열 변환
+    if (row.CREATED_AT && typeof row.CREATED_AT === 'object' && row.CREATED_AT.toISOString) {
+      row.CREATED_AT = row.CREATED_AT.toISOString();
+    }
+    if (row.UPDATED_AT && typeof row.UPDATED_AT === 'object' && row.UPDATED_AT.toISOString) {
+      row.UPDATED_AT = row.UPDATED_AT.toISOString();
+    }
+
+    // snake_case로 변환
+    return toSnakeCaseObj(row);
   } catch (err) {
     console.error('Error getting user profile:', err);
     throw err;
@@ -340,40 +355,53 @@ async function getUserProfile(userId) {
 }
 
 // 사용자 프로필 업데이트 함수
-async function updateUserProfile(userId, profileData) {
-  const { theme, bio, badge } = profileData; // level, experience는 직접 수정하지 않음
+async function updateUserProfile(user_id, profileData) {
   let connection;
-  try {    connection = await getConnection();
+  try {    
+    connection = await getConnection();
+
+    // ** 여기서 들어온 profileData (camelCase 예상)를 snake_case로 변환! **
+    // 클라이언트가 { themePreference: '...', bio: '...', badge: '...' } 이렇게 보냈다고 가정하고
+    // 그걸 { theme_preference: '...', bio: '...', badge: '...' } 이렇게 바꿔주는 거야.
+    const snakeCaseProfileData = toSnakeCaseObj(profileData); 
     
+    // 이제 변환된 snake_case 객체에서 필요한 값을 가져와.
+    const { theme_preference, bio, badge } = snakeCaseProfileData; // <-- 여기서 snake_case 키 사용!
+
     let updateQuery = 'UPDATE user_profiles SET';
-    const bindParams = { userId: userId };    let hasChanges = false;
+    const bindParams = { user_id: user_id };    
+    let hasChanges = false;
     
-    if (theme !== undefined) {
+    // 업데이트 쿼리 만들 때 변환된 snake_case 변수를 사용.
+    // toSnakeCaseObj 함수가 'themePreference'를 'theme_preference'로 잘 바꿔준다고 가정.
+    if (theme_preference !== undefined) { // <-- 여기서 변환된 snake_case 변수 사용
       updateQuery += hasChanges ? ', theme_preference = :theme_preference' : ' theme_preference = :theme_preference';
-      bindParams.theme_preference = theme;
+      bindParams.theme_preference = theme_preference; // <-- 여기서 변환된 snake_case 변수 사용
       hasChanges = true;
     }
-    if (bio !== undefined) {
+    // bio와 badge도 마찬가지로 snake_caseProfileData에서 가져온 값을 씀.
+    if (bio !== undefined) { // <-- 여기서 변환된 snake_case 변수 사용
       updateQuery += hasChanges ? ', bio = :bio' : ' bio = :bio';
-      bindParams.bio = bio;
+      bindParams.bio = bio; // <-- 여기서 변환된 snake_case 변수 사용
       hasChanges = true;
     }
-    if (badge !== undefined) {
+    if (badge !== undefined) { // <-- 여기서 변환된 snake_case 변수 사용
       updateQuery += hasChanges ? ', badge = :badge' : ' badge = :badge';
-      bindParams.badge = badge;
+      bindParams.badge = badge; // <-- 여기서 변환된 snake_case 변수 사용
       hasChanges = true;
     }
+
     // updated_at 자동 갱신
     updateQuery += ', updated_at = SYSTIMESTAMP';
-      updateQuery += ' WHERE user_id = :userId';
+    updateQuery += ' WHERE user_id = :user_id';
 
     if (!hasChanges) { // 업데이트할 필드가 없는 경우
-        return await getUserProfile(userId); // 변경 없이 현재 프로필 반환
+        return await getUserProfile(user_id); // 변경 없이 현재 프로필 반환 (이때는 이미 snake_case로 반환될 것임)
     }
     
     await connection.execute(updateQuery, bindParams, { autoCommit: true });
     
-    return await getUserProfile(userId); // 업데이트된 프로필 정보 반환
+    return await getUserProfile(user_id); // 업데이트된 프로필 정보 반환 (getUserProfile 안에서 이미 snake_case로 변환됨)
   } catch (err) {
     console.error('프로필 업데이트 실패:', err);
     throw err;
@@ -389,22 +417,22 @@ async function updateUserProfile(userId, profileData) {
 }
 
 // 경험치 추가 및 레벨 업데이트 함수
-async function addUserExperience(userId, points) {
+async function addUserExperience(user_id, points) {
   let connection;
   try {
     connection = await getConnection();
     await connection.execute(
       `UPDATE user_profiles up
        SET up.experience = up.experience + :points
-       WHERE up.user_id = :userId`,
-      { userId, points },
+       WHERE up.user_id = :user_id`,
+      { user_id, points },
       { autoCommit: false } // 레벨 업데이트와 함께 트랜잭션 처리
     );
 
     // 현재 경험치 및 레벨 가져오기
     const profileResult = await connection.execute(
-      `SELECT up.level, up.experience FROM user_profiles up WHERE up.user_id = :userId`,
-      { userId },
+      `SELECT up.level, up.experience FROM user_profiles up WHERE up.user_id = :user_id`,
+      { user_id },
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
 
@@ -424,8 +452,8 @@ async function addUserExperience(userId, points) {
     await connection.execute(
       `UPDATE user_profiles up
        SET up.level = :level, up.experience = :experience
-       WHERE up.user_id = :userId`,
-      { userId, level: currentLevel, experience: currentExperience },
+       WHERE up.user_id = :user_id`,
+      { user_id, level: currentLevel, experience: currentExperience },
       { autoCommit: false }
     );
 
@@ -448,7 +476,7 @@ async function addUserExperience(userId, points) {
 }
 
 // 회원 탈퇴 (계정 데이터 삭제) 함수
-async function deleteUser(userId) {
+async function deleteUser(user_id) {
   let connection;
   try {
     connection = await getConnection();
@@ -457,8 +485,8 @@ async function deleteUser(userId) {
     // chat_messages의 user_id는 ON DELETE SET NULL이므로, 해당 메시지는 유지됩니다.
     // attachments는 chat_messages에 CASCADE되어 있으므로 메시지 삭제 시 함께 삭제됩니다.
     const result = await connection.execute(
-      `DELETE FROM users WHERE user_id = :userId`,
-      { userId: userId },
+      `DELETE FROM users WHERE user_id = :user_id`,
+      { user_id: user_id },
       { autoCommit: true }
     );
 
@@ -466,8 +494,8 @@ async function deleteUser(userId) {
       throw new Error('삭제할 사용자를 찾을 수 없습니다.');
     }
 
-    // console.log(`User ${userId} and related data (via CASCADE) deleted successfully.`);
-    return { message: `User ${userId} and related data deleted successfully.` };
+    // console.log(`User ${user_id} and related data (via CASCADE) deleted successfully.`);
+    return { message: `User ${user_id} and related data deleted successfully.` };
   } catch (err) {
     console.error('회원 탈퇴 실패:', err);
     throw err;

@@ -2,13 +2,13 @@ const { getConnection, oracledb } = require('../config/database');
 const { clobToString } = require('./chat'); // clobToString 함수 import
 
 // 새 채팅 세션 생성
-async function createChatSession(userId, title, category) {
+async function createChatSession(user_id, title, category) {
   let connection;
   try {
     connection = await getConnection();
 
     let sessionId;
-    if (userId === 'API_TEST_USER_ID') {
+    if (user_id === 'API_TEST_USER_ID') {
       // 기존에 같은 세션ID/메시지ID가 있으면 삭제(덮어쓰기 보장)
       const testSessionId = 'API_TEST_SESSION_ID';
       const testUserMsgId = 'API_TEST_USER_MESSAGE_ID';
@@ -19,18 +19,18 @@ async function createChatSession(userId, title, category) {
         { autoCommit: false }
       );
       await connection.execute(
-        `DELETE FROM chat_sessions WHERE session_id = :sessionId OR (user_id = :userId AND title = :title)`,
-        { sessionId: testSessionId, userId, title },
+        `DELETE FROM chat_sessions WHERE session_id = :sessionId OR (user_id = :user_id AND title = :title)`,
+        { sessionId: testSessionId, user_id, title },
         { autoCommit: false }
       );
       // 새로 삽입 (고정 세션ID)
       const result = await connection.execute(
         `INSERT INTO chat_sessions (session_id, user_id, title, category)
-         VALUES (:sessionId, :userId, :title, :category)
+         VALUES (:sessionId, :user_id, :title, :category)
          RETURNING session_id INTO :sessionIdOut`,
         {
           sessionId: testSessionId,
-          userId,
+          user_id,
           title,
           category: category || null,
           sessionIdOut: { type: oracledb.STRING, dir: oracledb.BIND_OUT }
@@ -43,22 +43,22 @@ async function createChatSession(userId, title, category) {
       const now = new Date();
       await connection.execute(
         `INSERT INTO chat_messages (message_id, session_id, user_id, message_type, message_content, created_at)
-         VALUES (:msgId, :sessionId, :userId, 'user', :content, :createdAt)`,
+         VALUES (:msgId, :sessionId, :user_id, 'user', :content, :createdAt)`,
         {
           msgId: testUserMsgId,
           sessionId: testSessionId,
-          userId: userId,
+          user_id: user_id,
           content: '이것은 테스트 유저 메시지입니다.',
           createdAt: now
         }
       );
       await connection.execute(
         `INSERT INTO chat_messages (message_id, session_id, user_id, message_type, message_content, created_at)
-         VALUES (:msgId, :sessionId, :userId, 'ai', :content, :createdAt)`,
+         VALUES (:msgId, :sessionId, :user_id, 'ai', :content, :createdAt)`,
         {
           msgId: testAiMsgId,
           sessionId: testSessionId,
-          userId: userId,
+          user_id: user_id,
           content: '이것은 테스트 AI 메시지입니다.',
           createdAt: now
         }
@@ -67,10 +67,10 @@ async function createChatSession(userId, title, category) {
     } else {
       const result = await connection.execute(
         `INSERT INTO chat_sessions (user_id, title, category) 
-         VALUES (:userId, :title, :category) 
+         VALUES (:user_id, :title, :category) 
          RETURNING session_id INTO :sessionId`,
         { 
-          userId: userId, 
+          user_id: user_id, 
           title: title,
           category: category || null,
           sessionId: { type: oracledb.STRING, dir: oracledb.BIND_OUT }
@@ -101,7 +101,7 @@ async function createChatSession(userId, title, category) {
 }
 
 // 사용자의 채팅 세션 목록 조회
-async function getUserChatSessions(userId) {
+async function getUserChatSessions(user_id) {
   let connection;
   try {
     connection = await getConnection();
@@ -109,9 +109,9 @@ async function getUserChatSessions(userId) {
     const result = await connection.execute(
       `SELECT session_id, title, created_at, updated_at, category, is_archived
        FROM chat_sessions 
-       WHERE user_id = :userId
+       WHERE user_id = :user_id
        ORDER BY updated_at DESC`,
-      { userId: userId }
+      { user_id: user_id }
     );
     
     return result.rows.map(row => ({
@@ -196,17 +196,11 @@ async function updateChatSession(sessionId, updates) {
   }
 }
 
-// 채팅 세션 삭제 (사용자 ID 검증 포함)
-async function deleteChatSession(sessionId, userId) {
+// 채팅 세션 삭제 (사용자 ID 검증 없이 session_id만으로 삭제)
+async function deleteChatSession(sessionId, user_id) {
   let connection;
   try {
     connection = await getConnection();
-
-    // 트랜잭션 시작
-    await connection.execute('BEGIN');
-
-    // 1. 해당 세션의 메시지 먼저 삭제 (CASCADE 제약조건이 없다면)
-    // CASCADE DELETE가 설정되어 있다면 이 부분은 생략 가능
     await connection.execute(
       `DELETE FROM chat_messages 
        WHERE session_id = :sessionId`,
@@ -214,16 +208,15 @@ async function deleteChatSession(sessionId, userId) {
     );
     console.log(`[DB] 세션 ${sessionId}의 메시지 삭제 시도 완료`);
 
-    // 2. 세션 삭제 (사용자 ID 일치 확인)
+    // 같은 트랜잭션 내에서 실행됩니다.
     const result = await connection.execute(
       `DELETE FROM chat_sessions 
-       WHERE session_id = :sessionId AND user_id = :userId`,
-      { sessionId: sessionId, userId: userId }
+       WHERE session_id = :sessionId AND user_id = :user_id`,
+      { sessionId: sessionId, user_id: user_id }
     );
-    console.log(`[DB] 세션 ${sessionId} 삭제 시도 완료 (영향 받은 행: ${result.rowsAffected})`);
 
-    // 트랜잭션 커밋
-    await connection.execute('COMMIT');
+    // 트랜잭션 커밋 (user.js의 working pattern처럼 commit 메소드는 사용)
+    await connection.commit(); // <--- 이 메소드는 user.js에서 작동했으니 유지합니다.
 
     return result.rowsAffected; // 삭제된 세션 수 반환 (0 또는 1)
 
@@ -231,8 +224,8 @@ async function deleteChatSession(sessionId, userId) {
     console.error('세션 삭제 실패:', err);
     if (connection) {
       try {
-        // 오류 발생 시 롤백
-        await connection.execute('ROLLBACK');
+        // 오류 발생 시 롤백 (user.js의 working pattern처럼 rollback 메소드는 사용)
+        await connection.rollback(); // <--- 이 메소드는 user.js에서 작동했으니 유지합니다.
       } catch (rollbackErr) {
         console.error('롤백 실패:', rollbackErr);
       }

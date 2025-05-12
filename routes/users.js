@@ -18,8 +18,8 @@ const profileStorage = multer.diskStorage({
     },
     filename: function (req, file, cb) {
         // 사용자 ID와 타임스탬프를 조합하여 파일 이름 생성 (덮어쓰기 방지)
-        const userId = req.params.user_id || 'temp'; // user_id가 없는 경우 대비
-        cb(null, `${userId}-${Date.now()}-${file.originalname}`);
+        const user_id = req.params.user_id || 'temp'; // user_id가 없는 경우 대비
+        cb(null, `${user_id}-${Date.now()}-${file.originalname}`);
     }
 });
 

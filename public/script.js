@@ -85,8 +85,8 @@ async function initializeSession() {
             headers: {
                 'Content-Type': 'application/json',
             },
-            // userId를 GUEST_USER_ID로 설정
-            body: JSON.stringify({ userId: GUEST_USER_ID, title: 'Guest Session' })
+            // user_id를 GUEST_USER_ID로 설정
+            body: JSON.stringify({ user_id: GUEST_USER_ID, title: 'Guest Session' })
         });
         if (!response.ok) {
             const errorData = await response.json();

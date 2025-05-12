@@ -7,25 +7,12 @@ const { oracledb } = require('../config/database');
  */
 async function clobToString(clob) {
   if (!clob) return null;
-  if (typeof clob === 'string') return clob;
-  
-  // CLOB이 아니라 일반 객체인 경우 (이미 변환됨)
-  if (clob.constructor !== oracledb.CLOB) {
-    if (typeof clob === 'object' && clob.type === 'CLOB') {
-      // 이미 변환 시도했으나 여전히 CLOB 객체인 경우
-      console.warn('CLOB 변환 실패, 객체를 문자열로 변환: ', clob);
-      return JSON.stringify(clob);
-    }
-    return String(clob);
-  }
-  
-  // CLOB 스트림 처리
   return new Promise((resolve, reject) => {
     let data = '';
     clob.setEncoding('utf8');
     clob.on('data', chunk => data += chunk);
-    clob.on('error', err => reject(err));
     clob.on('end', () => resolve(data));
+    clob.on('error', reject);
   });
 }
 
@@ -37,21 +24,26 @@ async function clobToString(clob) {
 async function convertClobFields(data) {
   if (!data) return null;
   
-  if (Array.isArray(data)) {
-    return Promise.all(data.map(item => convertClobFields(item)));
-  }
-  
+  if (Array.isArray(data)) return Promise.all(data.map(item => convertClobFields(item)));
+
   const result = { ...data };
   const promises = [];
-  
+
   for (const key in result) {
-    if (result[key] && (
-      result[key].constructor === oracledb.CLOB || 
-      (typeof result[key] === 'object' && result[key].type === 'CLOB')
-    )) {
+    const value = result[key];
+
+    if (value && typeof value === 'object' &&
+        value.type && typeof value.type === 'object' &&
+        (value.type.name === 'DB_TYPE_CLOB' || value.type.column_type_name === 'CLOB')
+       ) {
+      
       promises.push(
-        clobToString(result[key]).then(str => {
-          result[key] = str;
+        clobToString(value).then(str => {
+          
+          result[key] = str; // 복사된 객체의 필드 업데이트
+          
+        }).catch(err => {
+            throw err;
         })
       );
     }
@@ -61,7 +53,26 @@ async function convertClobFields(data) {
   return result;
 }
 
+function toSnakeCaseObj(obj) {
+  if (Array.isArray(obj)) return obj.map(toSnakeCaseObj);
+  if (obj && typeof obj === 'object') {
+    return Object.fromEntries(
+      Object.entries(obj).map(([k, v]) => [
+        k
+          .replace(/([a-z0-9])([A-Z])/g, '$1_$2') 
+          .replace(/([A-Z]+)([A-Z][a-z0-9]+)/g, '$1_$2') // USERID → USER_ID
+          .replace(/([A-Z]+)/g, m => m.toLowerCase()) // USER_ID → user_id
+          .replace(/^_+/, '') // 앞쪽 언더스코어 제거
+          .toLowerCase(),
+        toSnakeCaseObj(v)
+      ])
+    );
+  }
+  return obj;
+}
+
 module.exports = {
   clobToString,
-  convertClobFields
+  convertClobFields,
+  toSnakeCaseObj
 };

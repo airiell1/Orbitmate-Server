@@ -120,20 +120,4 @@ VALUES ('test-user-frontend', 'Test Frontend User', 'testfrontend@example.com', 
 INSERT INTO users (user_id, username, email, password_hash, is_active)
 VALUES ('test-guest', 'Test Guest User', 'testguest@example.com', 'dummy_password_hash', 1);
 
--- Oracle 예약어 관련 주의사항
--- 'USER'는 Oracle의 예약어이므로 테이블 또는 컬럼 이름으로 직접 사용할 수 없습니다.
--- 쿼리 작성 시 다음과 같은 방식으로 사용하세요:
-
--- 1. 테이블 이름에 쌍따옴표 추가하거나 별칭 사용
--- 좋은 예:
--- SELECT * FROM users WHERE user_id = :userId;
--- SELECT u.* FROM users u WHERE u.user_id = :userId;
-
--- 2. 조인에서 예약어 처리
--- 좋은 예:
--- SELECT u.username, s.theme
--- FROM users u
--- JOIN user_settings s ON u.user_id = s.user_id
--- WHERE u.user_id = :userId;
-
 COMMIT;

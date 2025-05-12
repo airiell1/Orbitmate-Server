@@ -1,4 +1,4 @@
-const toSnakeCaseObj = require('./toSnakeCase');
+const toSnakeCaseObj = require('./utils')
 
 /**
  * API 응답을 표준화하는 함수

@@ -150,9 +150,9 @@ async function initializeSession() {
             headers: {
                 'Content-Type': 'application/json',
             },
-            // userId를 GUEST_USER_ID로 설정
+            // user_id를 GUEST_USER_ID로 설정
             body: JSON.stringify({ 
-                userId: GUEST_USER_ID, 
+                user_id: GUEST_USER_ID, 
                 title: `Test Session ${new Date().toISOString().slice(0, 16).replace('T', ' ')}` 
             })
         });
@@ -619,13 +619,13 @@ async function loginUser() {
 
 // Get User Profile
 async function getUserProfile() {
-    const userId = userIdInput.value;
-    if (!userId) {
+    const user_id = userIdInput.value;
+    if (!user_id) {
         displayApiResponse({ error: '사용자 ID를 입력하세요.' });
         return;
     }
     try {
-        const response = await fetch(`/api/users/${userId}/profile`);
+        const response = await fetch(`/api/users/${user_id}/profile`);
         const data = await response.json();
         displayApiResponse(data);
     } catch (error) {
@@ -635,20 +635,20 @@ async function getUserProfile() {
 
 // Delete User
 async function deleteUser() {
-    const userId = userIdInput.value;
-    if (!userId) {
+    const user_id = userIdInput.value;
+    if (!user_id) {
         displayApiResponse({ error: '사용자 ID를 입력하세요.' });
         return;
     }
-    if (!confirm(`정말로 사용자 ID '${userId}' 계정을 삭제하시겠습니까? 모든 관련 데이터가 삭제됩니다.`)) {
+    if (!confirm(`정말로 사용자 ID '${user_id}' 계정을 삭제하시겠습니까? 모든 관련 데이터가 삭제됩니다.`)) {
         return;
     }
     try {
-        const response = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
+        const response = await fetch(`/api/users/${user_id}`, { method: 'DELETE' });
         const data = await response.json();
         displayApiResponse(data);
         if (response.ok) {
-            console.log(`사용자 ${userId} 계정 삭제됨.`);
+            console.log(`사용자 ${user_id} 계정 삭제됨.`);
             userIdInput.value = '';
         }
     } catch (error) {
@@ -658,13 +658,13 @@ async function deleteUser() {
 
 // Get User Settings
 async function getUserSettings() {
-    const userId = userSettingsUserIdInput.value;
-    if (!userId) {
+    const user_id = userSettingsUserIdInput.value;
+    if (!user_id) {
         displayApiResponse({ error: '설정 조회할 사용자 ID를 입력하세요.' });
         return;
     }
     try {
-        const response = await fetch(`/api/users/${userId}/settings`);
+        const response = await fetch(`/api/users/${user_id}/settings`);
         const data = await response.json();
         displayApiResponse(data);
         if (response.ok) {
@@ -677,14 +677,14 @@ async function getUserSettings() {
 
 // Update User Settings
 async function updateUserSettings() {
-    const userId = userSettingsUserIdInput.value;
-    if (!userId) {
+    const user_id = userSettingsUserIdInput.value;
+    if (!user_id) {
         displayApiResponse({ error: '설정 수정할 사용자 ID를 입력하세요.' });
         return;
     }
     try {
         const payload = JSON.parse(userSettingsPayloadInput.value);
-        const response = await fetch(`/api/users/${userId}/settings`, {
+        const response = await fetch(`/api/users/${user_id}/settings`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -698,16 +698,16 @@ async function updateUserSettings() {
 
 // Upload Profile Image
 async function uploadProfileImage() {
-    const userId = profileImageUserIdInput.value;
+    const user_id = profileImageUserIdInput.value;
     const file = profileImageFileInput.files[0];
-    if (!userId || !file) {
+    if (!user_id || !file) {
         displayApiResponse({ error: '사용자 ID와 이미지 파일을 선택하세요.' });
         return;
     }
     const formData = new FormData();
     formData.append('profileImage', file);
     try {
-        const response = await fetch(`/api/users/${userId}/profile/image`, {
+        const response = await fetch(`/api/users/${user_id}/profile/image`, {
             method: 'POST',
             body: formData
         });
@@ -721,14 +721,14 @@ async function uploadProfileImage() {
 
 // Create Chat Session
 async function createChatSession() {
-    const userId = createSessionUserIdInput.value;
+    const user_id = createSessionUserIdInput.value;
     const title = createSessionTitleInput.value;
-    if (!userId || !title) {
+    if (!user_id || !title) {
         displayApiResponse({ error: '사용자 ID와 세션 제목을 입력하세요.' });
         return;
     }
     try {
-        const body = { userId, title };
+        const body = { user_id, title };
         if (createSessionCategoryInput.value) {
             body.category = createSessionCategoryInput.value;
         }
@@ -751,13 +751,13 @@ async function createChatSession() {
 
 // Get User Chat Sessions
 async function getUserChatSessions() {
-    const userId = getSessionsButton.value;
-    if (!userId) {
+    const user_id = getSessionsButton.value;
+    if (!user_id) {
         displayApiResponse({ error: '사용자 ID를 입력하세요.' });
         return;
     }
     try {
-        const response = await fetch(`/api/sessions/${userId}/chat/sessions`);
+        const response = await fetch(`/api/sessions/${user_id}/chat/sessions`);
         const data = await response.json();
         displayApiResponse(data);
     } catch (error) {
@@ -1110,10 +1110,10 @@ async function loginUserTest() {
 }
 
 async function getUserProfileTest() {
-    const userIdToTest = userIdInput.value;
-    if (!userIdToTest) { alert('사용자 ID를 입력하세요.'); return; }
+    const user_idToTest = userIdInput.value;
+    if (!user_idToTest) { alert('사용자 ID를 입력하세요.'); return; }
     try {
-        const response = await fetch(`/api/users/${userIdToTest}/profile`);
+        const response = await fetch(`/api/users/${user_idToTest}/profile`);
         const data = await response.json();
         updateApiResponse(data);
     } catch (error) {
@@ -1122,11 +1122,11 @@ async function getUserProfileTest() {
 }
 
 async function deleteUserTest() {
-    const userIdToTest = userIdInput.value;
-    if (!userIdToTest) { alert('삭제할 사용자 ID를 입력하세요.'); return; }
-    if (!confirm(`정말로 사용자 ID ${userIdToTest}를 삭제하시겠습니까?`)) return;
+    const user_idToTest = userIdInput.value;
+    if (!user_idToTest) { alert('삭제할 사용자 ID를 입력하세요.'); return; }
+    if (!confirm(`정말로 사용자 ID ${user_idToTest}를 삭제하시겠습니까?`)) return;
     try {
-        const response = await fetch(`/api/users/${userIdToTest}`, { method: 'DELETE' });
+        const response = await fetch(`/api/users/${user_idToTest}`, { method: 'DELETE' });
         const data = await response.json();
         updateApiResponse(data);
     } catch (error) {
@@ -1135,10 +1135,10 @@ async function deleteUserTest() {
 }
 
 async function getUserSettingsTest() {
-    const userIdToTest = userSettingsUserIdInput.value;
-    if (!userIdToTest) { alert('설정을 조회할 사용자 ID를 입력하세요.'); return; }
+    const user_idToTest = userSettingsUserIdInput.value;
+    if (!user_idToTest) { alert('설정을 조회할 사용자 ID를 입력하세요.'); return; }
     try {
-        const response = await fetch(`/api/users/${userIdToTest}/settings`);
+        const response = await fetch(`/api/users/${user_idToTest}/settings`);
         const data = await response.json();
         updateApiResponse(data);
     } catch (error) {
@@ -1147,12 +1147,12 @@ async function getUserSettingsTest() {
 }
 
 async function updateUserSettingsTest() {
-    const userIdToTest = userSettingsUserIdInput.value;
+    const user_idToTest = userSettingsUserIdInput.value;
     const payloadString = userSettingsPayloadInput.value;
-    if (!userIdToTest || !payloadString) { alert('사용자 ID와 설정 페이로드를 입력하세요.'); return; }
+    if (!user_idToTest || !payloadString) { alert('사용자 ID와 설정 페이로드를 입력하세요.'); return; }
     try {
         const payload = JSON.parse(payloadString);
-        const response = await fetch(`/api/users/${userIdToTest}/settings`, {
+        const response = await fetch(`/api/users/${user_idToTest}/settings`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -1165,13 +1165,13 @@ async function updateUserSettingsTest() {
 }
 
 async function uploadProfileImageTest() {
-    const userIdToTest = profileImageUserIdInput.value;
+    const user_idToTest = profileImageUserIdInput.value;
     const file = profileImageFileInput.files[0];
-    if (!userIdToTest || !file) { alert('사용자 ID와 프로필 이미지를 선택하세요.'); return; }
+    if (!user_idToTest || !file) { alert('사용자 ID와 프로필 이미지를 선택하세요.'); return; }
     const formData = new FormData();
     formData.append('profileImage', file);
     try {
-        const response = await fetch(`/api/users/${userIdToTest}/profile/image`, {
+        const response = await fetch(`/api/users/${user_idToTest}/profile/image`, {
             method: 'POST',
             body: formData
         });
@@ -1185,7 +1185,7 @@ async function uploadProfileImageTest() {
 
 // *** 채팅 세션 관리 테스트 함수들 ***
 async function createChatSessionTest() {
-    const userId = createSessionUserIdInput.value || GUEST_USER_ID;
+    const user_id = createSessionUserIdInput.value || GUEST_USER_ID;
     const title = createSessionTitleInput.value || '새 테스트 세션';
     const category = createSessionCategoryInput.value || '일반';
 
@@ -1193,7 +1193,7 @@ async function createChatSessionTest() {
         const response = await fetch('/api/chat/sessions', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: userId, title, category })
+            body: JSON.stringify({ user_id: user_id, title, category })
         });
         const data = await response.json();
         updateApiResponse(data);
@@ -1216,13 +1216,13 @@ async function createChatSessionTest() {
 }
 
 async function getUserSessionsTest() {
-    const userId = getSessionsUserIdInput.value || GUEST_USER_ID;
-    if (!userId) {
+    const user_id = getSessionsUserIdInput.value || GUEST_USER_ID;
+    if (!user_id) {
         alert('사용자 ID를 입력해주세요.');
         return;
     }
     try {
-        const response = await fetch(`/api/sessions/${userId}/chat/sessions`);
+        const response = await fetch(`/api/sessions/${user_id}/chat/sessions`);
         const data = await response.json();
         updateApiResponse(data);
         if (response.ok && sessionListDisplay) {

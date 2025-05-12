@@ -3,9 +3,9 @@ const { createChatSession, getUserChatSessions, updateChatSession, getSessionMes
 // 새 채팅 세션 생성 컨트롤러
 async function createSessionController(req, res) { // todo: 인자 3개로 수정하기
   
-  const { userId, title, category } = req.body;
+  const { user_id, title, category } = req.body;
   
-  if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+  if (!user_id || typeof user_id !== 'string' || user_id.trim() === '') {
     console.error('Error in createSessionController: User ID is required and must be a non-empty string.');
     return res.status(400).json({ error: '사용자 ID는 필수이며 빈 문자열이 아니어야 합니다.' });
   }
@@ -19,14 +19,14 @@ async function createSessionController(req, res) { // todo: 인자 3개로 수�
   }
   
   try {
-    const session = await createChatSession(userId, title, category);
+    const session = await createChatSession(user_id, title, category);
     if (!session || !session.session_id) {
         console.error('Error in createSessionController: Failed to create session.');
         return res.status(500).json({ error: '세션 생성에 실패했습니다.' });
     }
     res.status(201).json(session);
   } catch (err) {
-    console.error(`Error in createSessionController for user ${userId}:`, err);
+    console.error(`Error in createSessionController for user ${user_id}:`, err);
     res.status(500).json({ error: `세션 생성 중 오류 발생: ${err.message}` });
   }
 }
@@ -34,7 +34,7 @@ async function createSessionController(req, res) { // todo: 인자 3개로 수�
 // 사용자의 채팅 세션 목록 조회 컨트롤러
 async function getUserSessionsController(req, res) {
   const requestedUserId = req.params.user_id;
-  // const authenticatedUserId = req.user.userId; // README.AI에 따라 인증/인가 최소화
+  // const authenticatedUserId = req.user.user_id; // README.AI에 따라 인증/인가 최소화
 
   if (!requestedUserId) {
     console.error('Error in getUserSessionsController: User ID is required in params.');
@@ -126,25 +126,27 @@ async function getSessionMessagesController(req, res) {
 // 세션 삭제 컨트롤러
 async function deleteSessionController(req, res) {
   const sessionId = req.params.session_id;
-  // const userId = req.user.userId; // README.AI에 따라 인증/인가 최소화
+  const { user_id } = req.body; // 요청 본문에서 user_id를 가져옵니다.
 
   if (!sessionId) {
     console.error('Error in deleteSessionController: Session ID is required in params.');
     return res.status(400).json({ error: '경로 매개변수에 세션 ID가 필요합니다.' });
   }
-  // README.AI 요청: 인증/보안 기능 최소화. userId는 임시로 undefined 또는 특정 값으로 처리.
-  const userId = undefined; // 실제 환경에서는 인증된 사용자 ID 사용
+
+  if (!user_id) {
+    console.error('Error in deleteSessionController: User ID is required in the request body.');
+    return res.status(400).json({ error: '요청 본문에 사용자 ID(user_id)가 필요합니다.' });
+  }
 
   try {
-    // README.AI 요청: 인증/보안 기능 최소화. 모델 함수에서 userId를 사용한 인가 확인은 현재 생략되거나 모델 내부에서 처리.
-    const deleted = await deleteChatSession(sessionId, userId);
+    const deleted = await deleteChatSession(sessionId, user_id);
     if (!deleted) {
-      console.warn(`Warning in deleteSessionController: Session with ID ${sessionId} not found or not deleted.`);
-      return res.status(404).json({ error: '세션을 찾을 수 없거나 삭제할 수 없습니다. 이미 삭제되었거나 다른 사용자의 세션일 수 있습니다.' });
+      console.warn(`Warning in deleteSessionController: Session with ID ${sessionId} for user ${user_id} not found or not deleted.`);
+      return res.status(404).json({ error: '세션을 찾을 수 없거나 삭제할 수 없습니다. 세션 ID 또는 사용자 ID를 확인해주세요.' });
     }
     res.status(200).json({ message: '세션이 성공적으로 삭제되었습니다.' });
   } catch (err) {
-    console.error(`Error in deleteSessionController for session ${sessionId}:`, err);
+    console.error(`Error in deleteSessionController for session ${sessionId}, user ${user_id}:`, err);
     res.status(500).json({ error: `세션 삭제 중 오류 발생: ${err.message}` });
   }
 }

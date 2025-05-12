@@ -58,7 +58,7 @@ async function loginUserController(req, res) {
     const user = await loginUser(email, password);
 
     // 로그인 성공 시 JWT 생성
-    const tokenPayload = { userId: user.user_id, email: user.email }; // 토큰에 포함될 정보
+    const tokenPayload = { user_id: user.user_id, email: user.email }; // 토큰에 포함될 정보
     const token = generateToken(tokenPayload);
 
     // 사용자 정보와 토큰 함께 반환
@@ -85,8 +85,8 @@ async function loginUserController(req, res) {
 // 사용자 설정 조회 컨트롤러
 async function getUserSettingsController(req, res) {
   try {
-    const userId = req.params.user_id;
-    const settings = await getUserSettings(userId);
+    const user_id = req.params.user_id;
+    const settings = await getUserSettings(user_id);
     
     // 응답 데이터 표준화
     res.json(standardizeApiResponse(settings));
@@ -99,7 +99,7 @@ async function getUserSettingsController(req, res) {
 // 사용자 설정 업데이트 컨트롤러
 async function updateUserSettingsController(req, res) {
   const requestedUserId = req.params.user_id;
-  // const authenticatedUserId = req.user.userId; // 인증 생략
+  // const authenticatedUserId = req.user.user_id; // 인증 생략
   const authenticatedUserId = requestedUserId; // 임시로 요청된 ID를 사용
   const settings = req.body;
 
@@ -123,7 +123,7 @@ async function updateUserSettingsController(req, res) {
 
 // 사용자 프로필 이미지 업로드 컨트롤러
 async function uploadProfileImageController(req, res) {
-  const userId = req.params.user_id;
+  const user_id = req.params.user_id;
   const file = req.file;
 
   if (!file) {
@@ -136,10 +136,10 @@ async function uploadProfileImageController(req, res) {
   const profileImagePath = `/uploads/${file.filename}`; // 예시 경로
 
   try {
-    await updateUserProfileImage(userId, profileImagePath);
+    await updateUserProfileImage(user_id, profileImagePath);
     res.json({ 
       message: '프로필 이미지가 성공적으로 업데이트되었습니다.', 
-      user_id: userId,
+      user_id: user_id,
       profile_image_path: profileImagePath 
     });
   } catch (err) {
@@ -156,13 +156,13 @@ async function uploadProfileImageController(req, res) {
 
 // 회원 탈퇴 (계정 데이터 삭제) 컨트롤러
 async function deleteUserController(req, res) {
-  const userId = req.params.user_id;
+  const user_id = req.params.user_id;
   // 실제 운영에서는 본인 확인 절차 또는 관리자 권한 확인이 필요합니다.
   // 여기서는 인증을 생략하므로 바로 삭제 로직 진행
 
   try {
-    await deleteUser(userId);
-    res.status(200).json({ message: '사용자 계정이 성공적으로 삭제되었습니다.', user_id: userId });
+    await deleteUser(user_id);
+    res.status(200).json({ message: '사용자 계정이 성공적으로 삭제되었습니다.', user_id: user_id });
   } catch (err) {
     console.error('회원 탈퇴 처리 실패:', err);
     res.status(500).json({ error: `회원 탈퇴 처리 중 오류 발생: ${err.message}` });
@@ -171,11 +171,11 @@ async function deleteUserController(req, res) {
 
 // 사용자 프로필 조회 컨트롤러
 async function getUserProfileController(req, res) {
-  const userId = req.params.user_id;
+  const user_id = req.params.user_id;
   // 인증/인가 로직은 현재 최소화되어 있습니다.
 
   try {
-    const userProfile = await userModel.getUserProfile(userId);
+    const userProfile = await userModel.getUserProfile(user_id);
     if (!userProfile) {
       // 사용자는 존재하지만 프로필이 없는 경우 (정상적인 상황은 아님, registerUser에서 생성)
       // 또는 초기 데이터 마이그레이션 등으로 프로필이 없을 수 있음.
@@ -198,7 +198,7 @@ async function getUserProfileController(req, res) {
 
 // 사용자 프로필 업데이트 컨트롤러
 async function updateUserProfileController(req, res) {
-  const userId = req.params.user_id;
+  const user_id = req.params.user_id;
   const profileData = req.body;
   // 인증/인가 로직 최소화
 
@@ -208,7 +208,7 @@ async function updateUserProfileController(req, res) {
   }
 
   try {
-    const updatedProfile = await updateUserProfile(userId, profileData);
+    const updatedProfile = await updateUserProfile(user_id, profileData);
     // CLOB(BIO 등) → 문자열 변환 (casing도 일관성)
     const { clobToString } = require('../models/chat');
     const profileObj = { ...updatedProfile };

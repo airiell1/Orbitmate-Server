@@ -1,7 +1,7 @@
-const { getChatHistoryFromDB, saveUserMessageToDB, saveAiMessageToDB, deleteUserMessageFromDB, saveAttachmentToDB, getSessionMessagesForClient } = require('../models/chat');
-const { getAiResponse } = require('../config/vertexai');
 const { getConnection, oracledb } = require('../config/database');
-const chatModel = require('../models/chat');
+const { saveUserMessageToDB, saveAiMessageToDB, deleteUserMessageFromDB, getSessionMessagesForClient } = require('../models/chat');
+const { getAiResponse } = require('../config/vertexai');
+const { clobToString, convertClobFields } = require('../utils/dbUtils'); // convertClobFields import 추가
 const path = require('path');
 const fs = require('fs');
 
@@ -17,7 +17,7 @@ async function sendMessageController(req, res) {
   if (!message || typeof message !== 'string' || message.trim() === '') {
     return res.status(400).json(createErrorResponse('INVALID_INPUT', '메시지를 입력해주세요.'));
   }
-  const userId = req.user ? req.user.userId : GUEST_USER_ID;
+  const user_id = req.user ? req.user.user_id : GUEST_USER_ID;
 
   let connection; // Ensure connection is declared at the function scope
 
@@ -25,7 +25,7 @@ async function sendMessageController(req, res) {
     connection = await getConnection();
 
     // 1. 사용자 메시지 저장
-    const userMessageResult = await saveUserMessageToDB(connection, sessionId, userId, message);
+    const userMessageResult = await saveUserMessageToDB(connection, sessionId, user_id, message);
     if (!userMessageResult || !userMessageResult.user_message_id) {
       await connection.rollback();
       return res.status(500).json(createErrorResponse('DB_ERROR', '사용자 메시지 저장에 실패했습니다.'));
@@ -68,7 +68,6 @@ async function sendMessageController(req, res) {
     };
 
     if (specialModeType === 'stream') {
-      // 스트리밍 응답 처리 (이 부분은 네가 원하는 JSON 형식이 아니니 기존 로직 유지)
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
@@ -175,7 +174,7 @@ async function editMessageController(req, res) {
     }
     // 편집된 메시지 정보 다시 조회 (선택 사항)
     const editedMessageResult = await connection.execute(
-        `SELECT message_id, session_id, user_id, message_type, message_content, created_at, edited_at 
+        `SELECT message_id, session_id, user_id, message_type, message_content, created_at, edited_at, is_edited 
          FROM chat_messages 
          WHERE message_id = :messageId`,
         { messageId },
@@ -187,7 +186,9 @@ async function editMessageController(req, res) {
         return res.status(404).json({ error: '편집된 메시지를 찾을 수 없습니다.' });
     }
 
-    res.status(200).json({ message: '메시지가 성공적으로 수정되었습니다.', updatedMessage: editedMessageResult.rows[0] });
+    const updatedMessage = await convertClobFields(editedMessageResult.rows[0]); // CLOB 변환
+
+    res.status(200).json({ message: '메시지가 성공적으로 수정되었습니다.', updatedMessage: updatedMessage });
   } catch (err) {
     console.error(`Error in editMessageController for message ${messageId}:`, err);
     res.status(500).json({ error: `메시지 수정 중 오류 발생: ${err.message}` });
@@ -250,7 +251,7 @@ async function addReactionController(req, res) {
 // 메시지 리액션 제거 컨트롤러
 async function removeReactionController(req, res) {
   const messageId = req.params.message_id;
-  // const { userId } = req.user; // 인증된 사용자 ID (인증 구현 후 사용)
+  // const { user_id } = req.user; // 인증된 사용자 ID (인증 구현 후 사용)
 
   if (!messageId) {
     console.error('Error in removeReactionController: Message ID is required.');
@@ -264,9 +265,9 @@ async function removeReactionController(req, res) {
     // 이 예시에서는 chat_messages에 reaction 컬럼이 있다고 가정하고 null로 설정
     const result = await connection.execute(
       `UPDATE chat_messages SET reaction = NULL WHERE message_id = :messageId`,
-      // `UPDATE chat_messages SET reaction = NULL WHERE message_id = :messageId AND user_id = :userId`, // 사용자 확인 추가 시
+      // `UPDATE chat_messages SET reaction = NULL WHERE message_id = :messageId AND user_id = :user_id`, // 사용자 확인 추가 시
       { messageId },
-      // { messageId, userId }, // 사용자 확인 추가 시
+      // { messageId, user_id }, // 사용자 확인 추가 시
       { autoCommit: true }
     );
 
@@ -292,7 +293,7 @@ async function removeReactionController(req, res) {
 // 메시지 삭제 컨트롤러
 async function deleteMessageController(req, res) {
   const messageId = req.params.message_id;
-  // const userId = req.user.userId; // 인증된 사용자 ID (인증 구현 후 사용)
+  // const user_id = req.user.user_id; // 인증된 사용자 ID (인증 구현 후 사용)
 
   if (!messageId) {
     console.error('Error in deleteMessageController: Message ID is required.');
@@ -300,7 +301,7 @@ async function deleteMessageController(req, res) {
   }
   try {
     // 모델 함수를 사용하여 메시지 삭제 (내부적으로 인가 확인 가정)
-    // README.AI에 따라 인가 최소화, 여기서는 userId를 deleteUserMessageFromDB에 전달하지 않음
+    // README.AI에 따라 인가 최소화, 여기서는 user_id를 deleteUserMessageFromDB에 전달하지 않음
     const deleted = await deleteUserMessageFromDB(messageId); 
 
     if (!deleted) {
@@ -319,10 +320,10 @@ async function deleteMessageController(req, res) {
 async function handleChatMessage(req, res) {
   try {
     const { sessionId, message } = req.body;
-    const userId = 'test-user-frontend'; // 실제로는 인증 통해 얻어야 함
+    const user_id = 'test-user-frontend'; // 실제로는 인증 통해 얻어야 함
 
     // 1. 사용자 메시지 저장 (DB)
-    await saveUserMessage(sessionId, userId, message); // DB 저장 함수 호출 (구현 필요)
+    await saveUserMessage(sessionId, user_id, message); // DB 저장 함수 호출 (구현 필요)
 
     // 2. AI 응답 가져오기
     const aiResponseText = await getAiResponse(message); // AI 응답 함수 호출
@@ -345,10 +346,10 @@ async function handleChatMessage(req, res) {
 }
 
 // 사용자 메시지 저장 함수 (예시 - 실제 구현 필요)
-async function saveUserMessage(sessionId, userId, message) {
+async function saveUserMessage(sessionId, user_id, message) {
   // TODO: DB에 사용자 메시지 저장 로직 구현 (models/chat.js 등 활용)
-  console.log(`[DB] 사용자 메시지 저장 시도: ${sessionId}, ${userId}, ${message}`);
-  // 예: await ChatModel.saveMessage({ sessionId, userId, messageType: 'user', messageContent: message });
+  console.log(`[DB] 사용자 메시지 저장 시도: ${sessionId}, ${user_id}, ${message}`);
+  // 예: await ChatModel.saveMessage({ sessionId, user_id, messageType: 'user', messageContent: message });
 }
 
 // AI 메시지 저장 함수 (예시 - 실제 구현 필요)
@@ -362,7 +363,7 @@ async function saveAiMessage(sessionId, message) {
 // 파일 업로드 처리 함수
 async function uploadFile(req, res) {
   const sessionId = req.params.session_id;
-  // const userId = req.user.userId; // 인증된 사용자 ID
+  // const user_id = req.user.user_id; // 인증된 사용자 ID
 
   if (!req.file) {
     console.error('Error in uploadFile: No file uploaded.');
@@ -372,8 +373,8 @@ async function uploadFile(req, res) {
     console.error('Error in uploadFile: Session ID is required.');
     return res.status(400).json({ error: '세션 ID가 필요합니다.' });
   }
-  // 사용자 요청: 인증/보안 기능 최소화. userId는 임시로 'guest' 또는 요청에서 가져오도록 처리 (실제 환경에서는 인증 필요)
-  const userId = req.body.userId || 'guest'; // 임시 userId, 실제로는 인증 통해 받아야 함
+  // 사용자 요청: 인증/보안 기능 최소화. user_id는 임시로 'guest' 또는 요청에서 가져오도록 처리 (실제 환경에서는 인증 필요)
+  const user_id = req.body.user_id || 'guest'; // 임시 user_id, 실제로는 인증 통해 받아야 함
 
   const file = req.file;
   const messageContent = `파일 업로드: ${file.originalname}`; // 또는 파일 정보를 담은 JSON 문자열
@@ -385,11 +386,11 @@ async function uploadFile(req, res) {
     // 1. chat_messages 테이블에 파일 메시지 저장
     const messageResult = await connection.execute(
       `INSERT INTO chat_messages (session_id, user_id, message_type, message_content)
-       VALUES (:sessionId, :userId, 'file', :messageContent)
+       VALUES (:sessionId, :user_id, 'file', :messageContent)
        RETURNING message_id INTO :messageId`,
       {
         sessionId: sessionId,
-        userId: userId, // 실제로는 인증된 사용자 ID 사용
+        user_id: user_id, // 실제로는 인증된 사용자 ID 사용
         messageContent: messageContent,
         messageId: { type: oracledb.STRING, dir: oracledb.BIND_OUT }
       }

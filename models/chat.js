@@ -75,8 +75,8 @@ async function getChatHistoryFromDB(connection, sessionId, includeCurrentUserMes
   }
 }
 
-// connection, userId 인자를 추가하고 순서를 맞춤
-async function saveUserMessageToDB(connection, sessionId, userId, message) {
+// connection, user_id 인자를 추가하고 순서를 맞춤
+async function saveUserMessageToDB(connection, sessionId, user_id, message) {
   try {
     const sessionCheck = await connection.execute(
       `SELECT 1 FROM chat_sessions WHERE session_id = :sessionId`,
@@ -91,11 +91,11 @@ async function saveUserMessageToDB(connection, sessionId, userId, message) {
 
     const result = await connection.execute(
       `INSERT INTO chat_messages (session_id, user_id, message_type, message_content, created_at)
-      VALUES (:sessionId, :userId, 'user', :message, SYSTIMESTAMP)
+      VALUES (:sessionId, :user_id, 'user', :message, SYSTIMESTAMP)
       RETURNING message_id INTO :messageId`,
       {
         sessionId: sessionId, // 이제 제대로 된 세션 ID 문자열
-        userId: userId,       // 컨트롤러에서 넘겨받은 userId
+        user_id: user_id,       // 컨트롤러에서 넘겨받은 user_id
         message: { val: message, type: oracledb.CLOB }, // 메시지 내용 (CLOB 처리)
         messageId: { type: oracledb.STRING, dir: oracledb.BIND_OUT, maxSize: 255 }
       },
@@ -113,7 +113,7 @@ async function saveUserMessageToDB(connection, sessionId, userId, message) {
 }
 
 // AI 메시지를 DB에 저장
-async function saveAiMessageToDB(connection, sessionId, userId, message) {
+async function saveAiMessageToDB(connection, sessionId, user_id, message) {
   try {
     // 메시지가 null이거나 빈 문자열인 경우 기본 메시지 사용
     let safeMessage = message && typeof message === 'string' && message.trim() !== '' ? 
@@ -123,11 +123,11 @@ async function saveAiMessageToDB(connection, sessionId, userId, message) {
     // message_id는 VARCHAR2(36)임 (DB 스키마 기준)
     const result = await connection.execute(
       `INSERT INTO chat_messages (session_id, user_id, message_type, message_content, created_at) 
-       VALUES (:sessionId, :userId, 'ai', :messageContent, SYSTIMESTAMP) 
+       VALUES (:sessionId, :user_id, 'ai', :messageContent, SYSTIMESTAMP) 
        RETURNING message_id, message_content, created_at INTO :messageId, :content, :createdAt`,
       { 
         sessionId: sessionId, 
-        userId: userId,
+        user_id: user_id,
         messageContent: { val: safeMessage, type: oracledb.CLOB }, // CLOB으로 저장
         messageId: { type: oracledb.STRING, dir: oracledb.BIND_OUT, maxSize: 36 },
         content: { type: oracledb.CLOB, dir: oracledb.BIND_OUT, maxSize: 1024 * 1024 }, // 충분한 maxSize 설정 (예: 1MB)
@@ -238,12 +238,12 @@ async function saveMessageToDB(messageData) {
 }
 
 // 사용자 메시지를 DB에서 삭제 (작성자 확인 포함)
-async function deleteUserMessageFromDB(messageId, userId) {
+async function deleteUserMessageFromDB(messageId, user_id) {
   let connection;
   try {
     connection = await getConnection();
     
-    // README.AI에 따라 인증/보안 최소화 요청 수용: userId 체크를 제거
+    // README.AI에 따라 인증/보안 최소화 요청 수용: user_id 체크를 제거
     const result = await connection.execute(
       `DELETE FROM chat_messages 
        WHERE message_id = :messageId`,
