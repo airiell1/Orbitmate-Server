@@ -1,5 +1,5 @@
 const { getConnection, oracledb } = require('../config/database');
-const { saveUserMessageToDB, saveAiMessageToDB, deleteUserMessageFromDB, getSessionMessagesForClient } = require('../models/chat');
+const { saveUserMessageToDB, saveAiMessageToDB, deleteUserMessageFromDB, getSessionMessagesForClient, getChatHistoryFromDB } = require('../models/chat'); // getChatHistoryFromDB 추가
 const { getAiResponse } = require('../config/vertexai');
 const { clobToString, convertClobFields } = require('../utils/dbUtils'); // convertClobFields import 추가
 const path = require('path');

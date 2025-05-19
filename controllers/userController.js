@@ -200,7 +200,6 @@ async function getUserProfileController(req, res) {
 async function updateUserProfileController(req, res) {
   const user_id = req.params.user_id;
   const profileData = req.body;
-  // 인증/인가 로직 최소화
 
   // 요청 본문이 비어 있는지 확인 (profileData가 null이거나 빈 객체일 수 있음)
   if (!profileData || Object.keys(profileData).length === 0) {

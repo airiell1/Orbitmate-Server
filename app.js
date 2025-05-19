@@ -7,14 +7,13 @@ const fs = require('fs');
 require('dotenv').config(); // 환경 변수 로드
 
 const { initOracleClient, initializeDbPool } = require('./config/database'); // DB 관련 함수들 가져오기
+const app = express();
 
 // ** 라우터 변수만 선언 (require는 나중에) **
 let usersRouter;
 let chatRouter;
 let sessionsRouter;
-let apiDocsRouter;
 
-const app = express();
 
 // 미들웨어 설정 (DB 연결 필요 없는 것들)
 app.use(cors({
@@ -31,6 +30,11 @@ app.get('/', (req, res) => {
 });
 app.get('/test', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'test.html'));
+});
+
+// API 문서 라우트를 app.js에서 직접 처리
+app.get('/api/docs', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'api_docs.html'));
 });
 
 // 업로드 디렉토리 설정 (이건 DB 연결 전에 해도 괜찮아)
@@ -62,12 +66,10 @@ async function startServer() {
     usersRouter = require('./routes/users');
     chatRouter = require('./routes/chat');
     sessionsRouter = require('./routes/sessions');
-    apiDocsRouter = require('./routes/api_docs');
 
     app.use('/api/users', usersRouter);
     app.use('/api/chat', chatRouter);
     app.use('/api/sessions', sessionsRouter);
-    app.use('/api/docs', apiDocsRouter); // API 문서 라우터 등록
 
     // 서버 상태 확인용 엔드포인트 (이건 DB 필요 없을 수도 있지만 라우터 등록 후에)
     app.get('/api/health', (req, res) => {

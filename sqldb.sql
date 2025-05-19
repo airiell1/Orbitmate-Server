@@ -108,6 +108,15 @@ ALTER TABLE chat_messages ADD CONSTRAINT chk_message_type CHECK (message_type IN
 INSERT INTO users (user_id, username, email, password_hash, is_active)
 VALUES ('guest', 'Guest User', 'guest@example.com', 'no_password_needed', 1);
 
+-- 특정 사용자 정보 조회 쿼리 (A66C8382886C4EA6B57B9F1033E49EB2)
+-- 이 쿼리는 사용자의 기본 정보, 설정, 프로필 정보를 모두 가져옵니다
+SELECT u.*, 
+  us.theme, us.language, us.font_size, us.notifications_enabled, us.ai_model_preference,
+  up.theme_preference, up.bio, up.badge, up.experience, up."level"
+FROM users u
+LEFT JOIN user_settings us ON u.user_id = us.user_id
+LEFT JOIN user_profiles up ON u.user_id = up.user_id
+WHERE u.user_id = 'A66C8382886C4EA6B57B9F1033E49EB2';
 -- AI 시스템 사용자 추가
 -- 이 사용자는 시스템 메시지 전송을 위한 특별한 사용자로, 비밀번호는 필요 없음
 INSERT INTO users (user_id, username, email, password_hash, is_active)

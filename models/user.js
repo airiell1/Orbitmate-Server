@@ -308,11 +308,13 @@ async function updateUserProfileImage(user_id, profileImagePath) {
   }
 }
 
-// 사용자 프로필 조회 함수
-async function getUserProfile(user_id) {
-  let connection;
+// 사용자 프로필 조회 함수 (existingConnection 파라미터 추가)
+async function getUserProfile(user_id, existingConnection = null) {
+  let connection = existingConnection;
   try {
-    connection = await getConnection();
+    if (!connection) {
+      connection = await getConnection();
+    }
     const result = await connection.execute(
       `SELECT u.user_id, u.username, u.email, u.created_at, u.is_active, u.profile_image_path, 
               p.theme_preference, p.bio, p.badge, p.experience, p."level", p.updated_at
@@ -327,10 +329,8 @@ async function getUserProfile(user_id) {
       return null;
     }
 
-    // 모든 CLOB 필드 자동 변환
     let row = await convertClobFields(result.rows[0]);
 
-    // TIMESTAMP(Date) 필드 문자열 변환
     if (row.CREATED_AT && typeof row.CREATED_AT === 'object' && row.CREATED_AT.toISOString) {
       row.CREATED_AT = row.CREATED_AT.toISOString();
     }
@@ -338,13 +338,12 @@ async function getUserProfile(user_id) {
       row.UPDATED_AT = row.UPDATED_AT.toISOString();
     }
 
-    // snake_case로 변환
     return toSnakeCaseObj(row);
   } catch (err) {
     console.error('Error getting user profile:', err);
     throw err;
   } finally {
-    if (connection) {
+    if (connection && !existingConnection) { // 이 함수에서 직접 생성한 경우에만 닫음
       try {
         await connection.close();
       } catch (err) {
@@ -357,52 +356,67 @@ async function getUserProfile(user_id) {
 // 사용자 프로필 업데이트 함수
 async function updateUserProfile(user_id, profileData) {
   let connection;
-  try {    
+  try {
     connection = await getConnection();
+    // 트랜잭션 시작 (명시적으로 autoCommit을 false로 설정하거나, connection 기본값이 false임)
 
-    // ** 여기서 들어온 profileData (camelCase 예상)를 snake_case로 변환! **
-    // 클라이언트가 { themePreference: '...', bio: '...', badge: '...' } 이렇게 보냈다고 가정하고
-    // 그걸 { theme_preference: '...', bio: '...', badge: '...' } 이렇게 바꿔주는 거야.
-    const snakeCaseProfileData = toSnakeCaseObj(profileData); 
-    
-    // 이제 변환된 snake_case 객체에서 필요한 값을 가져와.
-    const { theme_preference, bio, badge } = snakeCaseProfileData; // <-- 여기서 snake_case 키 사용!
+    const snakeCaseProfileData = toSnakeCaseObj(profileData);
+    const { username, theme_preference, bio, badge } = snakeCaseProfileData;
 
-    let updateQuery = 'UPDATE user_profiles SET';
-    const bindParams = { user_id: user_id };    
-    let hasChanges = false;
-    
-    // 업데이트 쿼리 만들 때 변환된 snake_case 변수를 사용.
-    // toSnakeCaseObj 함수가 'themePreference'를 'theme_preference'로 잘 바꿔준다고 가정.
-    if (theme_preference !== undefined) { // <-- 여기서 변환된 snake_case 변수 사용
-      updateQuery += hasChanges ? ', theme_preference = :theme_preference' : ' theme_preference = :theme_preference';
-      bindParams.theme_preference = theme_preference; // <-- 여기서 변환된 snake_case 변수 사용
-      hasChanges = true;
-    }
-    // bio와 badge도 마찬가지로 snake_caseProfileData에서 가져온 값을 씀.
-    if (bio !== undefined) { // <-- 여기서 변환된 snake_case 변수 사용
-      updateQuery += hasChanges ? ', bio = :bio' : ' bio = :bio';
-      bindParams.bio = bio; // <-- 여기서 변환된 snake_case 변수 사용
-      hasChanges = true;
-    }
-    if (badge !== undefined) { // <-- 여기서 변환된 snake_case 변수 사용
-      updateQuery += hasChanges ? ', badge = :badge' : ' badge = :badge';
-      bindParams.badge = badge; // <-- 여기서 변환된 snake_case 변수 사용
-      hasChanges = true;
+    let userTableHasChanges = false;
+    let userProfileTableHasChanges = false;
+
+    // 1. users 테이블 업데이트 (username)
+    if (username !== undefined && username !== null) { // username이 제공된 경우
+      // 현재 username과 다른 경우에만 업데이트 (선택적 최적화)
+      // const currentUser = await connection.execute(`SELECT username FROM users WHERE user_id = :user_id`, {user_id}, {outFormat: oracledb.OUT_FORMAT_OBJECT});
+      // if (currentUser.rows.length > 0 && currentUser.rows[0].USERNAME !== username) {
+      await connection.execute(
+        `UPDATE users SET username = :username WHERE user_id = :user_id`,
+        { username: username, user_id: user_id }
+        // { autoCommit: false } // autoCommit은 마지막에 한 번만
+      );
+      userTableHasChanges = true;
+      // }
     }
 
-    // updated_at 자동 갱신
-    updateQuery += ', updated_at = SYSTIMESTAMP';
-    updateQuery += ' WHERE user_id = :user_id';
+    // 2. user_profiles 테이블 업데이트
+    const profileUpdateFields = [];
+    const profileBindParams = { user_id: user_id };
 
-    if (!hasChanges) { // 업데이트할 필드가 없는 경우
-        return await getUserProfile(user_id); // 변경 없이 현재 프로필 반환 (이때는 이미 snake_case로 반환될 것임)
+    if (theme_preference !== undefined) {
+      profileUpdateFields.push('theme_preference = :theme_preference');
+      profileBindParams.theme_preference = theme_preference;
     }
+    if (bio !== undefined) { // CLOB 데이터는 그대로 전달
+      profileUpdateFields.push('bio = :bio');
+      profileBindParams.bio = bio;
+    }
+    if (badge !== undefined) {
+      profileUpdateFields.push('badge = :badge');
+      profileBindParams.badge = badge;
+    }
+
+    if (profileUpdateFields.length > 0) {
+      let updateProfileQuery = `UPDATE user_profiles SET ${profileUpdateFields.join(', ')}, updated_at = SYSTIMESTAMP WHERE user_id = :user_id`;
+      await connection.execute(updateProfileQuery, profileBindParams);
+      userProfileTableHasChanges = true;
+    }
+
+    if (!userTableHasChanges && !userProfileTableHasChanges) {
+      // 변경 사항이 없으면 현재 프로필 반환 (롤백 불필요, 커밋 안 함)
+      const currentProfile = await getUserProfile(user_id, connection); // 기존 커넥션 사용
+      if (!currentProfile) throw new Error('프로필을 찾을 수 없습니다.');
+      return currentProfile;
+    }
+
+    await connection.commit(); // 모든 변경사항 커밋
     
-    await connection.execute(updateQuery, bindParams, { autoCommit: true });
-    
-    return await getUserProfile(user_id); // 업데이트된 프로필 정보 반환 (getUserProfile 안에서 이미 snake_case로 변환됨)
+    return await getUserProfile(user_id, connection); // 업데이트된 프로필 정보 반환 (기존 커넥션 사용)
   } catch (err) {
+    if (connection) {
+      await connection.rollback(); // 오류 발생 시 롤백
+    }
     console.error('프로필 업데이트 실패:', err);
     throw err;
   } finally {
