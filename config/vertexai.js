@@ -6,7 +6,7 @@ const path = require('path');
 const project = process.env.GOOGLE_PROJECT_ID;
 const keyFilename = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 
-const location = 'us-central1';
+const location = 'global'; // Vertex AI의 위치 설정 (global 또는 us-central1 등)
 
 // Vertex AI 클라이언트 초기화
 const vertex_ai = new VertexAI({ project, location, keyFilename });
@@ -21,13 +21,13 @@ const generativeModel = vertex_ai.getGenerativeModel({
       topP: 0.95,
       maxOutputTokens: 65535, // 최대 출력 토큰 수 (최대값 65535)
     },
-    safetySettings: [
-      { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, // 증오 발언 관련
-      { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, // 성적 콘텐츠 관련
-      { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, // 위험한 콘텐츠 관련
-      { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, // 학대, 독성, 괴롭힘 관련
-      // { category: HarmCategory.HARM_CATEGORY_UNSPECIFIED, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE } // 매우 포괄적 (신중하게 사용)
-    ],
+    // safetySettings: [
+    //   { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, // 증오 발언 관련
+    //   { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, // 성적 콘텐츠 관련
+    //   { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, // 위험한 콘텐츠 관련
+    //   { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, // 학대, 독성, 괴롭힘 관련
+    //   // { category: HarmCategory.HARM_CATEGORY_UNSPECIFIED, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE } // 매우 포괄적 (신중하게 사용)
+    // ],
 });
 
 // AI 응답을 가져오는 함수
@@ -114,14 +114,37 @@ async function getAiResponse(currentUserMessage, history = [], systemMessageText
         }
     } catch (error) {
         console.error('Vertex AI 요청 중 오류 발생:', error);
+        
+        // HTML 응답 감지 및 디버깅 정보 향상
+        if (error.message && error.message.includes('<!DOCTYPE')) {
+            console.error('HTML 응답을 받았습니다. 인증 또는 네트워크 문제일 수 있습니다.');
+            console.error('이 오류는 주로 다음 문제로 발생합니다:');
+            console.error('1. Google Cloud 인증 정보가 잘못되었거나 만료됨');
+            console.error('2. 네트워크/프록시 설정 문제');
+            console.error('3. Vertex AI 서비스 접근 권한 부족');
+        }
+        
         if (error.response && error.response.data) {
             console.error('오류 응답 데이터:', error.response.data);
         }
+        
+        // 응답 본문 확인 시도
+        try {
+            if (error.response && error.response.body) {
+                const bodyText = error.response.body.toString();
+                console.error('응답 본문 내용:', bodyText.substring(0, 500) + '...');
+            }
+        } catch (bodyError) {
+            console.error('응답 본문 확인 실패:', bodyError);
+        }
+        
         // 스트리밍 콜백이 있다면 오류도 전달할 수 있도록 처리
         if (specialModeType === 'stream' && typeof streamResponseCallback === 'function') {
             streamResponseCallback(null, error); // 오류 객체를 콜백으로 전달
         }
-        throw new Error(`Vertex AI API 호출 실패: ${error.message}`);
+        
+        const errorMessage = `Vertex AI API 호출 실패: ${error.message}`;
+        throw new Error(errorMessage);
     }
 }
 

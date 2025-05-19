@@ -228,6 +228,22 @@ async function updateUserProfileController(req, res) {
   }
 }
 
+async function checkEmailExists(req, res) {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ error: '이메일은 필수 입력사항입니다.' });
+  }
+
+  try {
+    const exists = await userModel.checkEmailExists(email);
+    res.json({ exists });
+  } catch (err) {
+    console.error('이메일 중복 체크 오류:', err);
+    res.status(500).json({ error: `이메일 중복 체크 중 오류 발생: ${err.message}` });
+  }
+}
+
 module.exports = {
   registerUserController,
   loginUserController,
@@ -235,6 +251,7 @@ module.exports = {
   updateUserSettingsController,
   uploadProfileImageController,
   deleteUserController,
-  getUserProfileController, // 추가
-  updateUserProfileController // 추가
+  getUserProfileController,
+  updateUserProfileController,
+  checkEmailExists
 };

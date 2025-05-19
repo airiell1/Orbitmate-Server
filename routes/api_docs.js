@@ -160,18 +160,7 @@ router.get('/', (req, res) => {
           ],
           exampleReq:  \`{\n  "username": "APItest",\n  "bio": "테스트 계정입니다."\n}\`,
           exampleRes:  \`{\n  "user_id": "API_TEST_USER_ID",\n  "username": "APItest",\n  "email": "API@example.com",\n  "created_at": "YYYY-MM-DDTHH:mm:ss.sssZ",\n  "is_active": 1,\n  "profile_image_path": null,\n  "theme_preference": "light",\n  "bio": "테스트 계정입니다.",\n  "badge": null,\n  "experience": 0,\n  "level": 1,\n  "updated_at": "YYYY-MM-DDTHH:mm:ss.sssZ"\n}\`
-        },
-        {
-          method: 'POST',
-          path: '/api/users/check-email',
-          title: '이메일 중복 확인',
-          desc: '제공된 이메일이 이미 시스템에 등록되어 있는지 확인합니다.',
-          params: [
-            { name: 'email', type: 'email', label: '이메일', required: true }
-          ],
-          exampleReq: \`{\n  "email": "API@example.com"\n}\`,
-          exampleRes: \`{\n  "exists": true\n}\`
-        },
+    },
         /* 3. 채팅 세션 관리 */
         {
           method: 'POST',

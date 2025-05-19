@@ -1,3 +1,4 @@
+````instructions
 # Orbitmate Copilot Instructions
 
 이 문서는 Orbitmate 프로젝트의 AI 코파일럿 및 신규 진입자를 위한 실전 운영 가이드, 구조 요약, 버그 트래킹, 작업 목록을 포함합니다.
@@ -45,6 +46,7 @@
       - `getUserProfileController()`, `updateUserProfileController()`: 프로필 조회/수정
       - `uploadProfileImageController()`: 프로필 이미지 업로드
       - `deleteUserController()`: 회원 탈퇴
+      - `checkEmailExists()`: 이메일 중복 확인 API 처리
 
   - `controllers/chatController.js`: 채팅 메시지 전송, AI 응답, 메시지 편집/삭제/리액션, 파일 업로드 등 채팅 관련 API 처리
     - 주요 함수:
@@ -73,6 +75,7 @@
       - `updateUserProfileImage(user_id, profileImagePath)`: 프로필 이미지 경로 업데이트
       - `addUserExperience(user_id, points)`: 경험치 추가 및 레벨업 처리
       - `deleteUser(user_id)`: 회원 탈퇴(계정 및 연관 데이터 삭제)
+      - `checkEmailExists(email)`: 이메일 중복 여부 확인 (true/false 반환)
 
   - `models/chat.js`: 채팅 메시지, 첨부파일, CLOB 변환 등 채팅 관련 DB 접근 함수
     - 주요 함수:
@@ -201,7 +204,7 @@
     - (예시) "테스트 세션 생성 시 메시지 ID가 매번 달라짐" → 세션 생성 시 두 개의 메시지도 고정 ID로 자동 생성
 
 **API 문서/예시/기본값/실제 응답 동기화 (상세)**
-  - `routes/apiDocs.js`의 모든 예시 요청/응답, 폼 기본값, 설명은 실제 백엔드 출력과 1:1로 맞출 것
+  - `routes/api_docs.js`의 모든 예시 요청/응답, 폼 기본값, 설명은 실제 백엔드 출력과 1:1로 맞출 것
   - 신규/수정 API 추가 시, 예시/기본값/응답 구조를 반드시 실 API 결과와 비교·동기화
   - 필드명, casing, 값 타입(문자열/숫자/객체 등)까지 실제 응답과 일치시킬 것
   - **예시)**

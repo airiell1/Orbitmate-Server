@@ -510,14 +510,40 @@ async function deleteUser(user_id) {
   }
 }
 
+// 이메일 중복 체크 함수
+async function checkEmailExists(email) {
+  let connection;
+  try {
+    connection = await getConnection();
+    const result = await connection.execute(
+      `SELECT COUNT(*) AS count FROM users WHERE email = :email`,
+      { email: email },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+    return result.rows[0].COUNT > 0;
+  } catch (err) {
+    console.error('이메일 중복 체크 DB 오류:', err);
+    throw err; // 오류를 호출자에게 다시 던짐
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (err) {
+        console.error('DB 연결 해제 실패:', err);
+      }
+    }
+  }
+}
+
 module.exports = {
   registerUser,
   loginUser,
   getUserSettings,
   updateUserSettings,
   updateUserProfileImage,
-  deleteUser,
   getUserProfile,
   updateUserProfile,
-  addUserExperience // 추가
+  addUserExperience,
+  deleteUser,
+  checkEmailExists
 };

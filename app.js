@@ -62,7 +62,7 @@ async function startServer() {
     usersRouter = require('./routes/users');
     chatRouter = require('./routes/chat');
     sessionsRouter = require('./routes/sessions');
-    apiDocsRouter = require('./routes/apiDocs');
+    apiDocsRouter = require('./routes/api_docs');
 
     app.use('/api/users', usersRouter);
     app.use('/api/chat', chatRouter);

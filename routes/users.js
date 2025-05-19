@@ -1,5 +1,7 @@
 const express = require('express');
-const { registerUserController, loginUserController, getUserSettingsController, updateUserSettingsController, uploadProfileImageController, deleteUserController, getUserProfileController, updateUserProfileController } = require('../controllers/userController');
+const { registerUserController, loginUserController, getUserSettingsController,
+    updateUserSettingsController, uploadProfileImageController, deleteUserController,
+    getUserProfileController, updateUserProfileController, checkEmailExists} = require('../controllers/userController');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -28,6 +30,9 @@ const upload = multer({ storage: profileStorage });
 // --- 인증 불필요 ---
 // 사용자 등록
 router.post('/register', registerUserController);
+
+// 이메일 중복 체크
+router.post('/check-email', checkEmailExists);
 
 // 사용자 로그인
 router.post('/login', loginUserController);
