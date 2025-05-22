@@ -1,6 +1,7 @@
 const { getConnection, oracledb } = require('../config/database');
 const { saveUserMessageToDB, saveAiMessageToDB, deleteUserMessageFromDB, getSessionMessagesForClient, getChatHistoryFromDB } = require('../models/chat'); // getChatHistoryFromDB 추가
 const { getAiResponse } = require('../config/vertexai');
+const { getOllamaResponse } = require('../config/ollama'); // Ollama 추가
 const { clobToString, convertClobFields } = require('../utils/dbUtils'); // convertClobFields import 추가
 const path = require('path');
 const fs = require('fs');
@@ -12,7 +13,8 @@ const { createErrorResponse, getHttpStatusByErrorCode, handleOracleError, logErr
 async function sendMessageController(req, res) {
   const sessionId = req.params.session_id;
   const GUEST_USER_ID = 'guest';
-  const { message, systemPrompt, specialModeType } = req.body;
+  // aiProvider와 ollama_model 추가
+  const { message, systemPrompt, specialModeType, ai_provider, ollama_model } = req.body;
 
   if (!message || typeof message !== 'string' || message.trim() === '') {
     return res.status(400).json(createErrorResponse('INVALID_INPUT', '메시지를 입력해주세요.'));
@@ -35,65 +37,205 @@ async function sendMessageController(req, res) {
     // 2. 대화 기록 가져오기 (현재 사용자 메시지 포함)
     let chatHistoryForAI = await getChatHistoryFromDB(connection, sessionId, false);
 
-    // 3. Vertex AI에 요청
+    // 3. AI에 요청 (Gemini 또는 Ollama 선택)
     const effectiveSystemPrompt = systemPrompt && systemPrompt.trim() ? systemPrompt.trim() : null;
     
-    const aiResponseFull = await getAiResponse(message, chatHistoryForAI, effectiveSystemPrompt, specialModeType);
+    let aiResponseFull;
+    let aiSource; // AI 응답 출처를 기록하기 위한 변수
+    let isOllamaStream = false;
+
+    if (ai_provider === 'ollama') {
+      aiSource = 'Ollama';
+      const modelToUse = ollama_model || 'gemma3:4b'; // 기본 모델 gemma3:4b
+      console.log(`Using Ollama model: ${modelToUse}, specialModeType: ${specialModeType}`);
+
+      if (specialModeType === 'stream') {
+        isOllamaStream = true;
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.flushHeaders();
+
+        // 스트리밍 ID 먼저 전송 (userMessageId는 위에서 이미 확보됨)
+        // AI 메시지 ID는 AI 응답 저장 후 알 수 있으므로, 여기서는 우선 userMessageId만 보내거나,
+        // 또는 AI 응답을 받기 시작했다는 신호와 함께 userMessageId를 보낼 수 있습니다.
+        // 우선 userMessageId만 보내고, AI 메시지 ID는 스트림 종료 후 별도 이벤트로 보내거나,
+        // 클라이언트가 최종 응답 객체를 통해 받도록 합니다.
+        // 여기서는 스트림 시작 시 userMessageId와 임시 aiMessageId 플레이스홀더를 보낼 수 있습니다.
+        // 또는, ID를 스트림 데이터와 함께 보내지 않고, 스트림 종료 후 한번에 보낼 수도 있습니다.
+        // Gemini 스트림 방식과 유사하게 ID를 먼저 보내는 구조를 유지하려면,
+        // AI 메시지 저장 전에 ID를 예측하거나 임시 ID를 사용해야 합니다.
+        // 여기서는 우선 스트림 청크만 보내고, ID는 나중에 처리하는 방향으로 단순화합니다.
+        // res.write(`event: ids\\ndata: ${JSON.stringify({ userMessageId: userMessageId.toString(), tempAiMessageId: "streaming..." })}\\n\\n`);
+
+
+        let accumulatedChunks = "";
+        try {
+          aiResponseFull = await getOllamaResponse(
+            modelToUse,
+            message,
+            chatHistoryForAI,
+            effectiveSystemPrompt,
+            (chunk) => { // streamResponseCallback
+              if (chunk) {
+                accumulatedChunks += chunk;
+                res.write(`data: ${JSON.stringify({ type: 'chunk', content: chunk })}\\n\\n`);
+              }
+            }
+          );
+          // 스트림 종료 후 aiResponseFull에는 전체 내용이 담겨있음
+          if (!aiResponseFull || typeof aiResponseFull.content !== 'string') {
+             // 스트림 콜백 내에서 오류가 발생했거나, 최종 resolve된 내용이 없을 경우
+            console.error('Ollama stream finished but no valid content was accumulated.');
+            // 스트림이 이미 시작되었으므로, 여기서 500 에러를 보내는 것은 적절하지 않을 수 있음.
+            // 클라이언트에 에러 이벤트를 보내고 연결을 종료해야 함.
+            res.write(`event: error\\ndata: ${JSON.stringify({ message: 'AI 스트리밍 중 오류 발생 또는 내용 없음' })}\\n\\n`);
+            res.end();
+            // DB 롤백 및 연결 종료는 finally 블록에서 처리되도록 여기서 바로 return.
+            // 다만, connection.rollback()은 여기서 호출해주는 것이 좋을 수 있음.
+            if (connection) await connection.rollback();
+            return; 
+          }
+          // console.log("Ollama stream finished. Full content:", aiResponseFull.content);
+          res.write(`event: end\\ndata: ${JSON.stringify({ message: 'Stream ended' })}\\n\\n`);
+          // 스트림이 정상 종료되었으므로 res.end()는 여기서 호출하지 않고,
+          // AI 메시지 저장 후 최종 응답을 보내는 로직에서 처리하거나,
+          // 또는 여기서 res.end()를 호출하고, DB 저장은 백그라운드로 처리할 수도 있습니다.
+          // 현재 구조에서는 스트림 종료 후 DB 저장 및 최종 응답 전송이 이어지므로, res.end()는 나중에.
+        } catch (streamError) {
+          console.error('Error during Ollama stream processing in controller:', streamError);
+          if (connection) await connection.rollback();
+          // 클라이언트에 오류 알림
+          if (!res.headersSent) { // 헤더가 아직 전송되지 않았다면 오류 응답 가능
+            return res.status(500).json(createErrorResponse('AI_STREAM_ERROR', 'Ollama 스트리밍 중 오류가 발생했습니다.'));
+          } else { // 이미 스트림이 시작되었다면
+            res.write(`event: error\\ndata: ${JSON.stringify({ message: 'Ollama 스트리밍 중 심각한 오류 발생' })}\\n\\n`);
+            res.end(); // 스트림 강제 종료
+            return;
+          }
+        }
+      } else { // Ollama 비스트리밍
+        aiResponseFull = await getOllamaResponse(modelToUse, message, chatHistoryForAI, effectiveSystemPrompt);
+      }
+    } else { // Gemini 사용 (기존 로직)
+      aiSource = 'Vertex AI (Gemini)';
+      console.log('Using Vertex AI (Gemini)');
+      // Gemini의 경우 specialModeType에 따라 getAiResponse 내부에서 스트리밍 등을 처리
+      aiResponseFull = await getAiResponse(message, chatHistoryForAI, effectiveSystemPrompt, specialModeType, (chunk, isFinalChunk) => {
+        if (specialModeType === 'stream' && chunk) {
+          // Gemini 스트리밍 콜백 (기존 로직과 유사하게 처리)
+          // 이 부분은 getAiResponse가 스트리밍을 직접 res 객체에 쓰지 않는다고 가정하고,
+          // 청크를 받아서 컨트롤러가 직접 res.write 하는 방식입니다.
+          // 만약 getAiResponse가 직접 res를 다룬다면 이 콜백은 다르게 사용될 수 있습니다.
+          // 현재 getAiResponse는 전체 텍스트를 반환하거나 스트림 콜백을 통해 청크를 전달하는 방식이므로,
+          // 여기서 res.write를 직접 호출합니다.
+          if (!res.headersSent && specialModeType === 'stream') {
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            res.flushHeaders();
+            // Gemini 스트림 시 ID를 먼저 보내는 부분은 getAiResponse 호출 전에 처리하거나,
+            // 첫 청크를 받을 때 함께 보낼 수 있습니다.
+            // 여기서는 userMessageId와 임시 aiMessageId를 보냅니다.
+            // res.write(`event: ids\\ndata: ${JSON.stringify({ userMessageId: userMessageId.toString(), tempAiMessageId: "gemini_streaming..." })}\\n\\n`);
+          }
+          res.write(`data: ${JSON.stringify({ type: 'chunk', content: chunk })}\\n\\n`);
+          if (isFinalChunk) {
+            res.write(`event: end\\ndata: ${JSON.stringify({ message: 'Stream ended' })}\\n\\n`);
+            // Gemini 스트림의 경우, isFinalChunk 이후에 aiResponseFull이 완성된 내용을 가질 것으로 예상.
+            // 또는 getAiResponse 자체가 최종 내용을 반환.
+          }
+        }
+      });
+    }
 
     if (!aiResponseFull || typeof aiResponseFull.content !== 'string' || aiResponseFull.content.trim() === '') {
-      await connection.rollback();
-      console.error('Invalid AI response received from Vertex AI:', aiResponseFull);
-      return res.status(500).json(createErrorResponse('AI_RESPONSE_ERROR', 'AI로부터 유효한 응답을 받지 못했습니다. 응답 내용이 비어있거나 형식이 잘못되었습니다.'));
+      if (connection) await connection.rollback();
+      console.error(`Invalid AI response received from ${aiSource}:`, aiResponseFull);
+      // 스트림이 이미 시작된 경우 오류 처리가 다를 수 있음
+      if ((specialModeType === 'stream' && ai_provider === 'ollama' && res.headersSent) || (specialModeType === 'stream' && ai_provider !== 'ollama' && res.headersSent)) {
+        // 이미 스트림 데이터가 전송된 경우, 여기서 JSON 오류를 보내면 안됨.
+        // 스트림 채널을 통해 오류를 알리고 종료해야 함.
+        if (!isOllamaStream) { // Gemini 스트림 또는 Ollama 스트림에서 content가 비어있는 경우 (Ollama는 위에서 처리됨)
+             res.write(`event: error\\ndata: ${JSON.stringify({ message: `${aiSource}로부터 유효한 응답을 받지 못했습니다.` })}\\n\\n`);
+             res.end();
+        }
+        // Ollama 스트림의 경우 위에서 이미 처리되었으므로, 여기서는 추가 동작 없음.
+        return; 
+      }
+      return res.status(500).json(createErrorResponse('AI_RESPONSE_ERROR', `${aiSource}로부터 유효한 응답을 받지 못했습니다. 응답 내용이 비어있거나 형식이 잘못되었습니다.`));
     }
-    const aiContentFromVertex = aiResponseFull.content;
+    const aiContent = aiResponseFull.content;
 
     // 4. AI 응답 저장
-    const aiMessageResult = await saveAiMessageToDB(connection, sessionId, GUEST_USER_ID, aiContentFromVertex); // Assuming AI messages are stored with a generic AI user ID
+    const aiMessageResult = await saveAiMessageToDB(connection, sessionId, GUEST_USER_ID, aiContent);
     if (!aiMessageResult || !aiMessageResult.ai_message_id) {
-      await connection.rollback();
+      if (connection) await connection.rollback();
+      // 스트림이 진행중이었다면 클라이언트에 오류 알림
+      if ((isOllamaStream && res.headersSent) || (specialModeType === 'stream' && ai_provider !== 'ollama' && res.headersSent)) {
+          res.write(`event: error\\ndata: ${JSON.stringify({ message: 'AI 메시지 저장 실패' })}\\n\\n`);
+          res.end();
+          return;
+      }
       return res.status(500).json(createErrorResponse('DB_ERROR', 'AI 메시지 저장에 실패했습니다.'));
     }
     const aiMessageId = aiMessageResult.ai_message_id.toString();
     const aiCreatedAt = aiMessageResult.created_at;
-    const actualAiContentSaved = aiMessageResult.content; // Content confirmed from DB save
+    const actualAiContentSaved = aiMessageResult.content; 
 
-    await connection.commit(); // Commit transaction
+    await connection.commit(); 
 
     // 5. 클라이언트에 응답 전송
     const responseData = {
       user_message_id: userMessageId.toString(),
       ai_message_id: aiMessageId,
-      message: actualAiContentSaved, // AI 응답 내용 (공통 필드로 사용)
-      created_at: aiCreatedAt ? new Date(aiCreatedAt).toISOString() : new Date().toISOString()
+      message: actualAiContentSaved, 
+      created_at: aiCreatedAt ? new Date(aiCreatedAt).toISOString() : new Date().toISOString(),
+      ai_source: aiSource // AI 출처 정보 추가
     };
+    
+    // Gemini 스트리밍의 경우, getAiResponse 콜백에서 res.write를 직접 호출했거나,
+    // 또는 specialModeType === 'stream' && ai_provider !== 'ollama' (Gemini) 경우에 대한 스트리밍 처리가 필요.
+    // 현재 Gemini 스트리밍은 getAiResponse의 콜백을 통해 청크를 받고, 이 컨트롤러에서 res.write를 수행하는 것으로 가정.
 
     if (specialModeType === 'stream') {
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
-      res.flushHeaders();
-
-      // ID 전송
-      res.write(`event: ids\\ndata: ${JSON.stringify({ userMessageId: responseData.user_message_id, aiMessageId: responseData.ai_message_id })}\\n\\n`);
-
-      // 메시지 스트리밍
-      const chunkSize = 100; // 청크 크기 설정 (원하는대로 조절)
-      for (let i = 0; i < responseData.message.length; i += chunkSize) {
-        const chunk = responseData.message.substring(i, i + chunkSize);
-        // 각 청크 데이터를 'data:' 접두사와 함께 전송
-        res.write(`data: ${JSON.stringify({ type: 'chunk', content: chunk })}\\n\\n`);
-        // 적절한 지연 시간을 두어 클라이언트에서 부드럽게 보이도록 조정 (원하는대로 조절)
-        await new Promise(resolve => setTimeout(resolve, 50));
+      if (ai_provider === 'ollama') {
+        // Ollama 스트림의 경우, 청크는 이미 전송되었고, 'end' 이벤트도 전송됨.
+        // DB 저장 후 최종 ID 등을 포함한 완료 메시지를 보낼 수 있으나,
+        // 여기서는 스트림이 이미 res.end() 되었거나, 될 예정이므로 추가 전송은 하지 않음.
+        // 만약 res.end()가 호출되지 않았다면 여기서 호출.
+        if (!res.writableEnded) {
+            // ID 정보를 포함한 최종 메시지를 보낼 수 있음
+            // res.write(`event: final_ids\\ndata: ${JSON.stringify({ userMessageId: responseData.user_message_id, aiMessageId: responseData.ai_message_id })}\\n\\n`);
+            res.end();
+        }
+        return; // Ollama 스트림 처리 완료
+      } else { // Gemini 스트림 (또는 다른 잠재적 스트리밍 AI 프로바이더)
+        // Gemini 스트림의 경우, getAiResponse 콜백에서 청크와 end 이벤트가 처리되었을 것으로 가정.
+        // 만약 getAiResponse가 res 객체를 직접 다루지 않았다면, 여기서 ID 전송 및 스트림 종료 필요.
+        if (!res.headersSent) { // 스트림이 시작되지 않은 경우 (예: getAiResponse가 스트림 콜백을 호출하지 않은 경우)
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            res.flushHeaders();
+        }
+        if (!res.writableEnded) {
+            // Gemini 스트림의 경우 ID를 여기서 보내거나, 첫 청크와 함께 보냈어야 함.
+            // 이미 userMessageId는 알고 있고, aiMessageId도 이제 확정됨.
+            res.write(`event: ids\\ndata: ${JSON.stringify({ userMessageId: responseData.user_message_id, aiMessageId: responseData.ai_message_id })}\\n\\n`);
+            
+            // Gemini 응답이 단일 청크로 오는 경우 (스트림이지만 실제로는 한 번에)
+            // 또는 getAiResponse가 스트리밍 콜백을 호출하지 않고 전체 내용을 반환한 경우
+            if (responseData.message) {
+                 res.write(`data: ${JSON.stringify({ type: 'chunk', content: responseData.message })}\\n\\n`);
+            }
+            res.write(`event: end\\ndata: ${JSON.stringify({ message: 'Stream ended' })}\\n\\n`);
+            res.end();
+        }
+        return; // Gemini 스트림 처리 완료
       }
-      // 스트림 종료 이벤트 전송
-      res.write(`event: end\\ndata: ${JSON.stringify({ message: 'Stream ended' })}\\n\\n`);
-
-      // 스트리밍 완료 후 함수 종료
-      return; // 이 요청 처리를 여기서 끝냄
-
-    } else { // 'canvas' 모드 또는 기본 모드 (스트리밍이 아닌 경우)
-      // 'canvas' 모드일 경우 Canvas 데이터 파싱 및 추가
-      if (specialModeType === 'canvas') {
+    } else { // 비스트리밍 응답 (Gemini non-stream, Ollama non-stream, Canvas 등)
+      if (specialModeType === 'canvas' && ai_provider !== 'ollama') { // Ollama는 아직 canvas 직접 지원 안함
         const htmlRegex = /```html\n([\s\S]*?)\n```/;
         const cssRegex = /```css\n([\s\S]*?)\n```/;
         const jsRegex = /```javascript\n([\s\S]*?)\n```/;
