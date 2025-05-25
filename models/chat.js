@@ -167,7 +167,7 @@ async function saveAttachmentToDB(messageId, file) {
       },
       { autoCommit: true }
     );
-    return result.outBinds.attachmentId[0];
+    return { attachment_id: result.outBinds.attachmentId[0] };
   } catch (err) {
     console.error('첨부파일 정보 저장 실패:', err);
     throw err;
