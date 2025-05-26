@@ -5,42 +5,42 @@ const { registerUser, loginUser, getUserSettings, updateUserSettings, updateUser
 const fs = require('fs');
 const path = require('path');
 const userModel = require('../models/user');
-const { standardizeApiResponse } = require('../utils/apiResponse');
+const { standardizeApiResponse } = require('../utils/apiResponse'); // Corrected path
 
 // 사용자 등록 컨트롤러
 async function registerUserController(req, res) {
   const { username, email, password } = req.body;
 
   if (!username || !email || !password) {
-    return res.status(400).json({ error: '사용자명, 이메일, 비밀번호는 필수 입력사항입니다.' });
+    return res.status(400).json(standardizeApiResponse({ error_message: '사용자명, 이메일, 비밀번호는 필수 입력사항입니다.' }));
   }
 
   try {
     const user = await registerUser(username, email, password);
     if (user && user.already_registered) {
       // 이미 가입된 사용자 정보 반환 (201 Created 아님)
-      return res.status(200).json({
+      return res.status(200).json(standardizeApiResponse({
         message: '이미 가입된 이메일입니다.',
         user_id: user.user_id,
         username: user.username,
         email: user.email,
         already_registered: true
-      });
+      }));
     }
-    res.status(201).json(user);
+    res.status(201).json(standardizeApiResponse(user));
   } catch (err) {
     // 공통 에러 핸들러 사용 (utils/errorHandler)
     const { createErrorResponse, handleOracleError, logError } = require('../utils/errorHandler');
     logError('registerUserController', err);
     // 이메일 중복 등 고유 제약 위반
     if (err.message === '이미 등록된 이메일입니다.' || err.errorNum === 1 || (err.code && err.code === 'ORA-00001')) {
-      return res.status(409).json(createErrorResponse('UNIQUE_CONSTRAINT_VIOLATED', '이미 등록된 이메일입니다.'));
+      return res.status(409).json(createErrorResponse('UNIQUE_CONSTRAINT_VIOLATED', '이미 등록된 이메일입니다.')); // Already snake_case
     }
     // 기타 DB 오류
     if (err.errorNum) {
-      return res.status(500).json(handleOracleError(err));
+      return res.status(500).json(handleOracleError(err)); // Already snake_case
     }
-    res.status(500).json(createErrorResponse('SERVER_ERROR', `사용자 등록 중 오류 발생: ${err.message}`));
+    res.status(500).json(createErrorResponse('SERVER_ERROR', `사용자 등록 중 오류 발생: ${err.message}`)); // Already snake_case
   }
 }
 
@@ -49,7 +49,7 @@ async function loginUserController(req, res) {
   const { email, password } = req.body;
 
   if (!email || !password) {
-    return res.status(400).json({ error: '이메일과 비밀번호는 필수 입력사항입니다.' });
+    return res.status(400).json(standardizeApiResponse({ error_message: '이메일과 비밀번호는 필수 입력사항입니다.' }));
   }
 
   try {
@@ -62,23 +62,23 @@ async function loginUserController(req, res) {
     const token = generateToken(tokenPayload);
 
     // 사용자 정보와 토큰 함께 반환
-    res.json({
+    res.json(standardizeApiResponse({
       user_id: user.user_id,
       username: user.username,
       email: user.email,
       logged_in_at: new Date().toISOString(),
       token: token // 생성된 토큰 추가
-    });
+    }));
 
   } catch (err) {
     if (err.message.includes('이메일 또는 비밀번호가 올바르지 않습니다')) {
-      return res.status(401).json({ error: err.message });
+      return res.status(401).json(standardizeApiResponse({ error_message: err.message }));
     }
     if (err.message.includes('계정이 비활성화')) {
-      return res.status(403).json({ error: err.message });
+      return res.status(403).json(standardizeApiResponse({ error_message: err.message }));
     }
     console.error('로그인 컨트롤러 오류:', err);
-    res.status(500).json({ error: `로그인 중 오류 발생: ${err.message}` });
+    res.status(500).json(standardizeApiResponse({ error_message: `로그인 중 오류 발생: ${err.message}` }));
   }
 }
 
@@ -89,10 +89,10 @@ async function getUserSettingsController(req, res) {
     const settings = await getUserSettings(user_id);
     
     // 응답 데이터 표준화
-    res.json(standardizeApiResponse(settings));
+    res.json(standardizeApiResponse(settings)); // Already using standardizeApiResponse
   } catch (err) {
     console.error('사용자 설정 조회 실패:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json(standardizeApiResponse({ error_message: err.message }));
   }
 }
 
@@ -109,15 +109,15 @@ async function updateUserSettingsController(req, res) {
   // }
 
   if (Object.keys(settings).length === 0) {
-    return res.status(400).json({ error: '수정할 설정 내용이 없습니다.' });
+    return res.status(400).json(standardizeApiResponse({ error_message: '수정할 설정 내용이 없습니다.' }));
   }
 
   try {
     const updatedSettings = await updateUserSettings(authenticatedUserId, settings);
-    res.status(200).json(updatedSettings);
+    res.status(200).json(standardizeApiResponse(updatedSettings));
   } catch (err) {
     console.error('설정 업데이트 컨트롤러 오류:', err);
-    res.status(500).json({ error: `설정 업데이트 중 오류 발생: ${err.message}` });
+    res.status(500).json(standardizeApiResponse({ error_message: `설정 업데이트 중 오류 발생: ${err.message}` }));
   }
 }
 
@@ -127,7 +127,7 @@ async function uploadProfileImageController(req, res) {
   const file = req.file;
 
   if (!file) {
-    return res.status(400).json({ error: '프로필 이미지가 업로드되지 않았습니다.' });
+    return res.status(400).json(standardizeApiResponse({ error_message: '프로필 이미지가 업로드되지 않았습니다.' }));
   }
 
   // 실제 파일 저장 경로는 /uploads/profiles/[user_id]/filename 형태로 구성하거나, DB에 파일 경로 저장
@@ -137,11 +137,11 @@ async function uploadProfileImageController(req, res) {
 
   try {
     await updateUserProfileImage(user_id, profileImagePath);
-    res.json({ 
+    res.json(standardizeApiResponse({ 
       message: '프로필 이미지가 성공적으로 업데이트되었습니다.', 
       user_id: user_id,
       profile_image_path: profileImagePath 
-    });
+    }));
   } catch (err) {
     console.error('프로필 이미지 업데이트 실패:', err);
     // 업로드된 파일 삭제 (오류 시)
@@ -150,7 +150,7 @@ async function uploadProfileImageController(req, res) {
         if (unlinkErr) console.error('임시 프로필 이미지 삭제 실패:', unlinkErr);
       });
     }
-    res.status(500).json({ error: `프로필 이미지 업데이트 중 오류 발생: ${err.message}` });
+    res.status(500).json(standardizeApiResponse({ error_message: `프로필 이미지 업데이트 중 오류 발생: ${err.message}` }));
   }
 }
 
@@ -162,10 +162,10 @@ async function deleteUserController(req, res) {
 
   try {
     await deleteUser(user_id);
-    res.status(200).json({ message: '사용자 계정이 성공적으로 삭제되었습니다.', user_id: user_id });
+    res.status(200).json(standardizeApiResponse({ message: '사용자 계정이 성공적으로 삭제되었습니다.', user_id: user_id }));
   } catch (err) {
     console.error('회원 탈퇴 처리 실패:', err);
-    res.status(500).json({ error: `회원 탈퇴 처리 중 오류 발생: ${err.message}` });
+    res.status(500).json(standardizeApiResponse({ error_message: `회원 탈퇴 처리 중 오류 발생: ${err.message}` }));
   }
 }
 
@@ -181,7 +181,7 @@ async function getUserProfileController(req, res) {
       // 또는 초기 데이터 마이그레이션 등으로 프로필이 없을 수 있음.
       // 이 경우, 빈 프로필 객체 또는 404를 반환할 수 있습니다.
       // README.AI 지침에 따라 인증/보안을 최소화하므로, 여기서는 404를 반환합니다.
-      return res.status(404).json({ error: '사용자 프로필을 찾을 수 없습니다.' });
+      return res.status(404).json(standardizeApiResponse({ error_message: '사용자 프로필을 찾을 수 없습니다.' }));
     }
     // CLOB(BIO 등) → 문자열 변환 (casing도 일관성)
     const { clobToString } = require('../models/chat');
@@ -189,10 +189,10 @@ async function getUserProfileController(req, res) {
     if (profileObj.BIO && typeof profileObj.BIO === 'object') {
       profileObj.BIO = await clobToString(profileObj.BIO);
     }
-    res.json(profileObj);
+    res.json(standardizeApiResponse(profileObj));
   } catch (err) {
     console.error('프로필 조회 컨트롤러 오류:', err);
-    res.status(500).json({ error: `프로필 조회 중 오류 발생: ${err.message}` });
+    res.status(500).json(standardizeApiResponse({ error_message: `프로필 조회 중 오류 발생: ${err.message}` }));
   }
 }
 
@@ -203,7 +203,7 @@ async function updateUserProfileController(req, res) {
 
   // 요청 본문이 비어 있는지 확인 (profileData가 null이거나 빈 객체일 수 있음)
   if (!profileData || Object.keys(profileData).length === 0) {
-    return res.status(400).json({ error: '수정할 프로필 내용이 없습니다.' });
+    return res.status(400).json(standardizeApiResponse({ error_message: '수정할 프로필 내용이 없습니다.' }));
   }
 
   try {
@@ -214,16 +214,16 @@ async function updateUserProfileController(req, res) {
     if (profileObj.BIO && typeof profileObj.BIO === 'object') {
       profileObj.BIO = await clobToString(profileObj.BIO);
     }
-    res.json(profileObj);
+    res.json(standardizeApiResponse(profileObj));
   } catch (err) {
     console.error('프로필 업데이트 컨트롤러 오류:', err);
     if (err.message.includes('프로필을 찾을 수 없거나 업데이트할 내용이 없습니다')) {
-        return res.status(404).json({ error: err.message });
+        return res.status(404).json(standardizeApiResponse({ error_message: err.message }));
     }
     if (err.message.includes('수정할 프로필 내용이 없습니다')) { // 모델에서 발생시킨 경우
-        return res.status(400).json({ error: err.message });
+        return res.status(400).json(standardizeApiResponse({ error_message: err.message }));
     }
-    res.status(500).json({ error: `프로필 업데이트 중 오류 발생: ${err.message}` });
+    res.status(500).json(standardizeApiResponse({ error_message: `프로필 업데이트 중 오류 발생: ${err.message}` }));
   }
 }
 
@@ -231,22 +231,22 @@ async function checkEmailExists(req, res) {
   const { email } = req.body;
 
   if (!email) {
-    return res.status(400).json({ error: '이메일은 필수 입력사항입니다.' });
+    return res.status(400).json(standardizeApiResponse({ error_message: '이메일은 필수 입력사항입니다.' }));
   }
 
   try {
     const exists = await userModel.checkEmailExists(email);
-    res.json({ exists });
+    res.json(standardizeApiResponse({ email_exists: exists }));
   } catch (err) {
     console.error('이메일 중복 체크 오류:', err);
-    res.status(500).json({ error: `이메일 중복 체크 중 오류 발생: ${err.message}` });
+    res.status(500).json(standardizeApiResponse({ error_message: `이메일 중복 체크 중 오류 발생: ${err.message}` }));
   }
 }
 
 module.exports = {
   registerUserController,
   loginUserController,
-  getUserSettingsController,
+  getUserSettingsController, // Already done
   updateUserSettingsController,
   uploadProfileImageController,
   deleteUserController,

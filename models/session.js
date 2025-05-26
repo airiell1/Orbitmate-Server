@@ -1,5 +1,6 @@
 const { getConnection, oracledb } = require('../config/database');
 const { clobToString } = require('./chat'); // clobToString 함수 import
+const { toSnakeCaseObj } = require('../utils/dbUtils'); // toSnakeCaseObj import 추가
 
 // 새 채팅 세션 생성
 async function createChatSession(user_id, title, category) {
@@ -301,7 +302,8 @@ async function getUserIdBySessionId(sessionId) {
     if (result.rows.length === 0) {
       throw new Error('세션을 찾을 수 없습니다.');
     }
-    return result.rows[0].USER_ID;
+    // Return an object with a snake_case key
+    return { user_id: result.rows[0].USER_ID };
   } catch (err) {
     console.error('세션에서 사용자 ID 조회 실패:', err);
     throw err; // 오류를 다시 던져 호출 측에서 처리하도록 함
