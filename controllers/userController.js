@@ -6,14 +6,42 @@ const fs = require('fs');
 const path = require('path');
 const userModel = require('../models/user');
 const { standardizeApiResponse } = require('../utils/apiResponse'); // Corrected path
+const { createErrorResponse, getHttpStatusByErrorCode, handleOracleError, logError } = require('../utils/errorHandler');
 
 // 사용자 등록 컨트롤러
 async function registerUserController(req, res) {
   const { username, email, password } = req.body;
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const usernameRegex = /^[a-zA-Z0-9_]+$/;
 
-  if (!username || !email || !password) {
-    return res.status(400).json(standardizeApiResponse({ error_message: '사용자명, 이메일, 비밀번호는 필수 입력사항입니다.' }));
+  // Username validation
+  if (!username || typeof username !== 'string' || username.trim().length < 3 || username.trim().length > 30) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '사용자명은 3자 이상 30자 이하이어야 합니다.');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
   }
+  if (!usernameRegex.test(username)) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '사용자명은 영문자, 숫자, 밑줄(_)만 사용할 수 있습니다.');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+
+  // Email validation
+  if (!email || typeof email !== 'string' || email.length > 254 || !emailRegex.test(email)) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '유효한 이메일 주소를 입력해주세요 (최대 254자).');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+
+  // Password validation
+  if (!password || typeof password !== 'string' || password.length < 8 || password.length > 128) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '비밀번호는 8자 이상 128자 이하이어야 합니다.');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+  // Optional: Add complexity check, e.g., one uppercase, one number
+  // const passwordRegex = /^(?=.*[A-Z])(?=.*\d).{8,128}$/;
+  // if (!passwordRegex.test(password)) {
+  //   const errorPayload = createErrorResponse('INVALID_INPUT', '비밀번호는 최소 하나의 대문자와 하나의 숫자를 포함해야 합니다.');
+  //   return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  // }
+
 
   try {
     const user = await registerUser(username, email, password);
@@ -29,27 +57,37 @@ async function registerUserController(req, res) {
     }
     res.status(201).json(standardizeApiResponse(user));
   } catch (err) {
-    // 공통 에러 핸들러 사용 (utils/errorHandler)
-    const { createErrorResponse, handleOracleError, logError } = require('../utils/errorHandler');
-    logError('registerUserController', err);
+    logError('userControllerRegisterUser', err);
     // 이메일 중복 등 고유 제약 위반
     if (err.message === '이미 등록된 이메일입니다.' || err.errorNum === 1 || (err.code && err.code === 'ORA-00001')) {
-      return res.status(409).json(createErrorResponse('UNIQUE_CONSTRAINT_VIOLATED', '이미 등록된 이메일입니다.')); // Already snake_case
+      const errorPayload = createErrorResponse('UNIQUE_CONSTRAINT_VIOLATED', '이미 등록된 이메일입니다.');
+      return res.status(getHttpStatusByErrorCode('UNIQUE_CONSTRAINT_VIOLATED')).json(standardizeApiResponse(errorPayload));
     }
     // 기타 DB 오류
     if (err.errorNum) {
-      return res.status(500).json(handleOracleError(err)); // Already snake_case
+      const errorPayload = handleOracleError(err);
+      return res.status(getHttpStatusByErrorCode(errorPayload.error.code)).json(standardizeApiResponse(errorPayload));
     }
-    res.status(500).json(createErrorResponse('SERVER_ERROR', `사용자 등록 중 오류 발생: ${err.message}`)); // Already snake_case
+    const errorPayload = createErrorResponse('SERVER_ERROR', `사용자 등록 중 오류 발생: ${err.message}`);
+    res.status(getHttpStatusByErrorCode('SERVER_ERROR')).json(standardizeApiResponse(errorPayload));
   }
 }
 
 // 사용자 로그인 컨트롤러
 async function loginUserController(req, res) {
   const { email, password } = req.body;
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-  if (!email || !password) {
-    return res.status(400).json(standardizeApiResponse({ error_message: '이메일과 비밀번호는 필수 입력사항입니다.' }));
+  // Email validation
+  if (!email || typeof email !== 'string' || !emailRegex.test(email)) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '유효한 이메일 주소를 입력해주세요.');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+
+  // Password validation
+  if (!password || typeof password !== 'string' || password.trim() === '') {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '비밀번호를 입력해주세요.');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
   }
 
   try {
@@ -71,53 +109,98 @@ async function loginUserController(req, res) {
     }));
 
   } catch (err) {
+    logError('userControllerLoginUser', err);
     if (err.message.includes('이메일 또는 비밀번호가 올바르지 않습니다')) {
-      return res.status(401).json(standardizeApiResponse({ error_message: err.message }));
+      const errorPayload = createErrorResponse('UNAUTHORIZED', err.message);
+      return res.status(getHttpStatusByErrorCode('UNAUTHORIZED')).json(standardizeApiResponse(errorPayload));
     }
     if (err.message.includes('계정이 비활성화')) {
-      return res.status(403).json(standardizeApiResponse({ error_message: err.message }));
+      const errorPayload = createErrorResponse('FORBIDDEN', err.message);
+      return res.status(getHttpStatusByErrorCode('FORBIDDEN')).json(standardizeApiResponse(errorPayload));
     }
-    console.error('로그인 컨트롤러 오류:', err);
-    res.status(500).json(standardizeApiResponse({ error_message: `로그인 중 오류 발생: ${err.message}` }));
+    const errorPayload = createErrorResponse('SERVER_ERROR', `로그인 중 오류 발생: ${err.message}`);
+    res.status(getHttpStatusByErrorCode('SERVER_ERROR')).json(standardizeApiResponse(errorPayload));
   }
 }
 
 // 사용자 설정 조회 컨트롤러
 async function getUserSettingsController(req, res) {
+  const user_id = req.params.user_id;
+
+  // User ID validation
+  if (!user_id || typeof user_id !== 'string' || user_id.trim() === '' || user_id.length > 36) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '사용자 ID는 필수이며 최대 36자입니다.');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+
   try {
-    const user_id = req.params.user_id;
     const settings = await getUserSettings(user_id);
     
     // 응답 데이터 표준화
-    res.json(standardizeApiResponse(settings)); // Already using standardizeApiResponse
+    res.json(standardizeApiResponse(settings));
   } catch (err) {
-    console.error('사용자 설정 조회 실패:', err);
-    res.status(500).json(standardizeApiResponse({ error_message: err.message }));
+    logError('userControllerGetUserSettings', err);
+    const errorPayload = createErrorResponse('SERVER_ERROR', err.message);
+    res.status(getHttpStatusByErrorCode('SERVER_ERROR')).json(standardizeApiResponse(errorPayload));
   }
 }
 
 // 사용자 설정 업데이트 컨트롤러
 async function updateUserSettingsController(req, res) {
   const requestedUserId = req.params.user_id;
-  // const authenticatedUserId = req.user.user_id; // 인증 생략
-  const authenticatedUserId = requestedUserId; // 임시로 요청된 ID를 사용
+  const authenticatedUserId = requestedUserId; 
   const settings = req.body;
 
-  // 인가 확인 생략
-  // if (requestedUserId !== authenticatedUserId) {
-  //   return res.status(403).json({ error: '자신의 설정만 수정할 수 있습니다.' });
-  // }
-
-  if (Object.keys(settings).length === 0) {
-    return res.status(400).json(standardizeApiResponse({ error_message: '수정할 설정 내용이 없습니다.' }));
+  // User ID validation
+  if (!requestedUserId || typeof requestedUserId !== 'string' || requestedUserId.trim() === '' || requestedUserId.length > 36) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '사용자 ID는 필수이며 최대 36자입니다.');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
   }
+
+  if (!settings || Object.keys(settings).length === 0) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '수정할 설정 내용이 없습니다.');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+
+  // Settings validation
+  const allowedThemes = ['light', 'dark', 'system'];
+  if (settings.hasOwnProperty('theme') && (typeof settings.theme !== 'string' || !allowedThemes.includes(settings.theme))) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', `테마는 다음 중 하나여야 합니다: ${allowedThemes.join(', ')}.`);
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+
+  const allowedLanguages = ['en', 'ko', 'ja'];
+  if (settings.hasOwnProperty('language') && (typeof settings.language !== 'string' || !allowedLanguages.includes(settings.language))) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', `언어는 다음 중 하나여야 합니다: ${allowedLanguages.join(', ')}.`);
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+
+  if (settings.hasOwnProperty('font_size')) {
+    const fontSize = parseInt(settings.font_size, 10);
+    if (isNaN(fontSize) || fontSize < 10 || fontSize > 30) {
+      const errorPayload = createErrorResponse('INVALID_INPUT', '글꼴 크기는 10에서 30 사이의 숫자여야 합니다.');
+      return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+    }
+  }
+
+  if (settings.hasOwnProperty('notifications_enabled') && typeof settings.notifications_enabled !== 'boolean') {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '알림 활성화 여부는 boolean 값이어야 합니다.');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+  
+  if (settings.hasOwnProperty('ai_model_preference') && (typeof settings.ai_model_preference !== 'string' || settings.ai_model_preference.trim() === '' || settings.ai_model_preference.length > 50 )) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', 'AI 모델 환경설정은 비어 있지 않은 문자열이어야 하며 최대 50자입니다.');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+
 
   try {
     const updatedSettings = await updateUserSettings(authenticatedUserId, settings);
     res.status(200).json(standardizeApiResponse(updatedSettings));
   } catch (err) {
-    console.error('설정 업데이트 컨트롤러 오류:', err);
-    res.status(500).json(standardizeApiResponse({ error_message: `설정 업데이트 중 오류 발생: ${err.message}` }));
+    logError('userControllerUpdateUserSettings', err);
+    const errorPayload = createErrorResponse('SERVER_ERROR', `설정 업데이트 중 오류 발생: ${err.message}`);
+    res.status(getHttpStatusByErrorCode('SERVER_ERROR')).json(standardizeApiResponse(errorPayload));
   }
 }
 
@@ -126,8 +209,28 @@ async function uploadProfileImageController(req, res) {
   const user_id = req.params.user_id;
   const file = req.file;
 
+  // User ID validation
+  if (!user_id || typeof user_id !== 'string' || user_id.trim() === '' || user_id.length > 36) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '사용자 ID는 필수이며 최대 36자입니다.');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+
+  // File validation
   if (!file) {
-    return res.status(400).json(standardizeApiResponse({ error_message: '프로필 이미지가 업로드되지 않았습니다.' }));
+    const errorPayload = createErrorResponse('INVALID_INPUT', '프로필 이미지가 업로드되지 않았습니다.');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+
+  const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/gif'];
+  if (!allowedMimeTypes.includes(file.mimetype)) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', `허용되지 않는 파일 타입입니다. 허용되는 타입: ${allowedMimeTypes.join(', ')}.`);
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+
+  const maxFileSize = 2 * 1024 * 1024; // 2MB
+  if (file.size > maxFileSize) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', `파일 크기가 너무 큽니다 (최대 ${maxFileSize / (1024 * 1024)}MB).`);
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
   }
 
   // 실제 파일 저장 경로는 /uploads/profiles/[user_id]/filename 형태로 구성하거나, DB에 파일 경로 저장
@@ -143,36 +246,47 @@ async function uploadProfileImageController(req, res) {
       profile_image_path: profileImagePath 
     }));
   } catch (err) {
-    console.error('프로필 이미지 업데이트 실패:', err);
+    logError('userControllerUploadProfileImage', err);
     // 업로드된 파일 삭제 (오류 시)
     if (req.file && req.file.path) {
       fs.unlink(req.file.path, (unlinkErr) => {
-        if (unlinkErr) console.error('임시 프로필 이미지 삭제 실패:', unlinkErr);
+        if (unlinkErr) logError('userControllerUploadProfileImageUnlink', unlinkErr);
       });
     }
-    res.status(500).json(standardizeApiResponse({ error_message: `프로필 이미지 업데이트 중 오류 발생: ${err.message}` }));
+    const errorPayload = createErrorResponse('SERVER_ERROR', `프로필 이미지 업데이트 중 오류 발생: ${err.message}`);
+    res.status(getHttpStatusByErrorCode('SERVER_ERROR')).json(standardizeApiResponse(errorPayload));
   }
 }
 
 // 회원 탈퇴 (계정 데이터 삭제) 컨트롤러
 async function deleteUserController(req, res) {
   const user_id = req.params.user_id;
-  // 실제 운영에서는 본인 확인 절차 또는 관리자 권한 확인이 필요합니다.
-  // 여기서는 인증을 생략하므로 바로 삭제 로직 진행
+
+  // User ID validation
+  if (!user_id || typeof user_id !== 'string' || user_id.trim() === '' || user_id.length > 36) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '사용자 ID는 필수이며 최대 36자입니다.');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
 
   try {
     await deleteUser(user_id);
     res.status(200).json(standardizeApiResponse({ message: '사용자 계정이 성공적으로 삭제되었습니다.', user_id: user_id }));
   } catch (err) {
-    console.error('회원 탈퇴 처리 실패:', err);
-    res.status(500).json(standardizeApiResponse({ error_message: `회원 탈퇴 처리 중 오류 발생: ${err.message}` }));
+    logError('userControllerDeleteUser', err);
+    const errorPayload = createErrorResponse('SERVER_ERROR', `회원 탈퇴 처리 중 오류 발생: ${err.message}`);
+    res.status(getHttpStatusByErrorCode('SERVER_ERROR')).json(standardizeApiResponse(errorPayload));
   }
 }
 
 // 사용자 프로필 조회 컨트롤러
 async function getUserProfileController(req, res) {
   const user_id = req.params.user_id;
-  // 인증/인가 로직은 현재 최소화되어 있습니다.
+
+  // User ID validation
+  if (!user_id || typeof user_id !== 'string' || user_id.trim() === '' || user_id.length > 36) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '사용자 ID는 필수이며 최대 36자입니다.');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
 
   try {
     const userProfile = await userModel.getUserProfile(user_id);
@@ -181,7 +295,8 @@ async function getUserProfileController(req, res) {
       // 또는 초기 데이터 마이그레이션 등으로 프로필이 없을 수 있음.
       // 이 경우, 빈 프로필 객체 또는 404를 반환할 수 있습니다.
       // README.AI 지침에 따라 인증/보안을 최소화하므로, 여기서는 404를 반환합니다.
-      return res.status(404).json(standardizeApiResponse({ error_message: '사용자 프로필을 찾을 수 없습니다.' }));
+      const errorPayload = createErrorResponse('USER_NOT_FOUND', '사용자 프로필을 찾을 수 없습니다.');
+      return res.status(getHttpStatusByErrorCode('USER_NOT_FOUND')).json(standardizeApiResponse(errorPayload));
     }
     // CLOB(BIO 등) → 문자열 변환 (casing도 일관성)
     const { clobToString } = require('../models/chat');
@@ -191,8 +306,9 @@ async function getUserProfileController(req, res) {
     }
     res.json(standardizeApiResponse(profileObj));
   } catch (err) {
-    console.error('프로필 조회 컨트롤러 오류:', err);
-    res.status(500).json(standardizeApiResponse({ error_message: `프로필 조회 중 오류 발생: ${err.message}` }));
+    logError('userControllerGetUserProfile', err);
+    const errorPayload = createErrorResponse('SERVER_ERROR', `프로필 조회 중 오류 발생: ${err.message}`);
+    res.status(getHttpStatusByErrorCode('SERVER_ERROR')).json(standardizeApiResponse(errorPayload));
   }
 }
 
@@ -200,10 +316,45 @@ async function getUserProfileController(req, res) {
 async function updateUserProfileController(req, res) {
   const user_id = req.params.user_id;
   const profileData = req.body;
+  const usernameRegex = /^[a-zA-Z0-9_]+$/;
 
-  // 요청 본문이 비어 있는지 확인 (profileData가 null이거나 빈 객체일 수 있음)
+  // User ID validation
+  if (!user_id || typeof user_id !== 'string' || user_id.trim() === '' || user_id.length > 36) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '사용자 ID는 필수이며 최대 36자입니다.');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+
+  // ProfileData validation
   if (!profileData || Object.keys(profileData).length === 0) {
-    return res.status(400).json(standardizeApiResponse({ error_message: '수정할 프로필 내용이 없습니다.' }));
+    const errorPayload = createErrorResponse('INVALID_INPUT', '수정할 프로필 내용이 없습니다.');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+
+  if (profileData.hasOwnProperty('username')) {
+    if (typeof profileData.username !== 'string' || profileData.username.trim().length < 3 || profileData.username.trim().length > 30) {
+      const errorPayload = createErrorResponse('INVALID_INPUT', '사용자명은 3자 이상 30자 이하이어야 합니다.');
+      return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+    }
+    if (!usernameRegex.test(profileData.username)) {
+      const errorPayload = createErrorResponse('INVALID_INPUT', '사용자명은 영문자, 숫자, 밑줄(_)만 사용할 수 있습니다.');
+      return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+    }
+  }
+
+  const allowedThemes = ['light', 'dark', 'system'];
+  if (profileData.hasOwnProperty('theme_preference') && (typeof profileData.theme_preference !== 'string' || !allowedThemes.includes(profileData.theme_preference))) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', `테마 환경설정은 다음 중 하나여야 합니다: ${allowedThemes.join(', ')}.`);
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+
+  if (profileData.hasOwnProperty('bio') && (typeof profileData.bio !== 'string' || profileData.bio.length > 500)) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '소개는 문자열이어야 하며 최대 500자입니다.');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+
+  if (profileData.hasOwnProperty('badge') && (typeof profileData.badge !== 'string' || profileData.badge.length > 50)) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '배지는 문자열이어야 하며 최대 50자입니다.');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
   }
 
   try {
@@ -216,30 +367,37 @@ async function updateUserProfileController(req, res) {
     }
     res.json(standardizeApiResponse(profileObj));
   } catch (err) {
-    console.error('프로필 업데이트 컨트롤러 오류:', err);
+    logError('userControllerUpdateUserProfile', err);
     if (err.message.includes('프로필을 찾을 수 없거나 업데이트할 내용이 없습니다')) {
-        return res.status(404).json(standardizeApiResponse({ error_message: err.message }));
+        const errorPayload = createErrorResponse('USER_NOT_FOUND', err.message);
+        return res.status(getHttpStatusByErrorCode('USER_NOT_FOUND')).json(standardizeApiResponse(errorPayload));
     }
     if (err.message.includes('수정할 프로필 내용이 없습니다')) { // 모델에서 발생시킨 경우
-        return res.status(400).json(standardizeApiResponse({ error_message: err.message }));
+        const errorPayload = createErrorResponse('INVALID_INPUT', err.message);
+        return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
     }
-    res.status(500).json(standardizeApiResponse({ error_message: `프로필 업데이트 중 오류 발생: ${err.message}` }));
+    const errorPayload = createErrorResponse('SERVER_ERROR', `프로필 업데이트 중 오류 발생: ${err.message}`);
+    res.status(getHttpStatusByErrorCode('SERVER_ERROR')).json(standardizeApiResponse(errorPayload));
   }
 }
 
 async function checkEmailExists(req, res) {
   const { email } = req.body;
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-  if (!email) {
-    return res.status(400).json(standardizeApiResponse({ error_message: '이메일은 필수 입력사항입니다.' }));
+  // Email validation
+  if (!email || typeof email !== 'string' || email.length > 254 || !emailRegex.test(email)) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '유효한 이메일 주소를 입력해주세요 (최대 254자).');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
   }
 
   try {
     const exists = await userModel.checkEmailExists(email);
     res.json(standardizeApiResponse({ email_exists: exists }));
   } catch (err) {
-    console.error('이메일 중복 체크 오류:', err);
-    res.status(500).json(standardizeApiResponse({ error_message: `이메일 중복 체크 중 오류 발생: ${err.message}` }));
+    logError('userControllerCheckEmailExists', err);
+    const errorPayload = createErrorResponse('SERVER_ERROR', `이메일 중복 체크 중 오류 발생: ${err.message}`);
+    res.status(getHttpStatusByErrorCode('SERVER_ERROR')).json(standardizeApiResponse(errorPayload));
   }
 }
 
