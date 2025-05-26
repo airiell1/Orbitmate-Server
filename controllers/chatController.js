@@ -368,36 +368,6 @@ async function deleteMessageController(req, res) {
   }
 }
 
-// 예시: 채팅 메시지 처리 함수
-async function handleChatMessage(req, res) {
-  try {
-    const { sessionId, message } = req.body;
-    const user_id = 'test-user-frontend'; 
-
-    // This function is an example and does not use withTransaction as its DB calls are placeholders
-    await saveUserMessage(sessionId, user_id, message); 
-    const aiResponseText = await getAiResponse(message); 
-    await saveAiMessage(sessionId, aiResponseText); 
-    res.json(standardizeApiResponse({ ai_response: aiResponseText }));
-
-  } catch (error) {
-    logError('chatControllerHandleChatMessage', error); 
-    const errorPayload = createErrorResponse('SERVER_ERROR', '메시지 처리 중 서버 오류가 발생했습니다.', error.message);
-    res.status(getHttpStatusByErrorCode('SERVER_ERROR')).json(standardizeApiResponse(errorPayload));
-  }
-}
-
-// 사용자 메시지 저장 함수 (예시 - 실제 구현 필요)
-async function saveUserMessage(sessionId, user_id, message) {
-  console.log(`[DB] 사용자 메시지 저장 시도: ${sessionId}, ${user_id}, ${message}`);
-}
-
-// AI 메시지 저장 함수 (예시 - 실제 구현 필요)
-async function saveAiMessage(sessionId, message) {
-  const aiUserId = 'ai-system'; 
-  // await saveAiMessageToDB(sessionId, message, aiUserId); // This would need a connection if called directly
-}
-
 // 파일 업로드 처리 함수
 async function uploadFile(req, res) {
   const sessionId = req.params.session_id;
@@ -537,7 +507,6 @@ module.exports = {
   addReactionController,
   deleteMessageController,
   removeReactionController, // 추가
-  handleChatMessage, // 예시 함수 export
   uploadFile,
   getSessionMessagesController // 추가
 };
