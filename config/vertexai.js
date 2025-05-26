@@ -12,7 +12,8 @@ const location = 'global'; // Vertex AI의 위치 설정 (global 또는 us-centr
 const vertex_ai = new VertexAI({ project, location, keyFilename });
 
 // AI 모델 설정
-const model = 'gemini-2.5-pro-exp-03-25';
+const model = process.env.VERTEX_AI_MODEL || 'gemini-2.5-pro-exp-03-25';
+console.log(`Using Vertex AI model: ${model}`); // Optional: log the model being used
 
 const generativeModel = vertex_ai.getGenerativeModel({
     model: model,

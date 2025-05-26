@@ -6,21 +6,37 @@ const { createErrorResponse, getHttpStatusByErrorCode, logError } = require('../
 async function createSessionController(req, res) { // todo: 인자 3개로 수정하기
   
   const { user_id, title, category } = req.body;
-  
+
+  // Validation for user_id
   if (!user_id || typeof user_id !== 'string' || user_id.trim() === '') {
-    // console.error('Error in createSessionController: User ID is required and must be a non-empty string.'); // Removed console.error
     const errorPayload = createErrorResponse('INVALID_INPUT', '사용자 ID는 필수이며 빈 문자열이 아니어야 합니다.');
     return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
   }
+  if (user_id.length > 36) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '사용자 ID가 너무 깁니다 (최대 36자).');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+
+  // Validation for title
   if (!title || typeof title !== 'string' || title.trim() === '') {
-    // console.error('Error in createSessionController: Title is required and must be a non-empty string.'); // Removed console.error
     const errorPayload = createErrorResponse('INVALID_INPUT', '세션 제목은 필수이며 빈 문자열이 아니어야 합니다.');
     return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
   }
-  if (category && typeof category !== 'string') {
-    // console.error('Error in createSessionController: Category must be a string if provided.'); // Removed console.error
-    const errorPayload = createErrorResponse('INVALID_INPUT', '카테고리는 문자열이어야 합니다.');
+  if (title.length > 100) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '세션 제목이 너무 깁니다 (최대 100자).');
     return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+
+  // Validation for category
+  if (category) {
+    if (typeof category !== 'string') {
+        const errorPayload = createErrorResponse('INVALID_INPUT', '카테고리는 문자열이어야 합니다.');
+        return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+    }
+    if (category.length > 50) {
+        const errorPayload = createErrorResponse('INVALID_INPUT', '카테고리가 너무 깁니다 (최대 50자).');
+        return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+    }
   }
   
   try {
@@ -42,11 +58,14 @@ async function createSessionController(req, res) { // todo: 인자 3개로 수�
 // 사용자의 채팅 세션 목록 조회 컨트롤러
 async function getUserSessionsController(req, res) {
   const requestedUserId = req.params.user_id;
-  // const authenticatedUserId = req.user.user_id; // README.AI에 따라 인증/인가 최소화
 
-  if (!requestedUserId) {
-    // console.error('Error in getUserSessionsController: User ID is required in params.'); // Removed console.error
-    const errorPayload = createErrorResponse('INVALID_INPUT', '경로 매개변수에 사용자 ID가 필요합니다.');
+  // Validation for requestedUserId
+  if (!requestedUserId || typeof requestedUserId !== 'string' || requestedUserId.trim() === '') {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '경로 매개변수에 사용자 ID는 필수이며 빈 문자열이 아니어야 합니다.');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+  if (requestedUserId.length > 36) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '경로 매개변수의 사용자 ID가 너무 깁니다 (최대 36자).');
     return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
   }
 
@@ -79,28 +98,48 @@ async function updateSessionController(req, res) {
   const sessionId = req.params.session_id;
   const { title, category, is_archived } = req.body;
   
-  if (!sessionId) {
-    // console.error('Error in updateSessionController: Session ID is required in params.'); // Removed console.error
-    const errorPayload = createErrorResponse('INVALID_INPUT', '경로 매개변수에 세션 ID가 필요합니다.');
+  // Validation for sessionId
+  if (!sessionId || typeof sessionId !== 'string' || sessionId.trim() === '') {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '경로 매개변수에 세션 ID는 필수이며 빈 문자열이 아니어야 합니다.');
     return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
   }
-  if (!title && category === undefined && is_archived === undefined) {
-    // console.error('Error in updateSessionController: At least one field to update is required (title, category, or is_archived).'); // Removed console.error
+  if (sessionId.length > 36) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '경로 매개변수의 세션 ID가 너무 깁니다 (최대 36자).');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+
+  // Check if at least one field to update is provided
+  if (title === undefined && category === undefined && is_archived === undefined) {
     const errorPayload = createErrorResponse('INVALID_INPUT', '수정할 항목(제목, 카테고리, 보관 여부) 중 하나 이상이 필요합니다.');
     return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
   }
-  if (title && (typeof title !== 'string' || title.trim() === '')) {
-    // console.error('Error in updateSessionController: Title must be a non-empty string if provided.'); // Removed console.error
-    const errorPayload = createErrorResponse('INVALID_INPUT', '제목은 빈 문자열이 아니어야 합니다.');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+
+  // Validation for title
+  if (title !== undefined) {
+    if (typeof title !== 'string' || title.trim() === '') {
+      const errorPayload = createErrorResponse('INVALID_INPUT', '제목은 빈 문자열이 아니어야 합니다.');
+      return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+    }
+    if (title.length > 100) {
+      const errorPayload = createErrorResponse('INVALID_INPUT', '세션 제목이 너무 깁니다 (최대 100자).');
+      return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+    }
   }
-  if (category && typeof category !== 'string') {
-    // console.error('Error in updateSessionController: Category must be a string if provided.'); // Removed console.error
-    const errorPayload = createErrorResponse('INVALID_INPUT', '카테고리는 문자열이어야 합니다.');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+
+  // Validation for category
+  if (category !== undefined) {
+    if (typeof category !== 'string') {
+        const errorPayload = createErrorResponse('INVALID_INPUT', '카테고리는 문자열이어야 합니다.');
+        return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+    }
+    if (category.length > 50) {
+        const errorPayload = createErrorResponse('INVALID_INPUT', '카테고리가 너무 깁니다 (최대 50자).');
+        return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+    }
   }
+
+  // Validation for is_archived (already checks for boolean, which is good)
   if (is_archived !== undefined && typeof is_archived !== 'boolean') {
-    // console.error('Error in updateSessionController: is_archived must be a boolean if provided.'); // Removed console.error
     const errorPayload = createErrorResponse('INVALID_INPUT', '보관 여부는 boolean 값이어야 합니다.');
     return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
   }
@@ -126,9 +165,13 @@ async function updateSessionController(req, res) {
 async function getSessionMessagesController(req, res) {
   const sessionId = req.params.session_id;
   
-  if (!sessionId) {
-    // console.error('Error in getSessionMessagesController: Session ID is required in params.'); // Removed console.error
-    const errorPayload = createErrorResponse('INVALID_INPUT', '경로 매개변수에 세션 ID가 필요합니다.');
+  // Validation for sessionId
+  if (!sessionId || typeof sessionId !== 'string' || sessionId.trim() === '') {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '경로 매개변수에 세션 ID는 필수이며 빈 문자열이 아니어야 합니다.');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+  if (sessionId.length > 36) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '경로 매개변수의 세션 ID가 너무 깁니다 (최대 36자).');
     return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
   }
   
@@ -148,17 +191,25 @@ async function getSessionMessagesController(req, res) {
 // 세션 삭제 컨트롤러
 async function deleteSessionController(req, res) {
   const sessionId = req.params.session_id;
-  const { user_id } = req.body; // 요청 본문에서 user_id를 가져옵니다.
+  const { user_id } = req.body; 
 
-  if (!sessionId) {
-    // console.error('Error in deleteSessionController: Session ID is required in params.'); // Removed console.error
-    const errorPayload = createErrorResponse('INVALID_INPUT', '경로 매개변수에 세션 ID가 필요합니다.');
+  // Validation for sessionId
+  if (!sessionId || typeof sessionId !== 'string' || sessionId.trim() === '') {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '경로 매개변수에 세션 ID는 필수이며 빈 문자열이 아니어야 합니다.');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+  if (sessionId.length > 36) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '경로 매개변수의 세션 ID가 너무 깁니다 (최대 36자).');
     return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
   }
 
-  if (!user_id) {
-    // console.error('Error in deleteSessionController: User ID is required in the request body.'); // Removed console.error
-    const errorPayload = createErrorResponse('INVALID_INPUT', '요청 본문에 사용자 ID(user_id)가 필요합니다.');
+  // Validation for user_id
+  if (!user_id || typeof user_id !== 'string' || user_id.trim() === '') {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '요청 본문에 사용자 ID(user_id)는 필수이며 빈 문자열이 아니어야 합니다.');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+  if (user_id.length > 36) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', '요청 본문의 사용자 ID가 너무 깁니다 (최대 36자).');
     return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
   }
 
