@@ -1,7 +1,7 @@
 const { oracledb } = require('../config/database'); // Removed getConnection
 const { saveUserMessageToDB, saveAiMessageToDB, deleteUserMessageFromDB, getSessionMessagesForClient, getChatHistoryFromDB, saveAttachmentToDB } = require('../models/chat'); // getChatHistoryFromDB 추가, saveAttachmentToDB 추가
-const { getAiResponse } = require('../config/vertexai');
-const { clobToString, convertClobFields, withTransaction } = require('../utils/dbUtils'); // convertClobFields import 추가, withTransaction 추가
+const { getAiResponse } = require('../utils/aiProvider'); // 변경: AI 제공자 유틸리티 사용
+const { convertClobFields, withTransaction } = require('../utils/dbUtils'); // convertClobFields import 추가, withTransaction 추가
 const { standardizeApiResponse } = require('../utils/apiResponse'); // Import standardizeApiResponse
 const path = require('path');
 const fs = require('fs');
@@ -13,7 +13,11 @@ const { createErrorResponse, getHttpStatusByErrorCode, handleOracleError, logErr
 async function sendMessageController(req, res) {
   const sessionId = req.params.session_id;
   const GUEST_USER_ID = 'guest';
-  const { message, systemPrompt, specialModeType } = req.body;
+  const { message, systemPrompt, specialModeType, ai_provider, ollama_model } = req.body;
+  
+  // AI 제공자 기본값 설정 (Vertex AI)
+  const selectedAiProvider = ai_provider || 'vertexai';
+  const selectedOllamaModel = ollama_model || 'gemma3:4b';
 
   // Validation for sessionId
   if (!sessionId || typeof sessionId !== 'string' || sessionId.trim() === '') {
@@ -62,15 +66,21 @@ async function sendMessageController(req, res) {
         err.code = 'DB_ERROR'; // Custom property
         throw err;
       }
-      const userMessageId = userMessageResult.user_message_id;
-
-      // 2. 대화 기록 가져오기 (현재 사용자 메시지 포함)
+      const userMessageId = userMessageResult.user_message_id;      // 2. 대화 기록 가져오기 (현재 사용자 메시지 포함)
       let chatHistoryForAI = await getChatHistoryFromDB(connection, sessionId, false);
 
-      // 3. Vertex AI에 요청
+      // 3. 선택된 AI 제공자에 요청
       const effectiveSystemPrompt = systemPrompt && systemPrompt.trim() ? systemPrompt.trim() : null;
       
-      const aiResponseFull = await getAiResponse(message, chatHistoryForAI, effectiveSystemPrompt, specialModeType);
+      // AI 제공자에 따른 요청 (Vertex AI 또는 Ollama)
+      const aiResponseFull = await getAiResponse(
+        selectedAiProvider, 
+        selectedOllamaModel, 
+        message, 
+        chatHistoryForAI, 
+        effectiveSystemPrompt, 
+        specialModeType
+      );
 
       if (!aiResponseFull || typeof aiResponseFull.content !== 'string' || aiResponseFull.content.trim() === '') {
         // No need to rollback here
@@ -79,11 +89,10 @@ async function sendMessageController(req, res) {
         const err = new Error(errorPayload.error.message);
         err.code = 'AI_RESPONSE_ERROR';
         throw err;
-      }
-      const aiContentFromVertex = aiResponseFull.content;
+      }      const aiContent = aiResponseFull.content;
 
       // 4. AI 응답 저장
-      const aiMessageResult = await saveAiMessageToDB(connection, sessionId, GUEST_USER_ID, aiContentFromVertex);
+      const aiMessageResult = await saveAiMessageToDB(connection, sessionId, GUEST_USER_ID, aiContent);
       if (!aiMessageResult || !aiMessageResult.ai_message_id) {
         // No need to rollback here
         const errorPayload = createErrorResponse('DB_ERROR', 'AI 메시지 저장에 실패했습니다.');
@@ -120,8 +129,13 @@ async function sendMessageController(req, res) {
         await new Promise(resolve => setTimeout(resolve, 50));
       }
       res.write(`event: end\\ndata: ${JSON.stringify({ message: 'Stream ended' })}\\n\\n`);
-      return;
-    } else {
+      return;    } else {
+      // AI 제공자 및 모델 정보 추가
+      responseData.ai_provider = selectedAiProvider;
+      if (selectedAiProvider === 'ollama') {
+        responseData.ollama_model = selectedOllamaModel;
+      }
+
       if (specialModeType === 'canvas') {
         const htmlRegex = /```html\n([\s\S]*?)\n```/;
         const cssRegex = /```css\n([\s\S]*?)\n```/;

@@ -28,7 +28,7 @@
     - Vertex AI 연동, Google Cloud Gemini 2.5 pro 모델 사용
     - 안전성 필터(증오/성적/위험/학대), 스트림/캔버스/검색 등 특수 모드 지원
     - 주요 함수 및 내보내기:
-      - `getAiResponse(currentUserMessage, history, systemMessageText, specialModeType, streamResponseCallback)`: Vertex AI에 대화 요청, 스트림/캔버스/검색 등 특수 모드 지원 (systemPrompt, specialModeType, stream 콜백 등 다양한 옵션 지원)
+      - `getVertexAiResponse(currentUserMessage, history, systemMessageText, specialModeType, streamResponseCallback)`: Vertex AI에 대화 요청, 스트림/캔버스/검색 등 특수 모드 지원 (systemPrompt, specialModeType, stream 콜백 등 다양한 옵션 지원)
       - `vertex_ai`: VertexAI 인스턴스 (직접 모델 생성/설정 가능)
       - `generativeModel`: Gemini 2.5 pro 모델 인스턴스 (기본 설정)
     - 참고: specialModeType에 따라 systemPrompt가 자동 강화(캔버스/검색 등), streamResponseCallback으로 스트리밍 응답 처리 가능
@@ -290,3 +290,6 @@
     ```
 
 ---
+
+인간 메모
+TODO: get 프로필 이미지 구현

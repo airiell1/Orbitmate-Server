@@ -1,4 +1,4 @@
-const { VertexAI, HarmCategory, HarmBlockThreshold } = require('@google-cloud/vertexai'); // HarmCategory와 HarmBlockThreshold 추가!
+const { VertexAI } = require('@google-cloud/vertexai')
 require('dotenv').config();
 const path = require('path');
 
@@ -21,18 +21,11 @@ const generativeModel = vertex_ai.getGenerativeModel({
       temperature: 0.8,
       topP: 0.95,
       maxOutputTokens: 65535, // 최대 출력 토큰 수 (최대값 65535)
-    },
-    // safetySettings: [
-    //   { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, // 증오 발언 관련
-    //   { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, // 성적 콘텐츠 관련
-    //   { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, // 위험한 콘텐츠 관련
-    //   { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, // 학대, 독성, 괴롭힘 관련
-    //   // { category: HarmCategory.HARM_CATEGORY_UNSPECIFIED, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE } // 매우 포괄적 (신중하게 사용)
-    // ],
+    }
 });
 
 // AI 응답을 가져오는 함수
-async function getAiResponse(currentUserMessage, history = [], systemMessageText = null, specialModeType = null, streamResponseCallback = null) { // 새 시그니처 + specialModeType + streamResponseCallback
+async function getVertexAiResponse(currentUserMessage, history = [], systemMessageText = null, specialModeType = null, streamResponseCallback = null) { // 새 시그니처 + specialModeType + streamResponseCallback
     let conversationContents = [];
     let finalSystemMessageText = systemMessageText; // systemMessageText가 prompt와 systemPrompt를 통합한 값으로 간주
 
@@ -48,11 +41,9 @@ async function getAiResponse(currentUserMessage, history = [], systemMessageText
             "생성된 코드는 바로 웹페이지에 적용될 수 있도록 완전한 형태로 제공하는 것을 목표로 합니다.";
         console.log("캔버스 모드 활성화. 강화된 시스템 프롬프트 적용.");
     } else if (specialModeType === 'search') {
-        // 검색 모드 관련 프롬프트 (실제 검색 기능은 별도 구현 필요)
         const searchPrompt = "Please answer based on web search results if necessary. Provide concise answers with relevant information found.";
         finalSystemMessageText = finalSystemMessageText ? `${finalSystemMessageText}\n${searchPrompt}` : searchPrompt;
     } else if (specialModeType === 'stream') {
-        // 스트림 모드 관련 프롬프트 (실제 스트리밍 로직은 별도 구현 필요)
         console.log("Stream mode activated. System prompt will be used as is. Specific stream-related prompt adjustments can be added here if needed.");
         // 예: const streamPrompt = "Provide your response in a continuous stream.";
         // finalSystemMessageText = finalSystemMessageText ? `${finalSystemMessageText}\n${streamPrompt}` : streamPrompt;
@@ -150,7 +141,7 @@ async function getAiResponse(currentUserMessage, history = [], systemMessageText
 }
 
 module.exports = {
-    getAiResponse,
+    getVertexAiResponse,
     vertex_ai,
     generativeModel
 };
