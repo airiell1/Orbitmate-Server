@@ -47,7 +47,7 @@ function getHttpStatusByErrorCode(errorCode) {
 }
 
 // Oracle 데이터베이스 오류를 처리하는 함수
-function handleOracleError(err) {
+function handleOracleError(err) { // req parameter removed
   // Oracle 오류 코드별 처리
   switch(err.errorNum) {
     case 1:
@@ -64,7 +64,7 @@ function handleOracleError(err) {
 }
 
 // 오류 로깅 함수
-function logError(context, error) {
+function logError(context, error) { // req parameter removed
   console.error(`[${context}] 오류 발생:`, error);
   
   // 추가적인 상세 로깅을 위한 확장 가능한 구조

@@ -133,7 +133,7 @@ async function saveAiMessageToDB(connection, sessionId, user_id, message) {
         content: { type: oracledb.CLOB, dir: oracledb.BIND_OUT, maxSize: 1024 * 1024 }, // 충분한 maxSize 설정 (예: 1MB)
         createdAt: { type: oracledb.DATE, dir: oracledb.BIND_OUT }
       },
-      { autoCommit: true }
+      { autoCommit: false } // Changed to false for controller-managed transactions
     );
     // RETURNING으로 받은 CLOB을 문자열로 변환
     const contentStr = await clobToString(result.outBinds.content[0]);
@@ -149,10 +149,9 @@ async function saveAiMessageToDB(connection, sessionId, user_id, message) {
 }
 
 // 파일 첨부 정보를 DB(attachments 테이블)에 저장
-async function saveAttachmentToDB(messageId, file) {
-  let connection;
+async function saveAttachmentToDB(connection, messageId, file) { // Added connection parameter
   try {
-    connection = await getConnection();
+    // connection = await getConnection(); // Removed internal getConnection
     const result = await connection.execute(
       `INSERT INTO attachments (message_id, file_name, file_path, file_type, file_size, uploaded_at)
        VALUES (:messageId, :fileName, :filePath, :fileType, :fileSize, SYSTIMESTAMP)
@@ -165,21 +164,14 @@ async function saveAttachmentToDB(messageId, file) {
         fileSize: file.size,
         attachmentId: { type: oracledb.STRING, dir: oracledb.BIND_OUT }
       },
-      { autoCommit: true }
+      { autoCommit: false } // Changed to false for controller-managed transactions
     );
     return { attachment_id: result.outBinds.attachmentId[0] };
   } catch (err) {
     console.error('첨부파일 정보 저장 실패:', err);
     throw err;
-  } finally {
-    if (connection) {
-      try {
-        await connection.close();
-      } catch (err) {
-        console.error('연결 닫기 실패:', err);
-      }
-    }
   }
+  // Removed finally block for connection closing
 }
 
 // 메시지를 데이터베이스에 저장합니다. (사용자, AI, 파일 메시지 등 범용)
@@ -238,17 +230,16 @@ async function saveMessageToDB(messageData) {
 }
 
 // 사용자 메시지를 DB에서 삭제 (작성자 확인 포함)
-async function deleteUserMessageFromDB(messageId, user_id) {
-  let connection;
+async function deleteUserMessageFromDB(connection, messageId, user_id) { // Added connection parameter
   try {
-    connection = await getConnection();
+    // connection = await getConnection(); // Removed internal getConnection
     
     // README.AI에 따라 인증/보안 최소화 요청 수용: user_id 체크를 제거
     const result = await connection.execute(
       `DELETE FROM chat_messages 
        WHERE message_id = :messageId`,
       { messageId: messageId },
-      { autoCommit: true }
+      { autoCommit: false } // Changed to false for controller-managed transactions
     );
 
     // 삭제된 행의 수를 반환 (0이면 삭제 실패 또는 권한 없음)
@@ -257,22 +248,14 @@ async function deleteUserMessageFromDB(messageId, user_id) {
   } catch (err) {
     console.error('사용자 메시지 삭제 실패:', err);
     throw err;
-  } finally {
-    if (connection) {
-      try {
-        await connection.close();
-      } catch (err) {
-        console.error('연결 닫기 실패:', err);
-      }
-    }
   }
+  // Removed finally block for connection closing
 }
 
 // 세션의 모든 메시지를 클라이언트 표시용으로 가져오기
-async function getSessionMessagesForClient(sessionId) {
-  let connection;
+async function getSessionMessagesForClient(connection, sessionId) { // Added connection parameter
   try {
-    connection = await getConnection();
+    // connection = await getConnection(); // Removed internal getConnection
     const result = await connection.execute(
       `SELECT message_id, session_id, user_id, message_type, message_content, created_at, edited_at, is_edited,
               (SELECT f.file_name FROM attachments f WHERE f.message_id = cm.message_id AND ROWNUM = 1) as attachment_file_name,
@@ -310,15 +293,8 @@ async function getSessionMessagesForClient(sessionId) {
   } catch (err) {
     console.error('세션 메시지 조회 실패:', err);
     throw err;
-  } finally {
-    if (connection) {
-      try {
-        await connection.close();
-      } catch (err) {
-        console.error('연결 닫기 실패:', err);
-      }
-    }
   }
+  // Removed finally block for connection closing
 }
 
 module.exports = {
