@@ -2,6 +2,7 @@ const { getConnection, oracledb } = require('../config/database');
 const { saveUserMessageToDB, saveAiMessageToDB, deleteUserMessageFromDB, getSessionMessagesForClient, getChatHistoryFromDB } = require('../models/chat'); // getChatHistoryFromDB 추가
 const { getAiResponse } = require('../config/vertexai');
 const { clobToString, convertClobFields } = require('../utils/dbUtils'); // convertClobFields import 추가
+const { standardizeApiResponse } = require('../utils/apiResponse'); // Import standardizeApiResponse
 const path = require('path');
 const fs = require('fs');
 
@@ -109,7 +110,7 @@ async function sendMessageController(req, res) {
       }
 
       // 스트리밍이 아닌 경우, 공통 응답 객체 (필요시 canvas 데이터 포함)를 JSON 형태로 전송
-      res.json(responseData);
+      res.json(standardizeApiResponse(responseData));
     }
   } catch (err) {
     logError(err, req);
@@ -151,11 +152,11 @@ async function editMessageController(req, res) {
   
   if (!content || typeof content !== 'string' || content.trim() === '') {
     console.error('Error in editMessageController: Content is required and must be a non-empty string.');
-    return res.status(400).json({ error: '메시지 내용은 필수이며 빈 문자열이 아니어야 합니다.' });
+    return res.status(400).json(standardizeApiResponse({ error_message: '메시지 내용은 필수이며 빈 문자열이 아니어야 합니다.' }));
   }
   if (!messageId) {
     console.error('Error in editMessageController: Message ID is required.');
-    return res.status(400).json({ error: '메시지 ID가 필요합니다.' });
+    return res.status(400).json(standardizeApiResponse({ error_message: '메시지 ID가 필요합니다.' }));
   }
   
   let connection;
@@ -170,7 +171,7 @@ async function editMessageController(req, res) {
 
     if (result.rowsAffected === 0) {
       console.warn(`Warning in editMessageController: Message with ID ${messageId} not found or not updated.`);
-      return res.status(404).json({ error: '메시지를 찾을 수 없거나 업데이트되지 않았습니다.' });
+      return res.status(404).json(standardizeApiResponse({ error_message: '메시지를 찾을 수 없거나 업데이트되지 않았습니다.' }));
     }
     // 편집된 메시지 정보 다시 조회 (선택 사항)
     const editedMessageResult = await connection.execute(
@@ -183,15 +184,15 @@ async function editMessageController(req, res) {
 
     if (editedMessageResult.rows.length === 0) {
         console.error(`Error in editMessageController: Edited message with ID ${messageId} not found after update.`);
-        return res.status(404).json({ error: '편집된 메시지를 찾을 수 없습니다.' });
+        return res.status(404).json(standardizeApiResponse({ error_message: '편집된 메시지를 찾을 수 없습니다.' }));
     }
 
     const updatedMessage = await convertClobFields(editedMessageResult.rows[0]); // CLOB 변환
 
-    res.status(200).json({ message: '메시지가 성공적으로 수정되었습니다.', updatedMessage: updatedMessage });
+    res.status(200).json(standardizeApiResponse({ message: '메시지가 성공적으로 수정되었습니다.', updated_message: updatedMessage }));
   } catch (err) {
     console.error(`Error in editMessageController for message ${messageId}:`, err);
-    res.status(500).json({ error: `메시지 수정 중 오류 발생: ${err.message}` });
+    res.status(500).json(standardizeApiResponse({ error_message: `메시지 수정 중 오류 발생: ${err.message}` }));
   } finally {
     if (connection) {
       try {
@@ -210,11 +211,11 @@ async function addReactionController(req, res) {
   
   if (!reaction || typeof reaction !== 'string' || reaction.trim() === '') {
     console.error('Error in addReactionController: Reaction is required and must be a non-empty string.');
-    return res.status(400).json({ error: '리액션은 필수이며 빈 문자열이 아니어야 합니다.' });
+    return res.status(400).json(standardizeApiResponse({ error_message: '리액션은 필수이며 빈 문자열이 아니어야 합니다.' }));
   }
    if (!messageId) {
     console.error('Error in addReactionController: Message ID is required.');
-    return res.status(400).json({ error: '메시지 ID가 필요합니다.' });
+    return res.status(400).json(standardizeApiResponse({ error_message: '메시지 ID가 필요합니다.' }));
   }
   
   let connection;
@@ -231,12 +232,12 @@ async function addReactionController(req, res) {
 
     if (result.rowsAffected === 0) {
       console.warn(`Warning in addReactionController: Message with ID ${messageId} not found or reaction not added.`);
-      return res.status(404).json({ error: '메시지를 찾을 수 없거나 리액션이 추가되지 않았습니다.' });
+      return res.status(404).json(standardizeApiResponse({ error_message: '메시지를 찾을 수 없거나 리액션이 추가되지 않았습니다.' }));
     }
-    res.status(200).json({ message: '리액션이 성공적으로 추가되었습니다.' });
+    res.status(200).json(standardizeApiResponse({ message: '리액션이 성공적으로 추가되었습니다.' }));
   } catch (err) {
     console.error(`Error in addReactionController for message ${messageId}:`, err);
-    res.status(500).json({ error: `리액션 추가 중 오류 발생: ${err.message}` });
+    res.status(500).json(standardizeApiResponse({ error_message: `리액션 추가 중 오류 발생: ${err.message}` }));
   } finally {
     if (connection) {
       try {
@@ -255,7 +256,7 @@ async function removeReactionController(req, res) {
 
   if (!messageId) {
     console.error('Error in removeReactionController: Message ID is required.');
-    return res.status(400).json({ error: '메시지 ID가 필요합니다.' });
+    return res.status(400).json(standardizeApiResponse({ error_message: '메시지 ID가 필요합니다.' }));
   }
 
   let connection;
@@ -273,12 +274,12 @@ async function removeReactionController(req, res) {
 
     if (result.rowsAffected === 0) {
       console.warn(`Warning in removeReactionController: Message with ID ${messageId} not found or reaction not removed.`);
-      return res.status(404).json({ error: '메시지를 찾을 수 없거나 리액션이 제거되지 않았습니다. 해당 메시지에 리액션이 없거나, 다른 사용자의 리액션일 수 있습니다.' });
+      return res.status(404).json(standardizeApiResponse({ error_message: '메시지를 찾을 수 없거나 리액션이 제거되지 않았습니다. 해당 메시지에 리액션이 없거나, 다른 사용자의 리액션일 수 있습니다.' }));
     }
-    res.status(200).json({ message: '리액션이 성공적으로 제거되었습니다.' });
+    res.status(200).json(standardizeApiResponse({ message: '리액션이 성공적으로 제거되었습니다.' }));
   } catch (err) {
     console.error(`Error in removeReactionController for message ${messageId}:`, err);
-    res.status(500).json({ error: `리액션 제거 중 오류 발생: ${err.message}` });
+    res.status(500).json(standardizeApiResponse({ error_message: `리액션 제거 중 오류 발생: ${err.message}` }));
   } finally {
     if (connection) {
       try {
@@ -297,7 +298,7 @@ async function deleteMessageController(req, res) {
 
   if (!messageId) {
     console.error('Error in deleteMessageController: Message ID is required.');
-    return res.status(400).json({ error: '메시지 ID가 필요합니다.' });
+    return res.status(400).json(standardizeApiResponse({ error_message: '메시지 ID가 필요합니다.' }));
   }
   try {
     // 모델 함수를 사용하여 메시지 삭제 (내부적으로 인가 확인 가정)
@@ -307,12 +308,12 @@ async function deleteMessageController(req, res) {
     if (!deleted) {
       console.warn(`Warning in deleteMessageController: Message with ID ${messageId} not found or not deleted.`);
       // 사용자가 자신의 메시지만 삭제 가능하도록 로직이 모델에 있다면, 403 Forbidden 또는 404 Not Found 반환 가능
-      return res.status(404).json({ error: '메시지를 찾을 수 없거나 삭제할 수 없습니다. 이미 삭제되었거나 다른 사용자의 메시지일 수 있습니다.' });
+      return res.status(404).json(standardizeApiResponse({ error_message: '메시지를 찾을 수 없거나 삭제할 수 없습니다. 이미 삭제되었거나 다른 사용자의 메시지일 수 있습니다.' }));
     }
-    res.status(200).json({ message: '메시지가 성공적으로 삭제되었습니다.' });
+    res.status(200).json(standardizeApiResponse({ message: '메시지가 성공적으로 삭제되었습니다.' }));
   } catch (err) {
     console.error(`Error in deleteMessageController for message ${messageId}:`, err);
-    res.status(500).json({ error: `메시지 삭제 중 오류 발생: ${err.message}` });
+    res.status(500).json(standardizeApiResponse({ error_message: `메시지 삭제 중 오류 발생: ${err.message}` }));
   }
 }
 
@@ -332,16 +333,16 @@ async function handleChatMessage(req, res) {
     await saveAiMessage(sessionId, aiResponseText); // DB 저장 함수 호출 (구현 필요)
 
     // 4. 클라이언트에 AI 응답 전송
-    res.json({ aiResponse: aiResponseText });
+    res.json(standardizeApiResponse({ ai_response: aiResponseText }));
 
   } catch (error) {
     console.error('채팅 메시지 처리 중 오류 발생:', error); // 서버 로그에 상세 오류 출력
 
     // 클라이언트에는 항상 JSON 형식의 오류 응답 전송
-    res.status(500).json({
-      error: '메시지 처리 중 서버 오류가 발생했습니다.',
+    res.status(500).json(standardizeApiResponse({
+      error_message: '메시지 처리 중 서버 오류가 발생했습니다.',
       details: error.message // 개발 중에는 상세 오류 포함, 운영 시에는 제거 고려
-    });
+    }));
   }
 }
 
@@ -367,11 +368,11 @@ async function uploadFile(req, res) {
 
   if (!req.file) {
     console.error('Error in uploadFile: No file uploaded.');
-    return res.status(400).json({ error: '업로드할 파일이 없습니다.' });
+    return res.status(400).json(standardizeApiResponse({ error_message: '업로드할 파일이 없습니다.' }));
   }
   if (!sessionId) {
     console.error('Error in uploadFile: Session ID is required.');
-    return res.status(400).json({ error: '세션 ID가 필요합니다.' });
+    return res.status(400).json(standardizeApiResponse({ error_message: '세션 ID가 필요합니다.' }));
   }
   // 사용자 요청: 인증/보안 기능 최소화. user_id는 임시로 'guest' 또는 요청에서 가져오도록 처리 (실제 환경에서는 인증 필요)
   const user_id = req.body.user_id || 'guest'; // 임시 user_id, 실제로는 인증 통해 받아야 함
@@ -400,7 +401,7 @@ async function uploadFile(req, res) {
     if (!messageId) {
         await connection.rollback(); // 오류 발생 시 롤백
         console.error('Error in uploadFile: Failed to save file message to chat_messages.');
-        return res.status(500).json({ error: '파일 메시지 저장 중 오류가 발생했습니다.' });
+        return res.status(500).json(standardizeApiResponse({ error_message: '파일 메시지 저장 중 오류가 발생했습니다.' }));
     }
 
     // 2. attachments 테이블에 첨부 파일 정보 저장 (saveAttachmentToDB 모델 함수 사용)
@@ -411,23 +412,23 @@ async function uploadFile(req, res) {
         // 파일 시스템에서 파일 삭제 시도 (선택적)
         // fs.unlinkSync(file.path); 
         console.error('Error in uploadFile: Failed to save attachment details.');
-        return res.status(500).json({ error: '첨부 파일 정보 저장 중 오류가 발생했습니다.' });
+        return res.status(500).json(standardizeApiResponse({ error_message: '첨부 파일 정보 저장 중 오류가 발생했습니다.' }));
     }
 
     await connection.commit(); // 트랜잭션 커밋
 
     // 업로드된 파일 정보와 메시지 ID 반환
-    res.status(201).json({ 
+    res.status(201).json(standardizeApiResponse({ 
       message: '파일이 성공적으로 업로드되었습니다.',
-      messageId: messageId,
-      fileInfo: {
-        originalname: file.originalname,
-        filename: file.filename, // 저장된 파일명 (multer에서 생성)
+      message_id: messageId,
+      file_info: {
+        original_name: file.originalname,
+        file_name: file.filename, // 저장된 파일명 (multer에서 생성)
         path: file.path,         // 저장된 전체 경로
         mimetype: file.mimetype,
         size: file.size
       }
-    });
+    }));
 
   } catch (err) {
     if (connection) await connection.rollback(); // 오류 발생 시 롤백
@@ -441,7 +442,7 @@ async function uploadFile(req, res) {
       }
     }
     console.error(`Error in uploadFile for session ${sessionId}:`, err);
-    res.status(500).json({ error: `파일 업로드 중 오류 발생: ${err.message}` });
+    res.status(500).json(standardizeApiResponse({ error_message: `파일 업로드 중 오류 발생: ${err.message}` }));
   } finally {
     if (connection) {
       try {
@@ -458,7 +459,7 @@ async function getSessionMessagesController(req, res) {
   
   if (!sessionId) {
     console.error('Error in getSessionMessagesController: Session ID is required.');
-    return res.status(400).json({ error: '세션 ID가 필요합니다.' });
+    return res.status(400).json(standardizeApiResponse({ error_message: '세션 ID가 필요합니다.' }));
   }
   
   try {
@@ -466,10 +467,10 @@ async function getSessionMessagesController(req, res) {
     const messages = await getSessionMessagesForClient(sessionId);
     
     // 세션이 없거나 메시지가 없어도 빈 배열 반환 (404가 아님)
-    res.status(200).json(messages);
+    res.status(200).json(standardizeApiResponse(messages));
   } catch (err) {
     console.error(`Error in getSessionMessagesController for session ${sessionId}:`, err);
-    res.status(500).json({ error: `메시지 목록 조회 중 오류 발생: ${err.message}` });
+    res.status(500).json(standardizeApiResponse({ error_message: `메시지 목록 조회 중 오류 발생: ${err.message}` }));
   }
 }
 
