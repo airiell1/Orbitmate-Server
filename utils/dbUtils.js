@@ -1,4 +1,4 @@
-const { oracledb } = require('../config/database');
+const { oracledb, getConnection } = require('../config/database'); // Ensure oracledb is also available if not already
 
 /**
  * Oracle CLOB을 문자열로 변환
@@ -74,5 +74,35 @@ function toSnakeCaseObj(obj) {
 module.exports = {
   clobToString,
   convertClobFields,
-  toSnakeCaseObj
+  toSnakeCaseObj,
+  withTransaction // Add this
 };
+
+async function withTransaction(callback) {
+  let connection;
+  try {
+    connection = await getConnection(); // Assumes getConnection is correctly imported
+    const result = await callback(connection);
+    await connection.commit();
+    return result;
+  } catch (err) {
+    if (connection) {
+      try {
+        await connection.rollback();
+      } catch (rollbackError) {
+        // Log or handle rollback error, but prioritize original error
+        console.error('Rollback failed:', rollbackError); // Or use a proper logger
+      }
+    }
+    throw err; // Re-throw the original error
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (closeError) {
+        // Log or handle close error
+        console.error('Failed to close connection:', closeError); // Or use a proper logger
+      }
+    }
+  }
+}
