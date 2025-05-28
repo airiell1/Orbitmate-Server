@@ -13,11 +13,16 @@ const { createErrorResponse, getHttpStatusByErrorCode, handleOracleError, logErr
 async function sendMessageController(req, res) {
   const sessionId = req.params.session_id;
   const GUEST_USER_ID = 'guest';
-  const { message, systemPrompt, specialModeType, ai_provider, ollama_model } = req.body;
-  
-  // AI 제공자 기본값 설정 (Vertex AI)
-  const selectedAiProvider = ai_provider || 'vertexai';
-  const selectedOllamaModel = ollama_model || 'gemma3:4b';
+  const { 
+    message, 
+    systemPrompt, 
+    specialModeType,
+    max_output_tokens_override,
+    context_message_limit,
+    ai_provider_override,
+    model_id_override,
+    user_message_token_count 
+  } = req.body;
 
   // Validation for sessionId
   if (!sessionId || typeof sessionId !== 'string' || sessionId.trim() === '') {
@@ -54,49 +59,68 @@ async function sendMessageController(req, res) {
 
   const user_id = req.user ? req.user.user_id : GUEST_USER_ID;
 
+  // Additional validation for new optional parameters
+  if (max_output_tokens_override !== undefined && (typeof max_output_tokens_override !== 'number' || !Number.isInteger(max_output_tokens_override) || max_output_tokens_override <= 0)) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', 'max_output_tokens_override는 양의 정수여야 합니다.');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+  if (context_message_limit !== undefined && (typeof context_message_limit !== 'number' || !Number.isInteger(context_message_limit) || context_message_limit < 0)) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', 'context_message_limit는 0 이상의 정수여야 합니다.');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+  if (ai_provider_override !== undefined && typeof ai_provider_override !== 'string') {
+    const errorPayload = createErrorResponse('INVALID_INPUT', 'ai_provider_override는 문자열이어야 합니다.');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+  if (model_id_override !== undefined && typeof model_id_override !== 'string') {
+    const errorPayload = createErrorResponse('INVALID_INPUT', 'model_id_override는 문자열이어야 합니다.');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+  if (user_message_token_count !== undefined && (typeof user_message_token_count !== 'number' || !Number.isInteger(user_message_token_count) || user_message_token_count < 0)) {
+    const errorPayload = createErrorResponse('INVALID_INPUT', 'user_message_token_count는 0 이상의 정수여야 합니다.');
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  }
+
   try {
     const responseData = await withTransaction(async (connection) => {
-      // 1. 사용자 메시지 저장
-      const userMessageResult = await saveUserMessageToDB(connection, sessionId, user_id, message);
+      const userMessageTokenCountToStore = user_message_token_count !== undefined ? user_message_token_count : null;
+      const userMessageResult = await saveUserMessageToDB(connection, sessionId, user_id, message, userMessageTokenCountToStore);
+      
       if (!userMessageResult || !userMessageResult.user_message_id) {
-        // No need to rollback here, withTransaction handles it
-        const errorPayload = createErrorResponse('DB_ERROR', '사용자 메시지 저장에 실패했습니다.');
-        // Throw an error to be caught by withTransaction or the outer catch
-        const err = new Error(errorPayload.error.message);
-        err.code = 'DB_ERROR'; // Custom property
+        const err = new Error('사용자 메시지 저장에 실패했습니다.');
+        err.code = 'DB_ERROR';
         throw err;
       }
-      const userMessageId = userMessageResult.user_message_id;      // 2. 대화 기록 가져오기 (현재 사용자 메시지 포함)
-      let chatHistoryForAI = await getChatHistoryFromDB(connection, sessionId, false);
 
-      // 3. 선택된 AI 제공자에 요청
+      const userMessageId = userMessageResult.user_message_id;
+
+      const effectiveContextLimit = context_message_limit !== undefined ? context_message_limit : null;
+      let chatHistoryForAI = await getChatHistoryFromDB(connection, sessionId, false, effectiveContextLimit);
+
       const effectiveSystemPrompt = systemPrompt && systemPrompt.trim() ? systemPrompt.trim() : null;
       
-      // AI 제공자에 따른 요청 (Vertex AI 또는 Ollama)
-      const aiResponseFull = await getAiResponse(
-        selectedAiProvider, 
-        selectedOllamaModel, 
-        message, 
-        chatHistoryForAI, 
-        effectiveSystemPrompt, 
-        specialModeType
-      );
+      const aiOptions = {
+          max_output_tokens_override: max_output_tokens_override,
+          ai_provider_override: ai_provider_override,
+          model_id_override: model_id_override
+      };
+      
+      const aiResponseFull = await getAiResponse(message, chatHistoryForAI, effectiveSystemPrompt, specialModeType, null, aiOptions);
 
       if (!aiResponseFull || typeof aiResponseFull.content !== 'string' || aiResponseFull.content.trim() === '') {
-        // No need to rollback here
-        console.error('Invalid AI response received from Vertex AI:', aiResponseFull); // Keep console.error for immediate feedback if necessary
-        const errorPayload = createErrorResponse('AI_RESPONSE_ERROR', 'AI로부터 유효한 응답을 받지 못했습니다. 응답 내용이 비어있거나 형식이 잘못되었습니다.');
-        const err = new Error(errorPayload.error.message);
+        console.error('Invalid AI response received:', aiResponseFull);
+        const err = new Error('AI로부터 유효한 응답을 받지 못했습니다. 응답 내용이 비어있거나 형식이 잘못되었습니다.');
         err.code = 'AI_RESPONSE_ERROR';
         throw err;
-      }      const aiContent = aiResponseFull.content;
 
-      // 4. AI 응답 저장
-      const aiMessageResult = await saveAiMessageToDB(connection, sessionId, GUEST_USER_ID, aiContent);
+      }
+      const aiContentFromVertex = aiResponseFull.content;
+      const aiMessageTokenCountToStore = aiResponseFull.actual_output_tokens !== undefined ? aiResponseFull.actual_output_tokens : null;
+
+      const aiMessageResult = await saveAiMessageToDB(connection, sessionId, GUEST_USER_ID, aiContentFromVertex, aiMessageTokenCountToStore);
+
       if (!aiMessageResult || !aiMessageResult.ai_message_id) {
-        // No need to rollback here
-        const errorPayload = createErrorResponse('DB_ERROR', 'AI 메시지 저장에 실패했습니다.');
-        const err = new Error(errorPayload.error.message);
+        const err = new Error('AI 메시지 저장에 실패했습니다.');
         err.code = 'DB_ERROR';
         throw err;
       }
@@ -104,16 +128,16 @@ async function sendMessageController(req, res) {
       const aiCreatedAt = aiMessageResult.created_at;
       const actualAiContentSaved = aiMessageResult.content;
 
-      // 5. 클라이언트에 응답 전송 데이터 준비
       return {
         user_message_id: userMessageId.toString(),
         ai_message_id: aiMessageId,
         message: actualAiContentSaved,
-        created_at: aiCreatedAt ? new Date(aiCreatedAt).toISOString() : new Date().toISOString()
+        created_at: aiCreatedAt ? new Date(aiCreatedAt).toISOString() : new Date().toISOString(),
+        ai_message_token_count: aiMessageTokenCountToStore // Include in response
       };
     });
 
-    // Send response based on responseData
+    // Send response based on responseData (non-streaming part)
     if (specialModeType === 'stream') {
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');

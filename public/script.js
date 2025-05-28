@@ -298,14 +298,22 @@ async function sendMessage() {
 
 
     // 스트리밍 모드 확인 (UI 요소가 있다면 해당 값 사용, 여기서는 false로 고정)
-    const useStream = false; // 기본 채팅 페이지에서는 스트리밍 미사용 또는 별도 UI 필요
+    const useStream = true; // Force streaming for this fix
     const useCanvas = false; // 기본 채팅 페이지에서는 캔버스 모드 미사용 또는 별도 UI 필요
 
     try {
         const requestBody = {
             message: originalMessageText,
             systemPrompt: systemPromptToSend,
+            max_output_tokens_override: currentMaxOutputTokens,
+            context_message_limit: currentContextLimit,
+            ai_provider_override: selectedAiProvider,
+            model_id_override: selectedModelId
+            // user_message_token_count can be added here if calculated on frontend
         };
+        if (useStream) { 
+            requestBody.specialModeType = 'stream';
+        }
         // 스트림 또는 캔버스 모드 설정 (testScript.js와 유사하게 UI 요소 확인 필요)
         // 예: const streamCheckbox = document.getElementById('stream-mode-checkbox-main');
         // if (streamCheckbox && streamCheckbox.checked) requestBody.specialModeType = 'stream';
@@ -395,11 +403,24 @@ async function sendMessage() {
                             }
                         }
                         if (data.chunk) {
-                            fullAiResponse += data.chunk;
-                            if (aiContentSpan) aiContentSpan.innerHTML = `AI: ${fullAiResponse.replace(/\\n/g, '<br>')}`;
+                            // Escape HTML characters in the chunk before adding to innerHTML
+                            const escapedChunk = data.chunk.replace(/[&<>"']/g, function (match) {
+                                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[match];
+                            }).replace(/\n/g, '<br>'); // Also handle explicit newlines if they come in chunks
+
+                            if (fullAiResponse === '') { // First chunk
+                                fullAiResponse = data.chunk; // Keep raw for logic
+                                if (aiContentSpan) aiContentSpan.innerHTML = 'AI: ' + escapedChunk;
+                            } else {
+                                fullAiResponse += data.chunk; // Keep raw for logic
+                                if (aiContentSpan) aiContentSpan.innerHTML += escapedChunk; // Append new chunk
+                            }
                             chatBox.scrollTop = chatBox.scrollHeight;
                         }
-                         if (data.ai_message_id) aiMessageId = data.ai_message_id; // 중간에 ID가 올 경우
+                         if (data.ai_message_id && !aiMessageId) { // Set AI message ID if not already set
+                            aiMessageId = data.ai_message_id; 
+                            if(aiMessageElement) aiMessageElement.dataset.messageId = aiMessageId;
+                         }
                     }
                 }
                 if (eventDataString && (eventDataString.startsWith('event: error') || eventDataString.startsWith('event: end'))) break; // while 루프 종료 조건
@@ -411,9 +432,19 @@ async function sendMessage() {
             if (userMessageElement && responseData.user_message_id) {
                 userMessageElement.dataset.messageId = responseData.user_message_id;
                 // 사용자 메시지 전송 성공 후 버튼 추가
-                addMessageActions(userMessageElement, responseData.user_message_id, 'user', originalMessageText);
+                addMessageActions(userMessageElement, responseData.user_message_id, 'user'); // Removed text
             }
-            addMessage('ai', responseData.message, responseData.ai_message_id);
+            const aiMessageElement = addMessage('ai', responseData.message, responseData.ai_message_id);
+             // Display AI token count if available
+            if (responseData.ai_message_token_count !== undefined && responseData.ai_message_token_count !== null) {
+                const lastAiTokensSpan = document.getElementById('last-ai-tokens');
+                if (lastAiTokensSpan) {
+                    lastAiTokensSpan.textContent = responseData.ai_message_token_count;
+                }
+            } else {
+                 const lastAiTokensSpan = document.getElementById('last-ai-tokens');
+                 if (lastAiTokensSpan) lastAiTokensSpan.textContent = 'N/A'; // Reset if not provided
+            }
             
             // 캔버스 모드 처리 (기본 채팅 페이지에서는 현재 미구현, 필요시 testScript.js 참고)
             if (responseData.specialModeType === 'canvas' || (responseData.canvas_html || responseData.canvas_css || responseData.canvas_js)) {
@@ -440,6 +471,13 @@ async function sendMessage() {
 // 페이지 로드 시 세션 초기화
 // DOMContentLoaded 이벤트에서 한 번만 실행되도록 처리
 let sessionInitialized = false;
+
+// Global variables for sidebar control values
+let currentMaxOutputTokens = 8192; // Default value from HTML
+let currentContextLimit = 10;   // Default value from HTML
+let selectedAiProvider = null;
+let selectedModelId = null;
+let availableModels = []; // To store fetched model data
 
 // 서버에서 메시지 새로고침 함수
 async function refreshMessages() {
@@ -516,8 +554,128 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
     }
     
+    // Sidebar toggle logic
+    const toggleSidebarButton = document.getElementById('toggle-sidebar-button');
+    const sidebar = document.getElementById('ai-settings-sidebar');
+
+    if (toggleSidebarButton && sidebar) {
+        toggleSidebarButton.addEventListener('click', function() {
+            if (sidebar.style.display === 'none' || sidebar.style.display === '') {
+                sidebar.style.display = 'block'; 
+            } else {
+                sidebar.style.display = 'none';
+            }
+        });
+    }
+
+    // Fetch AI Models and populate selector
+    const modelSelectionArea = document.getElementById('model-selection-area');
+    const selectedModelNameSpan = document.getElementById('selected-model-name');
+    const modelMaxInputSpan = document.getElementById('model-max-input-tokens');
+    const modelMaxOutputSpan = document.getElementById('model-max-output-tokens');
+    const maxOutputControl = document.getElementById('max-output-tokens-control');
+    const contextLimitControl = document.getElementById('context-limit-control');
+
+    async function fetchAiModelsAndPopulateSelector() {
+        try {
+            const response = await fetch('/api/ai/models');
+            if (!response.ok) {
+                throw new Error(`Failed to fetch AI models: ${response.statusText}`);
+            }
+            const modelsData = await response.json();
+            availableModels = modelsData.data; // Assuming data is nested under a 'data' key from standardizeApiResponse
+            
+            if (modelSelectionArea && Array.isArray(availableModels)) {
+                modelSelectionArea.innerHTML = ''; // Clear placeholder
+                const selectElement = document.createElement('select');
+                selectElement.id = 'ai-model-selector-dropdown';
+                
+                availableModels.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = `${model.provider}:${model.id}`; // Store combined value
+                    option.textContent = `${model.name}`; // Display name already includes provider
+                    option.dataset.provider = model.provider;
+                    option.dataset.id = model.id; // Store individual id
+                    option.dataset.maxInput = model.max_input_tokens;
+                    option.dataset.maxOutput = model.max_output_tokens;
+                    if (model.is_default) {
+                        option.selected = true;
+                    }
+                    selectElement.appendChild(option);
+                });
+                
+                modelSelectionArea.appendChild(selectElement);
+                updateDisplayedModelInfo(selectElement); // Initial display update
+
+                selectElement.addEventListener('change', function() {
+                    updateDisplayedModelInfo(this);
+                });
+            }
+        } catch (error) {
+            console.error('Error fetching AI models:', error);
+            if (modelSelectionArea) modelSelectionArea.innerHTML = '<p>Error loading models.</p>';
+        }
+    }
+
+    function updateDisplayedModelInfo(selectElement) {
+        const selectedOption = selectElement.options[selectElement.selectedIndex];
+        if (selectedOption) {
+            selectedAiProvider = selectedOption.dataset.provider;
+            selectedModelId = selectedOption.dataset.id;
+            
+            if (selectedModelNameSpan) selectedModelNameSpan.textContent = selectedOption.textContent;
+            if (modelMaxInputSpan) modelMaxInputSpan.textContent = selectedOption.dataset.maxInput || 'N/A';
+            if (modelMaxOutputSpan) modelMaxOutputSpan.textContent = selectedOption.dataset.maxOutput || 'N/A';
+            
+            const modelMaxOut = parseInt(selectedOption.dataset.maxOutput, 10);
+            if (maxOutputControl && !isNaN(modelMaxOut)) {
+                maxOutputControl.value = modelMaxOut; 
+                currentMaxOutputTokens = modelMaxOut; 
+            }
+        }
+    }
+
+    if (maxOutputControl) {
+        maxOutputControl.addEventListener('change', function() {
+            currentMaxOutputTokens = parseInt(this.value, 10);
+            if (isNaN(currentMaxOutputTokens) || currentMaxOutputTokens <= 0) {
+                const selectedOption = document.getElementById('ai-model-selector-dropdown')?.options[document.getElementById('ai-model-selector-dropdown')?.selectedIndex];
+                currentMaxOutputTokens = selectedOption ? parseInt(selectedOption.dataset.maxOutput, 10) : 8192; // Fallback to a default or model's max
+                this.value = currentMaxOutputTokens;
+                alert("최대 출력 토큰은 양의 정수여야 합니다.");
+            }
+             // Ensure it doesn't exceed the selected model's max output tokens, if a model is selected
+            const selectedOption = document.getElementById('ai-model-selector-dropdown')?.options[document.getElementById('ai-model-selector-dropdown')?.selectedIndex];
+            if (selectedOption) {
+                const modelMax = parseInt(selectedOption.dataset.maxOutput, 10);
+                if (!isNaN(modelMax) && currentMaxOutputTokens > modelMax) {
+                    currentMaxOutputTokens = modelMax;
+                    this.value = currentMaxOutputTokens;
+                    alert(`최대 출력 토큰은 현재 모델의 최대치(${modelMax})를 초과할 수 없습니다.`);
+                }
+            }
+        });
+        // Initialize with default or model's default (if models are loaded before this runs)
+        currentMaxOutputTokens = parseInt(maxOutputControl.value, 10);
+    }
+
+    if (contextLimitControl) {
+        contextLimitControl.addEventListener('change', function() {
+            currentContextLimit = parseInt(this.value, 10);
+             if (isNaN(currentContextLimit) || currentContextLimit < 0) {
+                currentContextLimit = 10; // Default value
+                this.value = currentContextLimit;
+                alert("컨텍스트 제한은 0 이상의 정수여야 합니다.");
+            }
+        });
+         // Initialize with default
+        currentContextLimit = parseInt(contextLimitControl.value, 10);
+    }
+    
     if (sendButton) { // sendButton이 있는 페이지(index.html)에서만 실행
-        initializeSession();
+        initializeSession().then(() => {
+             fetchAiModelsAndPopulateSelector(); // Fetch models after session is initialized
+        });
         sendButton.addEventListener('click', sendMessage);
         messageInput.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {

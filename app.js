@@ -13,6 +13,7 @@ const app = express();
 let usersRouter;
 let chatRouter;
 let sessionsRouter;
+let aiInfoRouter; // Declare aiInfoRouter
 
 
 // 미들웨어 설정 (DB 연결 필요 없는 것들)
@@ -66,10 +67,12 @@ async function startServer() {
     usersRouter = require('./routes/users');
     chatRouter = require('./routes/chat');
     sessionsRouter = require('./routes/sessions');
+    aiInfoRouter = require('./routes/aiInfo'); // Require aiInfoRouter
 
     app.use('/api/users', usersRouter);
     app.use('/api/chat', chatRouter);
     app.use('/api/sessions', sessionsRouter);
+    app.use('/api/ai', aiInfoRouter); // Mount aiInfoRouter
 
     // 서버 상태 확인용 엔드포인트 (이건 DB 필요 없을 수도 있지만 라우터 등록 후에)
     app.get('/api/health', (req, res) => {
