@@ -56,13 +56,17 @@ window.sessionInitialized = false;
 // 페이지 로드 시 새 세션 생성 또는 기존 세션 ID 사용 로직 (간단하게 구현)
 async function initializeSession() {
     try {
+        console.log('세션 초기화 시작...');
         // 로컬 스토리지에서 세션 ID 확인
         const savedSessionId = localStorage.getItem('currentSessionId');
         
         if (savedSessionId) {
+            console.log('저장된 세션 ID 발견:', savedSessionId);
             // 저장된 세션이 있으면 유효성 확인
             try {
+                console.log('세션 유효성 확인 중...');
                 const checkResponse = await fetch(`/api/chat/sessions/${savedSessionId}/messages`);
+                console.log('세션 유효성 확인 응답:', checkResponse.status);
                 
                 if (checkResponse.ok) {
                     currentSessionId = savedSessionId;
@@ -72,6 +76,9 @@ async function initializeSession() {
                     // 저장된 메시지 불러오기
                     refreshMessages();
                     return; // 세션 재사용 성공, 함수 종료
+                } else {
+                    console.warn('저장된 세션이 유효하지 않음:', checkResponse.status);
+                    localStorage.removeItem('currentSessionId');
                 }
             } catch (error) {
                 console.warn('세션 유효성 검사 실패:', error);
@@ -79,6 +86,7 @@ async function initializeSession() {
             }
         }
         
+        console.log('새 세션 생성 시작...');
         // GUEST_USER_ID를 사용하여 세션 생성
         const response = await fetch('/api/chat/sessions', {
             method: 'POST',
@@ -88,17 +96,31 @@ async function initializeSession() {
             // user_id를 GUEST_USER_ID로 설정
             body: JSON.stringify({ user_id: GUEST_USER_ID, title: 'Guest Session' })
         });
+        
+        console.log('세션 생성 응답 상태:', response.status);
+        
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+            let errorMessage;
+            try {
+                const errorData = await response.json();
+                errorMessage = errorData.error || `HTTP 오류! 상태: ${response.status}`;
+            } catch (e) {
+                errorMessage = `HTTP 오류! 상태: ${response.status}, 응답을 파싱할 수 없습니다.`;
+            }
+            throw new Error(errorMessage);
         }
+        
         const data = await response.json();
+        if (!data || !data.session_id) {
+            throw new Error('서버 응답에 세션 ID가 없습니다.');
+        }
+        
         currentSessionId = data.session_id;
+        console.log('새 게스트 세션 생성됨:', currentSessionId);
         
         // 세션 ID 저장
         localStorage.setItem('currentSessionId', currentSessionId);
         
-        console.log('새 게스트 세션 생성됨:', currentSessionId);
         addMessage('시스템', `게스트 세션 시작 (ID: ${currentSessionId})`);
     } catch (error) {
         console.error('세션 초기화 오류:', error);
@@ -666,18 +688,29 @@ document.addEventListener('DOMContentLoaded', function() {
         if (refreshButton) {
             refreshButton.addEventListener('click', refreshMessages);
         }
-        
-        // 세션 초기화 버튼 이벤트 연결
+          // 세션 초기화 버튼 이벤트 연결
         const resetSessionButton = document.getElementById('reset-session-button');
-        if (resetSessionButton) {
+        if (resetSessionButton) {  
             resetSessionButton.addEventListener('click', async function() {
+                console.log('세션 초기화 버튼 클릭됨');
                 if (confirm('현재 세션을 초기화하고 새로운 대화를 시작하시겠습니까?')) {
-                    // 로컬 스토리지에서 세션 ID 제거
-                    localStorage.removeItem('currentSessionId');
-                    // 채팅창 초기화
-                    chatBox.innerHTML = '';
-                    // 새 세션 시작
-                    await initializeSession();
+                    try {
+                        // 로컬 스토리지에서 세션 ID 제거
+                        localStorage.removeItem('currentSessionId');
+                        // 현재 세션 ID 초기화
+                        currentSessionId = null;
+                        // 채팅창 초기화
+                        chatBox.innerHTML = '';
+                        // 상태 메시지 추가
+                        addMessage('시스템', '새 세션을 시작합니다...');
+                        // 새 세션 시작
+                        await initializeSession();
+                        
+                        console.log('새 세션 생성 완료:', currentSessionId);
+                    } catch (error) {
+                        console.error('새 세션 생성 오류:', error);
+                        addMessage('시스템', `세션 생성 중 오류 발생: ${error.message}`);
+                    }
                 }
             });
         }

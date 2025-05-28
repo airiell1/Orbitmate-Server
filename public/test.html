@@ -25,6 +25,21 @@
             <input type="text" id="message-input" placeholder="메시지를 입력하세요...">
             <button id="send-button">전송</button>
         </div>
+        <div id="ai-selector" style="margin-top: 10px; text-align: center;">
+            <span>AI Provider:</span>
+            <label><input type="radio" name="aiProvider" value="ollama" checked> Ollama</label>
+            <label><input type="radio" name="aiProvider" value="gemini"> Gemini</label>
+            <span style="margin-left: 15px;">Ollama Model:</span>
+            <label><input type="radio" name="ollamaModel" value="gemma3:1b"> Gemma3:1b</label>
+            <label><input type="radio" name="ollamaModel" value="gemma3:4b" checked> Gemma3:4b</label>
+            <label><input type="radio" name="ollamaModel" value="gemma3:12b"> Gemma3:12b</label>
+            <label><input type="checkbox" id="it-qat"> 양자화</label>
+            <!-- 양자화의 경우 모델명 뒤에 -it-qat가 붙는다 ex: gemma3:4b-it-qat-->
+            <br> 
+            <label for="system-prompt-input" style="margin-left: 15px;">System Prompt:</label>
+            <input type="text" id="system-prompt-input" placeholder="Optional system prompt..." style="width: 200px; margin-left: 5px;">
+            <label style="margin-left: 15px;"><input type="checkbox" id="stream-mode-checkbox"> Stream Mode</label>
+        </div>
         <div class="session-controls" style="margin-top: 10px; text-align: center;">
             <button id="reset-session-button" style="background-color: #dc3545;">새 세션 시작</button>
             <button id="refresh-messages-button" style="background-color: #17a2b8;">메시지 새로고침</button>

@@ -1,7 +1,7 @@
 const { oracledb } = require('../config/database'); // Removed getConnection
 const { saveUserMessageToDB, saveAiMessageToDB, deleteUserMessageFromDB, getSessionMessagesForClient, getChatHistoryFromDB, saveAttachmentToDB } = require('../models/chat'); // getChatHistoryFromDB 추가, saveAttachmentToDB 추가
-const { getAiResponse } = require('../config/vertexai');
-const { clobToString, convertClobFields, withTransaction } = require('../utils/dbUtils'); // convertClobFields import 추가, withTransaction 추가
+const { getAiResponse } = require('../utils/aiProvider'); // 변경: AI 제공자 유틸리티 사용
+const { convertClobFields, withTransaction } = require('../utils/dbUtils'); // convertClobFields import 추가, withTransaction 추가
 const { standardizeApiResponse } = require('../utils/apiResponse'); // Import standardizeApiResponse
 const path = require('path');
 const fs = require('fs');
@@ -91,6 +91,7 @@ async function sendMessageController(req, res) {
         err.code = 'DB_ERROR';
         throw err;
       }
+
       const userMessageId = userMessageResult.user_message_id;
 
       const effectiveContextLimit = context_message_limit !== undefined ? context_message_limit : null;
@@ -111,11 +112,13 @@ async function sendMessageController(req, res) {
         const err = new Error('AI로부터 유효한 응답을 받지 못했습니다. 응답 내용이 비어있거나 형식이 잘못되었습니다.');
         err.code = 'AI_RESPONSE_ERROR';
         throw err;
+
       }
       const aiContentFromVertex = aiResponseFull.content;
       const aiMessageTokenCountToStore = aiResponseFull.actual_output_tokens !== undefined ? aiResponseFull.actual_output_tokens : null;
 
       const aiMessageResult = await saveAiMessageToDB(connection, sessionId, GUEST_USER_ID, aiContentFromVertex, aiMessageTokenCountToStore);
+
       if (!aiMessageResult || !aiMessageResult.ai_message_id) {
         const err = new Error('AI 메시지 저장에 실패했습니다.');
         err.code = 'DB_ERROR';
@@ -150,8 +153,13 @@ async function sendMessageController(req, res) {
         await new Promise(resolve => setTimeout(resolve, 50));
       }
       res.write(`event: end\\ndata: ${JSON.stringify({ message: 'Stream ended' })}\\n\\n`);
-      return;
-    } else {
+      return;    } else {
+      // AI 제공자 및 모델 정보 추가
+      responseData.ai_provider = selectedAiProvider;
+      if (selectedAiProvider === 'ollama') {
+        responseData.ollama_model = selectedOllamaModel;
+      }
+
       if (specialModeType === 'canvas') {
         const htmlRegex = /```html\n([\s\S]*?)\n```/;
         const cssRegex = /```css\n([\s\S]*?)\n```/;
