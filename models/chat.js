@@ -47,15 +47,37 @@ async function clobToString(clob) {
 }
 
 // DB에서 대화 기록 가져오기 (Vertex AI 형식으로 변환)
-async function getChatHistoryFromDB(connection, sessionId, includeCurrentUserMessage) {
+async function getChatHistoryFromDB(connection, sessionId, includeCurrentUserMessage, context_message_limit = null) {
   try {
-
-    const result = await connection.execute(
-      `SELECT message_id, session_id, user_id, message_type, message_content, created_at
+    let sql = `
+      SELECT message_id, session_id, user_id, message_type, message_content, created_at
       FROM chat_messages
       WHERE session_id = :sessionId
-      ORDER BY created_at ASC`,
-      { sessionId: sessionId }, // 이제 여기서 sessionId는 실제 세션 ID 문자열이야!
+      ORDER BY created_at ASC`;
+
+    if (context_message_limit !== null && !isNaN(parseInt(context_message_limit)) && parseInt(context_message_limit) > 0) {
+      // Apply limit by fetching latest N messages, then re-ordering to ASC for history
+      sql = `
+        SELECT * FROM (
+            SELECT inner_q.* FROM (
+                SELECT message_id, session_id, user_id, message_type, message_content, created_at
+                FROM chat_messages
+                WHERE session_id = :sessionId
+                ORDER BY created_at DESC
+            ) inner_q
+            WHERE ROWNUM <= :context_message_limit
+        ) final_q
+        ORDER BY created_at ASC`;
+    }
+    
+    const bindParams = { sessionId: sessionId };
+    if (sql.includes(':context_message_limit')) {
+        bindParams.context_message_limit = parseInt(context_message_limit);
+    }
+
+    const result = await connection.execute(
+      sql,
+      bindParams,
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
 
@@ -76,74 +98,70 @@ async function getChatHistoryFromDB(connection, sessionId, includeCurrentUserMes
 }
 
 // connection, user_id 인자를 추가하고 순서를 맞춤
-async function saveUserMessageToDB(connection, sessionId, user_id, message) {
+async function saveUserMessageToDB(connection, sessionId, user_id, message, userTokenCount = null) {
   try {
     const sessionCheck = await connection.execute(
       `SELECT 1 FROM chat_sessions WHERE session_id = :sessionId`,
-      { sessionId: sessionId } // 이제 여기서 sessionId는 실제 세션 ID 문자열이야!
+      { sessionId: sessionId }
     );
     
-    // 세션이 존재하지 않으면 오류 발생
     if (sessionCheck.rows.length === 0) {
-      // 이 오류를 던지면 컨트롤러의 catch 블록에서 잡아서 rollback 할 거야.
       throw new Error(`세션 ID '${sessionId}'가 존재하지 않습니다. 메시지를 저장할 수 없습니다.`);
     }
 
     const result = await connection.execute(
-      `INSERT INTO chat_messages (session_id, user_id, message_type, message_content, created_at)
-      VALUES (:sessionId, :user_id, 'user', :message, SYSTIMESTAMP)
+      `INSERT INTO chat_messages (session_id, user_id, message_type, message_content, created_at, user_message_token_count)
+      VALUES (:sessionId, :user_id, 'user', :message, SYSTIMESTAMP, :userTokenCount)
       RETURNING message_id INTO :messageId`,
       {
-        sessionId: sessionId, // 이제 제대로 된 세션 ID 문자열
-        user_id: user_id,       // 컨트롤러에서 넘겨받은 user_id
-        message: { val: message, type: oracledb.CLOB }, // 메시지 내용 (CLOB 처리)
+        sessionId: sessionId,
+        user_id: user_id,
+        message: { val: message, type: oracledb.CLOB },
+        userTokenCount: userTokenCount, // Store the provided token count
         messageId: { type: oracledb.STRING, dir: oracledb.BIND_OUT, maxSize: 255 }
       },
-      // 컨트롤러가 트랜잭션을 관리하므로 여기서는 autoCommit을 true로 하면 안 돼!
-      { autoCommit: false } // execute의 기본값이 false지만 명시적으로 해주는 것도 좋아.
+      { autoCommit: false }
     );
 
   return { user_message_id: result.outBinds.messageId[0] };
 
   } catch (err) {
     console.error(`사용자 메시지 저장 실패 (sessionId: ${sessionId}):`, err); 
-    // 오류를 다시 던져서 컨트롤러에서 처리하도록 함 (rollback 등)
     throw err;
   }
 }
 
 // AI 메시지를 DB에 저장
-async function saveAiMessageToDB(connection, sessionId, user_id, message) {
+async function saveAiMessageToDB(connection, sessionId, user_id, message, aiTokenCount = null) {
   try {
-    // 메시지가 null이거나 빈 문자열인 경우 기본 메시지 사용
     let safeMessage = message && typeof message === 'string' && message.trim() !== '' ? 
       message.trim() : 
       '(응답이 생성되지 않았습니다. 다시 시도해 주세요.)';
 
-    // message_id는 VARCHAR2(36)임 (DB 스키마 기준)
     const result = await connection.execute(
-      `INSERT INTO chat_messages (session_id, user_id, message_type, message_content, created_at) 
-       VALUES (:sessionId, :user_id, 'ai', :messageContent, SYSTIMESTAMP) 
+      `INSERT INTO chat_messages (session_id, user_id, message_type, message_content, created_at, ai_message_token_count) 
+       VALUES (:sessionId, :user_id, 'ai', :messageContent, SYSTIMESTAMP, :aiTokenCount) 
        RETURNING message_id, message_content, created_at INTO :messageId, :content, :createdAt`,
       { 
         sessionId: sessionId, 
         user_id: user_id,
-        messageContent: { val: safeMessage, type: oracledb.CLOB }, // CLOB으로 저장
+        messageContent: { val: safeMessage, type: oracledb.CLOB },
+        aiTokenCount: aiTokenCount, // Store the provided token count
         messageId: { type: oracledb.STRING, dir: oracledb.BIND_OUT, maxSize: 36 },
-        content: { type: oracledb.CLOB, dir: oracledb.BIND_OUT, maxSize: 1024 * 1024 }, // 충분한 maxSize 설정 (예: 1MB)
+        content: { type: oracledb.CLOB, dir: oracledb.BIND_OUT, maxSize: 1024 * 1024 },
         createdAt: { type: oracledb.DATE, dir: oracledb.BIND_OUT }
       },
-      { autoCommit: false } // Changed to false for controller-managed transactions
+      { autoCommit: false }
     );
-    // RETURNING으로 받은 CLOB을 문자열로 변환
     const contentStr = await clobToString(result.outBinds.content[0]);
     return {
       ai_message_id: result.outBinds.messageId[0],
-      content: contentStr, // 변환된 문자열 사용
-      created_at: result.outBinds.createdAt[0]
+      content: contentStr,
+      created_at: result.outBinds.createdAt[0],
+      ai_message_token_count: aiTokenCount // Also return it, though it's passed in
     };
   } catch (err) {
-    console.error(`AI 메시지 저장 실패 (sessionId: ${sessionId}):`, err); // 로그에 세션 ID 추가
+    console.error(`AI 메시지 저장 실패 (sessionId: ${sessionId}):`, err);
     throw err;
   }
 }
