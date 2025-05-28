@@ -52,6 +52,8 @@ CREATE TABLE chat_messages (
   is_edited NUMBER(1) DEFAULT 0,
   edited_at TIMESTAMP,
   parent_message_id VARCHAR2(36),
+  USER_MESSAGE_TOKEN_COUNT NUMBER,
+  AI_MESSAGE_TOKEN_COUNT NUMBER,
   FOREIGN KEY (session_id) REFERENCES chat_sessions(session_id) ON DELETE CASCADE, -- 세션 삭제시 메시지 자동 삭제
   FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE SET NULL, -- 사용자 삭제시 메시지의 user_id는 NULL로 (메시지 자체는 유지)
   FOREIGN KEY (parent_message_id) REFERENCES chat_messages(message_id) ON DELETE SET NULL -- 부모 메시지 삭제시 참조만 NULL로

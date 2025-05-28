@@ -306,11 +306,18 @@ async function sendMessage() {
             message: originalMessageText,
             systemPrompt: systemPromptToSend,
             max_output_tokens_override: currentMaxOutputTokens,
-            context_message_limit: currentContextLimit,
-            ai_provider_override: selectedAiProvider,
-            model_id_override: selectedModelId
+            context_message_limit: currentContextLimit
             // user_message_token_count can be added here if calculated on frontend
         };
+
+        // Conditionally add ai_provider_override and model_id_override
+        if (selectedAiProvider && typeof selectedAiProvider === 'string' && selectedAiProvider.trim() !== '') {
+            requestBody.ai_provider_override = selectedAiProvider;
+        }
+        if (selectedModelId && typeof selectedModelId === 'string' && selectedModelId.trim() !== '') {
+            requestBody.model_id_override = selectedModelId;
+        }
+
         if (useStream) { 
             requestBody.specialModeType = 'stream';
         }
