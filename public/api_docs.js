@@ -19,6 +19,32 @@ const apis = [
     exampleReq: '',
     exampleRes: `{\n  "status": "ok",\n  "timestamp": "YYYY-MM-DDTHH:mm:ss.sssZ"\n}`
   },
+  {
+    method: 'GET',
+    path: '/api/ai/models',
+    title: 'AI 모델 정보 조회',
+    desc: '사용 가능한 AI 모델 목록과 관련 정보를 반환합니다. 이 정보는 클라이언트에서 AI 공급자 및 모델 선택 UI를 구성하는 데 사용될 수 있습니다.',
+    params: [], // No parameters for this GET request
+    exampleReq: '', // No request body
+    exampleRes: `[
+   {
+     "provider": "ollama",
+     "id": "llama2", 
+     "name": "Ollama (llama2)",
+     "max_input_tokens": 128000, 
+     "max_output_tokens": 8192,
+     "is_default": false 
+   },
+   {
+     "provider": "vertexai",
+     "id": "gemini-2.5-pro-exp-03-25", 
+     "name": "Vertex AI (gemini-2.5-pro-exp-03-25)",
+     "max_input_tokens": 1048576,
+     "max_output_tokens": 65535,
+     "is_default": true 
+   }
+ ]`
+  },
   /* 2. 사용자 관리 */
   {
     method: 'POST',
@@ -32,6 +58,21 @@ const apis = [
     ],
     exampleReq: `{\n  "username": "APItestUser",\n  "email": "API@example.com",\n  "password": "password123"\n}`,
     exampleRes: `{\n  "user_id": "API_TEST_USER_ID",\n  "username": "APItest",\n  "email": "API@example.com",\n  "created_at": "YYYY-MM-DDTHH:mm:ss.sssZ"\n}`
+  },
+  {
+    method: 'POST',
+    path: '/api/users/check-email',
+    title: '이메일 중복 확인',
+    desc: '제공된 이메일 주소가 이미 시스템에 등록되어 있는지 확인합니다.<br>Validation Rules: <ul><li>`email`: 유효한 이메일 형식, 최대 254자.</li></ul>',
+    params: [
+      { name: 'email', type: 'email', label: '이메일 (최대 254자)', required: true }
+    ],
+    exampleReq: `{
+  "email": "test@example.com"
+}`,
+    exampleRes: `{
+  "email_exists": false
+}`
   },
   {
     method: 'POST',
@@ -177,24 +218,29 @@ const apis = [
     method: 'POST',
     path: '/api/chat/sessions/:session_id/messages',
     title: '채팅 메시지 전송',
-    desc: '특정 채팅 세션에 새 메시지를 전송하고 AI의 응답을 받습니다.<br>Validation Rules: <ul><li>`session_id` (URL param): 필수, 최대 36자.</li><li>`message` (body): 필수, 최대 4000자.</li><li>`system_prompt` (body): 선택, 최대 2000자.</li><li>`special_mode_type` (body): 선택, \'stream\' 또는 \'canvas\' 중 하나여야 합니다.</li></ul>',
+    desc: '특정 채팅 세션에 새 메시지를 전송하고 AI의 응답을 받습니다.<br>Validation Rules: <ul><li>`session_id` (URL param): 필수, 유효한 UUID 형식, 최대 36자.</li><li>`message` (body): 필수, 1-4000자 사이의 문자열.</li><li>`system_prompt` (body): 선택, 0-2000자 사이의 문자열.</li><li>`special_mode_type` (body): 선택, \'stream\' 또는 \'canvas\' 중 하나여야 합니다.</li></ul><br>Optional overrides:<ul><li>`ai_provider_override`: (string) "vertexai" 또는 "ollama". 제공될 경우 빈 문자열이 아니어야 합니다.</li><li>`model_id_override`: (string) 특정 모델 ID. 제공될 경우 빈 문자열이 아니어야 합니다.</li><li>`user_message_token_count`: (integer >= 0) 사용자 메시지의 토큰 수.</li><li>`max_output_tokens_override`: (integer > 0) AI 응답의 최대 토큰 수 재정의.</li><li>`context_message_limit`: (integer >= 0) 컨텍스트에 포함할 과거 메시지 수 (0은 컨텍스트 없음).</li></ul>',
     params: [
       { name: 'session_id', type: 'text', label: '세션 ID (최대 36자)', required: true, inPath: true, default: 'API_TEST_SESSION_ID' },
-      { name: 'message', type: 'text', label: '메시지 (최대 4000자)', required: true },
-      { name: 'system_prompt', type: 'text', label: '시스템 프롬프트 (최대 2000자)', required: false },
-      { name: 'special_mode_type', type: 'text', label: '특수 모드 (stream/canvas)', required: false }
+      { name: 'message', type: 'text', label: '메시지 (1-4000자)', required: true },
+      { name: 'system_prompt', type: 'text', label: '시스템 프롬프트 (0-2000자)', required: false },
+      { name: 'special_mode_type', type: 'text', label: '특수 모드 (stream/canvas)', required: false },
+      { name: 'ai_provider_override', type: 'text', label: 'AI 제공자 재정의 (vertexai/ollama, 선택)', required: false },
+      { name: 'model_id_override', type: 'text', label: 'AI 모델 ID 재정의 (선택)', required: false },
+      { name: 'user_message_token_count', type: 'number', label: '사용자 메시지 토큰 수 (선택, 정수 >= 0)', required: false },
+      { name: 'max_output_tokens_override', type: 'number', label: '최대 출력 토큰 재정의 (선택, 양의 정수 > 0)', required: false },
+      { name: 'context_message_limit', type: 'number', label: '컨텍스트 메시지 제한 (선택, 0 이상 정수)', required: false }
     ],
-    exampleReq:  `{\n  "message": "안녕하세요! 오늘 날씨에 대해 알려주세요.",\n  "system_prompt": "AI는 친절하게 답변합니다.",\n  "special_mode_type": "stream"\n}`,
-    exampleRes:  `{\n  "user_message_id": "API_TEST_USER_MESSAGE_ID",\n  "ai_message_id": "API_TEST_AI_MESSAGE_ID",\n  "message": "안녕하세요! 무엇을 도와드릴까요?",\n  "created_at": "YYYY-MM-DDTHH:mm:ss.sssZ"\n}`
+    exampleReq:  `{\n  "message": "안녕하세요! 오늘 날씨에 대해 알려주세요.",\n  "system_prompt": "AI는 친절하게 답변합니다.",\n  "special_mode_type": "stream",\n  "ai_provider_override": "vertexai",\n  "model_id_override": "gemini-1.0-pro",\n  "user_message_token_count": 15,\n  "max_output_tokens_override": 500,\n  "context_message_limit": 10\n}`,
+    exampleRes:  `{\n  "user_message_id": "API_TEST_USER_MESSAGE_ID",\n  "ai_message_id": "API_TEST_AI_MESSAGE_ID",\n  "message": "안녕하세요! 오늘 날씨는 맑고 화창합니다.",\n  "created_at": "YYYY-MM-DDTHH:mm:ss.sssZ",\n  "ai_message_token_count": 25,\n  "ai_provider": "vertexai",\n  "model_id": "gemini-1.0-pro"\n}`
   },
   {
     method: 'PUT',
     path: '/api/chat/messages/:message_id',
     title: '메시지 수정',
-    desc: '특정 메시지의 내용을 수정합니다.<br>Validation Rules: <ul><li>`message_id` (URL param): 필수, 최대 36자.</li><li>`content` (body): 필수, 최대 4000자.</li></ul>',
+    desc: '특정 메시지의 내용을 수정합니다.<br>Validation Rules: <ul><li>`message_id` (URL param): 필수, 유효한 UUID 형식, 최대 36자.</li><li>`content` (body): 필수, 1-4000자 사이의 문자열.</li></ul>',
     params: [
       { name: 'message_id', type: 'text', label: '메시지 ID (최대 36자)', required: true, inPath: true },
-      { name: 'content', type: 'text', label: '수정할 내용 (최대 4000자)', required: true }
+      { name: 'content', type: 'text', label: '수정할 내용 (1-4000자)', required: true }
     ],
     exampleReq:  `{\n  "content": "이것은 수정된 메시지입니다."\n}`,
     exampleRes:  `{\n  "message": "메시지가 성공적으로 수정되었습니다.",\n  "updatedMessage": { ... }\n}`
@@ -203,7 +249,7 @@ const apis = [
     method: 'DELETE',
     path: '/api/chat/messages/:message_id',
     title: '메시지 삭제',
-    desc: '특정 메시지를 삭제합니다.<br>Validation Rules: <ul><li>`message_id` (URL param): 필수, 최대 36자.</li></ul>',
+    desc: '특정 메시지를 삭제합니다.<br>Validation Rules: <ul><li>`message_id` (URL param): 필수, 유효한 UUID 형식, 최대 36자.</li></ul>',
     params: [
       { name: 'message_id', type: 'text', label: '메시지 ID (최대 36자)', required: true, inPath: true }
     ],
@@ -214,10 +260,10 @@ const apis = [
     method: 'POST',
     path: '/api/chat/messages/:message_id/reaction',
     title: '메시지 리액션 추가',
-    desc: '특정 메시지에 리액션을 추가합니다.<br>Validation Rules: <ul><li>`message_id` (URL param): 필수, 최대 36자.</li><li>`reaction` (body): 필수, 최대 10자.</li></ul>',
+    desc: '특정 메시지에 리액션을 추가합니다.<br>Validation Rules: <ul><li>`message_id` (URL param): 필수, 유효한 UUID 형식, 최대 36자.</li><li>`reaction` (body): 필수, 1-10자 사이의 문자열.</li></ul>',
     params: [
       { name: 'message_id', type: 'text', label: '메시지 ID (최대 36자)', required: true, inPath: true },
-      { name: 'reaction', type: 'text', label: '리액션 (최대 10자)', required: true }
+      { name: 'reaction', type: 'text', label: '리액션 (1-10자)', required: true }
     ],
     exampleReq:  `{\n  "reaction": "🎉"\n}`,
     exampleRes:  ` {\n  "message": "리액션이 성공적으로 추가/수정되었습니다.",\n  "reaction": "👍"\n}`
@@ -226,7 +272,7 @@ const apis = [
     method: 'DELETE',
     path: '/api/chat/messages/:message_id/reaction',
     title: '메시지 리액션 제거',
-    desc: '특정 메시지의 리액션을 제거합니다.<br>Validation Rules: <ul><li>`message_id` (URL param): 필수, 최대 36자.</li></ul>',
+    desc: '특정 메시지의 리액션을 제거합니다.<br>Validation Rules: <ul><li>`message_id` (URL param): 필수, 유효한 UUID 형식, 최대 36자.</li></ul>',
     params: [
       { name: 'message_id', type: 'text', label: '메시지 ID (최대 36자)', required: true, inPath: true }
     ],
@@ -238,10 +284,10 @@ const apis = [
     method: 'POST',
     path: '/api/chat/sessions/:session_id/files',
     title: '파일 업로드 (채팅)',
-    desc: '특정 채팅 세션에 파일을 업로드하고, 해당 파일 정보를 메시지로 저장합니다.<br>Validation Rules: <ul><li>`session_id` (URL param): 필수, 최대 36자.</li><li>`file` (file): 필수, 허용된 타입 (jpeg, png, pdf), 최대 5MB.</li><li>`user_id` (form-data): 선택, 최대 36자.</li></ul>',
+    desc: '특정 채팅 세션에 파일을 업로드하고, 해당 파일 정보를 메시지로 저장합니다.<br>Validation Rules: <ul><li>`session_id` (URL param): 필수, 유효한 UUID 형식, 최대 36자.</li><li>`file` (file): 필수, 허용된 타입 (jpeg, png, pdf, txt, md, html, css, js, ts, py, java, c, cpp, go, rb, php, swift, kt, sh, sql), 최대 5MB.</li><li>`user_id` (form-data): 선택, 최대 36자.</li></ul>',
     params: [
       { name: 'session_id', type: 'text', label: '세션 ID (최대 36자)', required: true, inPath: true },
-      { name: 'file', type: 'file', label: '업로드 파일 (jpg/png/pdf, max 5MB)', required: true },
+      { name: 'file', type: 'file', label: '업로드 파일 (다양한 타입 허용, max 5MB)', required: true },
       { name: 'user_id', type: 'text', label: '사용자 ID (최대 36자)', required: false }
     ],
     exampleReq: '(multipart/form-data: file=파일 선택, user_id=USER123)',
