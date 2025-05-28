@@ -1,6 +1,6 @@
 const { oracledb } = require('../config/database'); // Removed getConnection
 const { saveUserMessageToDB, saveAiMessageToDB, deleteUserMessageFromDB, getSessionMessagesForClient, getChatHistoryFromDB, saveAttachmentToDB } = require('../models/chat'); // getChatHistoryFromDB 추가, saveAttachmentToDB 추가
-const { getAiResponse } = require('../utils/aiProvider'); // 변경: AI 제공자 유틸리티 사용
+const { fetchChatCompletion } = require('../utils/aiProvider'); // Updated import
 const { convertClobFields, withTransaction } = require('../utils/dbUtils'); // convertClobFields import 추가, withTransaction 추가
 const { standardizeApiResponse } = require('../utils/apiResponse'); // Import standardizeApiResponse
 const path = require('path');
@@ -99,13 +99,48 @@ async function sendMessageController(req, res) {
 
       const effectiveSystemPrompt = systemPrompt && systemPrompt.trim() ? systemPrompt.trim() : null;
       
-      const aiOptions = {
-          max_output_tokens_override: max_output_tokens_override,
-          ai_provider_override: ai_provider_override,
-          model_id_override: model_id_override
+      // Determine AI Provider and Model
+      const defaultUserProvider = process.env.DEFAULT_AI_PROVIDER || 'vertexai';
+      const actualAiProvider = ai_provider_override || defaultUserProvider;
+
+      let actualModelId = model_id_override;
+      if (!actualModelId) {
+          if (actualAiProvider === 'ollama') {
+              actualModelId = process.env.OLLAMA_MODEL || 'llama2';
+          } else if (actualAiProvider === 'vertexai') {
+              actualModelId = process.env.VERTEX_AI_MODEL || 'gemini-1.0-pro';
+          }
+      }
+      
+      // This variable is for the second (ollamaModel) parameter of fetchChatCompletion
+      // In fetchChatCompletion, this is now options.ollamaModel
+      // For clarity, when calling fetchChatCompletion, we will set options.ollamaModel if actualAiProvider is ollama.
+      // The second direct parameter to fetchChatCompletion is currentUserMessage.
+
+      const callOptions = {
+          max_output_tokens_override: max_output_tokens_override, // from req.body
+          // Pass the resolved or overridden model_id specific to the provider
+          // fetchChatCompletion will then use this in its own options.ollamaModel or options.vertexModelId
+          model_id_override: actualModelId 
       };
       
-      const aiResponseFull = await getAiResponse(message, chatHistoryForAI, effectiveSystemPrompt, specialModeType, null, aiOptions);
+      // If the determined provider is ollama, set ollamaModel in callOptions
+      // This ensures fetchChatCompletion gets the correct model for ollama via its options parameter.
+      if (actualAiProvider === 'ollama') {
+          callOptions.ollamaModel = actualModelId;
+      }
+
+
+      // Updated AI call
+      const aiResponseFull = await fetchChatCompletion(
+          actualAiProvider,           // Provider to use
+          message,                    // Current user message
+          chatHistoryForAI,           // History
+          effectiveSystemPrompt,      // System prompt
+          specialModeType,            // e.g., 'canvas', 'stream'
+          null,                       // streamResponseCallback - PASSING NULL
+          callOptions                 // Options object
+      );
 
       if (!aiResponseFull || typeof aiResponseFull.content !== 'string' || aiResponseFull.content.trim() === '') {
         console.error('Invalid AI response received:', aiResponseFull);
@@ -160,6 +195,21 @@ async function sendMessageController(req, res) {
         responseData.ollama_model = selectedOllamaModel;
       }
 
+      if (specialModeType === 'canvas') {
+        const htmlRegex = /```html\n([\s\S]*?)\n```/;
+        const cssRegex = /```css\n([\s\S]*?)\n```/;
+        const jsRegex = /```javascript\n([\s\S]*?)\n```/;
+        const htmlMatch = responseData.message.match(htmlRegex);
+        const cssMatch = responseData.message.match(cssRegex);
+        const jsMatch = responseData.message.match(jsRegex);
+        responseData.canvas_html = htmlMatch ? htmlMatch[1].trim() : '';
+        responseData.canvas_css = cssMatch ? cssMatch[1].trim() : '';
+        responseData.canvas_js = jsMatch ? jsMatch[1].trim() : '';
+      }
+      // AI 제공자 및 모델 정보 추가
+      responseData.ai_provider = actualAiProvider; // The provider that was actually used
+      responseData.model_id = actualModelId;       // The model_id that was actually used or resolved
+      
       if (specialModeType === 'canvas') {
         const htmlRegex = /```html\n([\s\S]*?)\n```/;
         const cssRegex = /```css\n([\s\S]*?)\n```/;
