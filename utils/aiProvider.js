@@ -1,55 +1,75 @@
 /**
- * AI 제공자 선택 및 요청 로직을 처리하는 유틸리티
+ * AI Provider selection and request logic utility.
  */
 
-const { getVertexAiResponse } = require('../config/vertexai');
+// Import the correctly named function from vertexai.js
+const { getVertexAiApiResponse } = require('../config/vertexai'); 
 const { getOllamaResponse } = require('../config/ollama');
 
 /**
- * AI 제공자와 모델에 따라 적절한 AI 서비스를 호출합니다.
- * @param {string} aiProvider - AI 제공자 이름 ('vertexai' 또는 'ollama')
- * @param {string} ollamaModel - ollama 제공자일 경우 사용할 모델 이름 
- * @param {string} currentUserMessage - 현재 사용자 메시지
- * @param {Array} history - 대화 기록
- * @param {string|null} systemMessageText - 시스템 프롬프트
- * @param {string|null} specialModeType - 특수 모드 타입 ('stream', 'canvas' 등)
- * @param {function|null} streamResponseCallback - 스트리밍 응답 처리 콜백
- * @returns {Promise<{content: string}>} AI 응답 객체
+ * Fetches a chat completion from the specified AI provider.
+ * @param {string} aiProvider - The AI provider to use ('vertexai' or 'ollama'). Defaults to 'vertexai'.
+ * @param {string} currentUserMessage - The current user's message.
+ * @param {Array} history - The conversation history.
+ * @param {string|null} systemMessageText - The system prompt text.
+ * @param {string|null} specialModeType - Special mode type ('stream', 'canvas', etc.).
+ * @param {function|null} streamResponseCallback - Callback for streaming responses.
+ * @param {Object} options - Additional options for the AI provider.
+ * @param {string} [options.ollamaModel='gemma3:4b'] - Model name to use if provider is 'ollama'.
+ * @param {string} [options.vertexModelId=undefined] - Model ID to use for Vertex AI (overrides default in getVertexAiApiResponse).
+ * @param {number} [options.maxOutputTokens=undefined] - Max output tokens to request from the model.
+ * @returns {Promise<Object|null>} The AI response object, or null if streaming.
+ * @throws {Error} If an unsupported AI provider is specified.
  */
-async function getAiResponse(
-  aiProvider = 'vertexai',
-  ollamaModel = 'gemma3:4b',
+async function fetchChatCompletion(
+  aiProvider = 'vertexai', // Default provider
   currentUserMessage,
   history = [],
   systemMessageText = null,
   specialModeType = null,
-  streamResponseCallback = null
+  streamResponseCallback = null,
+  options = {} // Added options parameter
 ) {
-  console.log(`[aiProviderUtils] 요청 처리 중... 선택된 제공자: ${aiProvider}, 모델: ${ollamaModel || 'N/A'}`);
+  // Consolidate model selection for logging. Ollama uses options.ollamaModel, Vertex uses options.vertexModelId or its internal default.
+  const modelToLog = aiProvider === 'ollama' 
+    ? (options.ollamaModel || 'gemma3:4b') // Default Ollama model if not specified in options
+    : (options.vertexModelId || `Vertex AI default (${process.env.VERTEX_AI_MODEL || 'gemini-2.5-pro-exp-03-25'})`);
+  console.log(`[aiProviderUtils] Requesting chat completion. Provider: ${aiProvider}, Model: ${modelToLog}`);
 
-  // AI 제공자 선택에 따라 분기
-  if (aiProvider === 'ollama') {
-    console.log(`[aiProviderUtils] Ollama 제공자(${ollamaModel}) 사용`);
-    return await getOllamaResponse(
-      ollamaModel,
+  // Prepare options for Vertex AI, separating Ollama-specific ones.
+  const vertexOptions = { ...options };
+  delete vertexOptions.ollamaModel; // Remove ollamaModel if it exists in options for Vertex call
+
+  if (aiProvider === 'vertexai') {
+    console.log(`[aiProviderUtils] Using Vertex AI provider.`);
+    // Pass relevant options to getVertexAiApiResponse
+    return await getVertexAiApiResponse(
       currentUserMessage,
       history,
       systemMessageText,
-      specialModeType === 'stream' ? streamResponseCallback : null
+      specialModeType,
+      streamResponseCallback,
+      vertexOptions // Pass the filtered options object
+    );
+  } else if (aiProvider === 'ollama') {
+    const ollamaModelToUse = options.ollamaModel || 'gemma3:4b'; // Default if not provided in options
+    console.log(`[aiProviderUtils] Using Ollama provider with model: ${ollamaModelToUse}`);
+    // Note: getOllamaResponse might also need an options parameter if it needs to handle maxOutputTokens etc.
+    // For now, assuming it takes ollamaModel directly as its first argument.
+    return await getOllamaResponse(
+      ollamaModelToUse,
+      currentUserMessage,
+      history,
+      systemMessageText,
+      specialModeType === 'stream' ? streamResponseCallback : null,
+      options // Pass through options to Ollama in case it can use them (e.g. max_output_tokens)
     );
   } else {
-    // 기본값은 Vertex AI
-    console.log(`[aiProviderUtils] Vertex AI 제공자 사용`);
-    return await getVertexAiResponse(
-      currentUserMessage, 
-      history, 
-      systemMessageText, 
-      specialModeType,
-      streamResponseCallback
-    );
+    console.error(`[aiProviderUtils] Unsupported AI provider: ${aiProvider}`);
+    throw new Error(`Unsupported AI provider: ${aiProvider}. Must be 'vertexai' or 'ollama'.`);
   }
 }
 
 module.exports = {
-  getAiResponse
+  fetchChatCompletion // Export the renamed function
 };
