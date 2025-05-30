@@ -40,7 +40,6 @@ CREATE TABLE chat_sessions (
   FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE -- 사용자가 삭제되면 세션도 삭제 (또는 SET NULL)
 );
 
--- chat_messages 테이블을 VARCHAR2(4000) 메시지 타입으로 생성 (CLOB 대신)
 CREATE TABLE chat_messages (
   message_id VARCHAR2(36) DEFAULT SYS_GUID() PRIMARY KEY,
   session_id VARCHAR2(36) NOT NULL,
@@ -52,6 +51,8 @@ CREATE TABLE chat_messages (
   is_edited NUMBER(1) DEFAULT 0,
   edited_at TIMESTAMP,
   parent_message_id VARCHAR2(36),
+  user_message_token_count NUMBER, -- ✨ 사용자 메시지 토큰 수 컬럼 추가
+  ai_message_token_count NUMBER,   -- ✨ AI 메시지 토큰 수 컬럼 추가
   FOREIGN KEY (session_id) REFERENCES chat_sessions(session_id) ON DELETE CASCADE, -- 세션 삭제시 메시지 자동 삭제
   FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE SET NULL, -- 사용자 삭제시 메시지의 user_id는 NULL로 (메시지 자체는 유지)
   FOREIGN KEY (parent_message_id) REFERENCES chat_messages(message_id) ON DELETE SET NULL -- 부모 메시지 삭제시 참조만 NULL로

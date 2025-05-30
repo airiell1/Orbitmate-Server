@@ -24,7 +24,7 @@ const apis = [
     method: 'POST',
     path: '/api/users/register',
     title: '회원가입',
-    desc: '새로운 사용자를 등록합니다.<br>Validation Rules: <ul><li>`username`: 3-30자, 영숫자 및 밑줄(_) 허용.</li><li>`email`: 유효한 이메일 형식, 최대 254자.</li><li>`password`: 최소 8자, 최대 128자.</li></ul><span class="api-desc-note">username에 "APItest", email에 "API@example.com", password에 "password123"을 입력하면 <b>user_id</b>는 항상 "API_TEST_USER_ID"로 고정됩니다.</span>',
+    desc: '새로운 사용자를 등록합니다.<br>Validation Rules: <ul><li>`username`: 3-30자, 영숫자 및 밑줄(_) 허용.</li><li>`email`: 유효한 이메일 형식, 최대 254자.</li><li>`password`: 최소 8자, 최대 128자.</li></ul>',
     params: [
       { name: 'username', type: 'text', label: '사용자명 (3-30자, 영숫자/_)', required: true },
       { name: 'email', type: 'email', label: '이메일 (최대 254자)', required: true },
@@ -37,19 +37,19 @@ const apis = [
     method: 'POST',
     path: '/api/users/login',
     title: '로그인',
-    desc: '사용자가 로그인합니다.<br>Validation Rules: <ul><li>`email`: 유효한 이메일 형식.</li><li>`password`: 필수.</li></ul><span class="api-desc-note">email에 "API@example.com", password에 "password123"을 입력하면 user_id는 항상 "API_TEST_USER_ID"로 고정됩니다.</span>',
+    desc: '사용자가 로그인합니다.<br>Validation Rules: <ul><li>`email`: 유효한 이메일 형식.</li><li>`password`: 필수.</li></ul>',
     params: [
       { name: 'email', type: 'email', label: '이메일 (유효한 형식)', required: true },
       { name: 'password', type: 'password', label: '비밀번호', required: true }
     ],
-    exampleReq:  `{\n  "email": "API@example.com",\n  "password": "ValidPassword123"\n}`,
+    exampleReq:  `{\n  "email": "API@example.com",\n  "password": "password123"\n}`,
     exampleRes:  `{\n  "user_id": "API_TEST_USER_ID",\n  "username": "APItest",\n  "email": "API@example.com",\n  "logged_in_at": "YYYY-MM-DDTHH:mm:ss.sssZ",\n  "token": "랜덤한 문자열"\n}`
   },
   {
     method: 'GET',
     path: '/api/users/:user_id/settings',
     title: '사용자 설정 조회',
-    desc: '특정 사용자의 설정을 조회합니다.<br>Validation Rules: <ul><li>`user_id` (URL param): 필수, 최대 36자.</li></ul><span class="api-desc-note">user_id에 "API_TEST_USER_ID"를 입력하면 테스트 계정의 설정을 조회할 수 있습니다.</span>',
+    desc: '특정 사용자의 설정을 조회합니다.<br>Validation Rules: <ul><li>`user_id` (URL param): 필수, 최대 36자.</li>',
     params: [
       { name: 'user_id', type: 'text', label: '사용자 ID (최대 36자)', required: true, inPath: true }
     ],
@@ -69,7 +69,7 @@ const apis = [
       { name: 'notifications_enabled', type: 'checkbox', label: '알림 사용 (true/false)', required: false },
       { name: 'ai_model_preference', type: 'text', label: 'AI 모델 (최대 50자)', required: false }
     ],
-    exampleReq:  `{\n  "theme": "dark",\n  "language": "en",\n  "font_size": 16,\n  "notifications_enabled": false,\n  "ai_model_preference": "gemini-pro"\n}`,
+    exampleReq:  `{\n  "theme": "dark",\n  "language": "en",\n  "font_size": 16,\n  "notifications_enabled": false,\n  "ai_model_preference": "gemini-2.5-pro-exp-03-25"\n}`,
     exampleRes:  `{\n  "user_id": "API_TEST_USER_ID",\n  "theme": "light",\n  "language": "ko",\n  "font_size": 14,\n  "notifications_enabled": false,\n  "ai_model_preference": null\n}`
   },
   {
@@ -347,7 +347,7 @@ apis.forEach((api, idx) => {
         let display = '';
         try { display = JSON.stringify(JSON.parse(text), null, 2); } catch { display = text; }
         resultDiv.className = 'result' + (resp.ok ? '' : ' error');
-        resultDiv.textContent = 'Status: ' + resp.status + ' ' + resp.statusText + '\\n' + display;
+        resultDiv.textContent = 'Status: ' + resp.status + ' ' + resp.statusText + '\n' + display;
       } catch (e) {
         resultDiv.className = 'result error';
         resultDiv.textContent = 'API 호출 오류: ' + e.message;

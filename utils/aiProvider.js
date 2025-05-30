@@ -22,7 +22,7 @@ const { getOllamaResponse } = require('../config/ollama');
  * @throws {Error} If an unsupported AI provider is specified.
  */
 async function fetchChatCompletion(
-  aiProvider = 'vertexai', // Default provider
+  aiProvider = 'ollama', // Default provider
   currentUserMessage,
   history = [],
   systemMessageText = null,
@@ -31,7 +31,7 @@ async function fetchChatCompletion(
   options = {} // Added options parameter
 ) {
   // Consolidate model selection for logging. Ollama uses options.ollamaModel, Vertex uses options.vertexModelId or its internal default.
-  const modelToLog = aiProvider === 'ollama' 
+  const modelToLog = aiProvider === 'vertexai' 
     ? (options.ollamaModel || 'gemma3:4b') // Default Ollama model if not specified in options
     : (options.vertexModelId || `Vertex AI default (${process.env.VERTEX_AI_MODEL || 'gemini-2.5-pro-exp-03-25'})`);
   console.log(`[aiProviderUtils] Requesting chat completion. Provider: ${aiProvider}, Model: ${modelToLog}`);

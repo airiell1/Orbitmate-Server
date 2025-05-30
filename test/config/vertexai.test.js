@@ -29,7 +29,7 @@ describe('getVertexAiApiResponse', () => {
     mockGetGenerativeModel = jest.fn(() => ({
       generateContent: mockGenerateContent,
       generateContentStream: mockGenerateContentStream,
-      model: 'gemini-pro-mocked', // Mocked model name
+      model: 'gemini-2.5-pro-exp-03-25', // Mocked model name
       generationConfig: { temperature: 0.7, topP: 0.9, maxOutputTokens: 2048 }, // Mocked base config
     }));
 
@@ -42,7 +42,7 @@ describe('getVertexAiApiResponse', () => {
     // Configure GOOGLE_APPLICATION_CREDENTIALS and GOOGLE_PROJECT_ID for the module to initialize vertex_ai
     process.env.GOOGLE_APPLICATION_CREDENTIALS = 'mock-credentials.json';
     process.env.GOOGLE_PROJECT_ID = 'mock-project-id';
-    process.env.VERTEX_AI_MODEL = 'gemini-1.0-pro-test'; // Default model for tests
+    process.env.VERTEX_AI_MODEL = 'gemini-2.5-pro-exp-03-25'; // Default model for tests
 
     getVertexAiApiResponse = require('../../config/vertexai').getVertexAiApiResponse;
     
@@ -187,7 +187,7 @@ describe('getVertexAiApiResponse', () => {
         expect(logError).toHaveBeenCalledWith('vertexAiConfig:startup', 'Failed to initialize Vertex AI client or model during startup', expect.any(Error));
 
         await expect(getVertexAiApiResponse(currentUserMessage, history, null, null, null, {})) // No model_id_override
-            .rejects.toThrow(/Vertex AI model 'gemini-1.0-pro-test' not available/);
+            .rejects.toThrow(/Vertex AI model 'gemini-2.5-pro-exp-03-25' not available/);
         expect(logError).toHaveBeenCalledWith('getVertexAiApiResponse:modelNotAvailable', expect.stringContaining("not available"), null);
     });
 

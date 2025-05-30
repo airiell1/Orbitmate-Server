@@ -4,8 +4,8 @@ const { createErrorResponse, getHttpStatusByErrorCode, logError } = require('../
 
 async function getModelsInfoController(req, res) {
     try {
-        const defaultProvider = process.env.DEFAULT_AI_PROVIDER || 'vertexai';
-        const defaultOllamaModel = process.env.OLLAMA_MODEL || 'llama2'; // Example if Ollama has submodels
+        const defaultProvider = process.env.DEFAULT_AI_PROVIDER || 'ollama'; // Default to 'ollama' if not set
+        const defaultOllamaModel = process.env.OLLAMA_MODEL || 'gemma3:4b'; // Example if Ollama has submodels
         const defaultVertexModel = process.env.VERTEX_AI_MODEL || 'gemini-2.5-pro-exp-03-25';
 
         const models = [

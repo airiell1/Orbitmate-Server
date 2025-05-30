@@ -11,8 +11,7 @@ const { createErrorResponse, getHttpStatusByErrorCode, handleOracleError, logErr
 
 // 채팅 메시지 전송 및 AI 응답 받기 컨트롤러
 async function sendMessageController(req, res) {
-  const sessionId = req.params.session_id;
-  const GUEST_USER_ID = 'guest';
+  const { session_id } = req.params;
   const { 
     message, 
     systemPrompt, 
@@ -25,11 +24,11 @@ async function sendMessageController(req, res) {
   } = req.body;
 
   // Validation for sessionId
-  if (!sessionId || typeof sessionId !== 'string' || sessionId.trim() === '') {
+  if (!session_id || typeof session_id !== 'string' || session_id.trim() === '') {
     const errorPayload = createErrorResponse('INVALID_INPUT', '세션 ID는 필수이며 빈 문자열이 아니어야 합니다.');
     return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
   }
-  if (sessionId.length > 36) {
+  if (session_id.length > 36) {
     const errorPayload = createErrorResponse('INVALID_INPUT', '세션 ID가 너무 깁니다 (최대 36자).');
     return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
   }
@@ -57,7 +56,7 @@ async function sendMessageController(req, res) {
     return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
   }
 
-  const user_id = req.user ? req.user.user_id : GUEST_USER_ID;
+  const user_id = req.user ? req.user.user_id : 'guest';
 
   // Additional validation for new optional parameters
   if (max_output_tokens_override !== undefined && (typeof max_output_tokens_override !== 'number' || !Number.isInteger(max_output_tokens_override) || max_output_tokens_override <= 0)) {
@@ -81,10 +80,27 @@ async function sendMessageController(req, res) {
     return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
   }
 
+  let connection;
+
   try {
+    connection = await getConnection();
+    
+    // AI 제공자 및 모델 정보 결정
+    let actualAiProvider = 'vertexai'; // 기본값
+    let actualModelId = 'gemini-2.5-pro-exp-03-25'; // 기본값
+    
+    // 사용자 설정에서 AI 제공자 확인
+    const userSettings = await getUserSettings(user_id);
+    if (userSettings && userSettings.preferred_ai_provider) {
+      actualAiProvider = userSettings.preferred_ai_provider;
+      if (actualAiProvider === 'ollama' && userSettings.preferred_ollama_model) {
+        actualModelId = userSettings.preferred_ollama_model;
+      }
+    }
+
     const responseData = await withTransaction(async (connection) => {
       const userMessageTokenCountToStore = user_message_token_count !== undefined ? user_message_token_count : null;
-      const userMessageResult = await saveUserMessageToDB(connection, sessionId, user_id, message, userMessageTokenCountToStore);
+      const userMessageResult = await saveUserMessageToDB(connection, session_id, user_id, message, userMessageTokenCountToStore);
       
       if (!userMessageResult || !userMessageResult.user_message_id) {
         const err = new Error('사용자 메시지 저장에 실패했습니다.');
@@ -95,20 +111,20 @@ async function sendMessageController(req, res) {
       const userMessageId = userMessageResult.user_message_id;
 
       const effectiveContextLimit = context_message_limit !== undefined ? context_message_limit : null;
-      let chatHistoryForAI = await getChatHistoryFromDB(connection, sessionId, false, effectiveContextLimit);
+      let chatHistoryForAI = await getChatHistoryFromDB(connection, session_id, false, effectiveContextLimit);
 
       const effectiveSystemPrompt = systemPrompt && systemPrompt.trim() ? systemPrompt.trim() : null;
       
       // Determine AI Provider and Model
-      const defaultUserProvider = process.env.DEFAULT_AI_PROVIDER || 'vertexai';
+      const defaultUserProvider = process.env.DEFAULT_AI_PROVIDER || 'ollama';
       const actualAiProvider = ai_provider_override || defaultUserProvider;
 
       let actualModelId = model_id_override;
       if (!actualModelId) {
           if (actualAiProvider === 'ollama') {
-              actualModelId = process.env.OLLAMA_MODEL || 'llama2';
+              actualModelId = process.env.OLLAMA_MODEL || 'gemma3:4b'; // Default Ollama model
           } else if (actualAiProvider === 'vertexai') {
-              actualModelId = process.env.VERTEX_AI_MODEL || 'gemini-1.0-pro';
+              actualModelId = process.env.VERTEX_AI_MODEL || 'gemini-2.5-pro-exp-03-25';
           }
       }
       
@@ -152,7 +168,7 @@ async function sendMessageController(req, res) {
       const aiContentFromVertex = aiResponseFull.content;
       const aiMessageTokenCountToStore = aiResponseFull.actual_output_tokens !== undefined ? aiResponseFull.actual_output_tokens : null;
 
-      const aiMessageResult = await saveAiMessageToDB(connection, sessionId, GUEST_USER_ID, aiContentFromVertex, aiMessageTokenCountToStore);
+      const aiMessageResult = await saveAiMessageToDB(connection, session_id, GUEST_USER_ID, aiContentFromVertex, aiMessageTokenCountToStore);
 
       if (!aiMessageResult || !aiMessageResult.ai_message_id) {
         const err = new Error('AI 메시지 저장에 실패했습니다.');
@@ -190,9 +206,9 @@ async function sendMessageController(req, res) {
       res.write(`event: end\\ndata: ${JSON.stringify({ message: 'Stream ended' })}\\n\\n`);
       return;    } else {
       // AI 제공자 및 모델 정보 추가
-      responseData.ai_provider = selectedAiProvider;
-      if (selectedAiProvider === 'ollama') {
-        responseData.ollama_model = selectedOllamaModel;
+      responseData.ai_provider = actualAiProvider; // selectedAiProvider -> actualAiProvider로 수정
+      if (actualAiProvider === 'ollama') { // selectedAiProvider -> actualAiProvider로 수정
+        responseData.ollama_model = actualModelId; // selectedOllamaModel -> actualModelId로 수정 (일관성 유지)
       }
 
       if (specialModeType === 'canvas') {

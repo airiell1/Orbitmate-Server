@@ -28,7 +28,7 @@ describe('fetchChatCompletion', () => {
       const mockResponse = { content: 'Vertex AI response' };
       getVertexAiApiResponse.mockResolvedValue(mockResponse);
 
-      const options = { model_id_override: 'gemini-pro-custom', max_output_tokens_override: 1000 };
+      const options = { model_id_override: 'gemini-2.5-pro-exp-03-25', max_output_tokens_override: 1000 };
       const result = await fetchChatCompletion(
         'vertexai',
         currentUserMessage,
@@ -47,7 +47,7 @@ describe('fetchChatCompletion', () => {
         null,
         null,
         expect.objectContaining({
-          model_id_override: 'gemini-pro-custom',
+          model_id_override: 'gemini-2.5-pro-exp-03-25',
           max_output_tokens_override: 1000,
         })
       );
