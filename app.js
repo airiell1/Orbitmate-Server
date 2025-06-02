@@ -14,6 +14,7 @@ let usersRouter;
 let chatRouter;
 let sessionsRouter;
 let aiInfoRouter; // Declare aiInfoRouter
+let searchRouter;
 
 
 // 미들웨어 설정 (DB 연결 필요 없는 것들)
@@ -38,14 +39,14 @@ app.get('/api/docs', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'api_docs.html'));
 });
 
-// 업로드 디렉토리 설정 (이건 DB 연결 전에 해도 괜찮아)
+// 업로드 디렉토리 설정
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir);
 }
 app.use('/uploads', express.static(uploadDir));
 
-// Multer 설정 (이것도 DB 연결 전에 해도 괜찮아)
+// Multer 설정
 const storage = multer.diskStorage({
     destination: function (req, file, cb) { cb(null, uploadDir); },
     filename: function (req, file, cb) { cb(null, Date.now() + '-' + file.originalname); }
@@ -60,21 +61,21 @@ async function startServer() {
     // ** DB 초기화를 먼저 완료 **
     await initOracleClient(); // Oracle Thick 모드 활성화 완료 대기
     await initializeDbPool(); // DB 풀 초기화 완료 대기
-    console.log('DB 초기화 완료.');
-
-    // ** DB 초기화가 끝난 후에 DB 연결이 필요한 라우터들을 require 하고 등록 **
+    console.log('DB 초기화 완료.');    // ** DB 초기화가 끝난 후에 DB 연결이 필요한 라우터들을 require 하고 등록 **
     console.log('DB 연결 필요한 라우터 로드 및 등록...');
     usersRouter = require('./routes/users');
     chatRouter = require('./routes/chat');
     sessionsRouter = require('./routes/sessions');
     aiInfoRouter = require('./routes/aiInfo'); // Require aiInfoRouter
+    searchRouter = require('./routes/search'); // Require searchRouter
 
     app.use('/api/users', usersRouter);
     app.use('/api/chat', chatRouter);
     app.use('/api/sessions', sessionsRouter);
     app.use('/api/ai', aiInfoRouter); // Mount aiInfoRouter
+    app.use('/api/search', searchRouter); // Mount searchRouter
 
-    // 서버 상태 확인용 엔드포인트 (이건 DB 필요 없을 수도 있지만 라우터 등록 후에)
+    // 서버 상태 확인용 엔드포인트
     app.get('/api/health', (req, res) => {
       res.json({ status: 'ok', timestamp: new Date().toISOString() });
     });

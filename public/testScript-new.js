@@ -58,8 +58,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const addReactionButton = document.getElementById('add-reaction-button');
     const removeReactionButton = document.getElementById('remove-reaction-button');
     const deleteMessageButton = document.getElementById('delete-message-button');
-    const uploadFileButton = document.getElementById('upload-file-button');    // 검색 기능 버튼들
-    const searchWikipediaButton = document.getElementById('wikipedia-search-button');
+    const uploadFileButton = document.getElementById('upload-file-button');
+
+    // 검색 기능 버튼들
+    const searchWikipediaButton = document.getElementById('search-wikipedia-button');
     const searchNaverButton = document.getElementById('search-naver-button');
     const searchKakaoButton = document.getElementById('search-kakao-button');
 

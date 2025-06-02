@@ -2,16 +2,15 @@
 # Orbitmate Copilot Instructions
 
 이 문서는 Orbitmate 프로젝트의 AI 코파일럿 및 신규 진입자를 위한 실전 운영 가이드, 구조 요약, 버그 트래킹, 작업 목록을 포함합니다.
-**AI는 언제든 이 문서를 수정·추가·정리할 수 있습니다.**
+**AI는 언제든 문서를 수정·추가·정리할 수 있습니다.**
 
 ---
-
 
 ## 1. 프로젝트 구조 및 주요 진입점
 
 - **서버 진입점**
-  - `server.js`: 서버 실행, 포트 설정
-  - `app.js`: Express 앱/미들웨어/라우트 연결
+  - `server.js`: 단순한 모듈 진입점, app.js를 require하여 모듈로 내보냄
+  - `app.js`: 실제 서버 로직 - Express 앱 설정, 미들웨어 구성, 라우트 연결, DB 초기화 및 서버 시작
 
 - **DB/외부 연동 (config/)**
   - `config/database.js`:
@@ -22,27 +21,26 @@
       - `initializeDbPool()`: 커넥션 풀 생성 및 초기화
       - `getConnection()`: 커넥션 획득 (풀에서)
       - `oracledb`: oracledb 인스턴스 전체 내보내기 (트랜잭션, CLOB 등 활용)
-    - 참고: 커넥션 풀은 app.js/server.js에서 최초 1회만 초기화 필요. 각 모델/컨트롤러에서는 getConnection()으로 커넥션 획득 후 사용/반납.
-
+    - 참고: 커넥션 풀은 app.js/server.js에서 최초 1회만 초기화 필요. 각 모델/컨트롤러에서는 getConnection()으로 커넥션 획득 후 사용/반납
   - `config/vertexai.js`:
     - Vertex AI 연동, Google Cloud Gemini 2.5 pro 모델 사용
     - 안전성 필터(증오/성적/위험/학대), 스트림/캔버스/검색 등 특수 모드 지원
     - 주요 함수 및 내보내기:
-      - `getVertexAiResponse(currentUserMessage, history, systemMessageText, specialModeType, streamResponseCallback)`: Vertex AI에 대화 요청, 스트림/캔버스/검색 등 특수 모드 지원 (systemPrompt, specialModeType, stream 콜백 등 다양한 옵션 지원)
+      - `getVertexAiApiResponse(currentUserMessage, history, systemMessageText, specialModeType, streamResponseCallback, options)`: Vertex AI에 대화 요청, 스트림/캔버스/검색 등 특수 모드 지원 (systemPrompt, specialModeType, stream 콜백, options 객체로 model_id_override, max_output_tokens_override 등 다양한 옵션 지원)
       - `vertex_ai`: VertexAI 인스턴스 (직접 모델 생성/설정 가능)
       - `generativeModel`: Gemini 2.5 pro 모델 인스턴스 (기본 설정)
     - 참고: specialModeType에 따라 systemPrompt가 자동 강화(캔버스/검색 등), streamResponseCallback으로 스트리밍 응답 처리 가능
 
 - **API 라우트**
-  - `routes/users.js`, `routes/chat.js`, `routes/sessions.js`
+  - `routes/users.js`, `routes/chat.js`, `routes/sessions.js`, `routes/aiInfo.js`, `routes/search.js`
 
 - **컨트롤러**
 
   - `controllers/userController.js`: 사용자 회원가입, 로그인, 설정/프로필 조회·수정, 프로필 이미지 업로드, 회원 탈퇴 등 사용자 관련 API 처리
     - 주요 함수:
-      - `registerUserController()`: 회원가입
+      - `registerUserController()`: 회원가입 (이미 등록된 이메일은 200으로 반환)
       - `loginUserController()`: 로그인 (JWT 발급)
-      - `getUserSettingsController()`, `updateUserSettingsController()`: 사용자 설정 조회/수정
+      - `getUserSettingsController()`, `updateUserSettingsController()`: 사용자 설정 조회/수정 (테마, 언어, 폰트 크기, AI 모델 선호도 등)
       - `getUserProfileController()`, `updateUserProfileController()`: 프로필 조회/수정
       - `uploadProfileImageController()`: 프로필 이미지 업로드
       - `deleteUserController()`: 회원 탈퇴
@@ -50,72 +48,82 @@
 
   - `controllers/chatController.js`: 채팅 메시지 전송, AI 응답, 메시지 편집/삭제/리액션, 파일 업로드 등 채팅 관련 API 처리
     - 주요 함수:
-      - `sendMessageController()`: 메시지 전송 및 AI 응답 처리 (Vertex AI 연동)
+      - `sendMessageController()`: 메시지 전송 및 AI 응답 처리 (aiProvider 추상화를 통한 Vertex AI/Ollama 연동, 스트림/캔버스 모드 지원)
       - `editMessageController()`: 메시지 편집
       - `addReactionController()`, `removeReactionController()`: 메시지 리액션 추가/제거
       - `deleteMessageController()`: 메시지 삭제
       - `uploadFile()`: 파일 업로드 및 첨부파일 DB 저장
-      - `getSessionMessagesController()`: 세션별 메시지 목록 조회
+      - `getSessionMessagesController()`: 세션별 메시지 목록 조회 (CLOB 변환 포함)
 
   - `controllers/sessionController.js`: 채팅 세션 생성/조회/수정/삭제 등 세션 관련 API 처리
     - 주요 함수:
       - `createSessionController()`: 세션 생성
       - `getUserSessionsController()`: 사용자 세션 목록 조회
-      - `updateSessionController()`: 세션 정보 수정
-      - `getSessionMessagesController()`: 세션 메시지 목록 조회
+      - `updateSessionController()`: 세션 정보 수정 (제목, 카테고리, 보관 여부)
+      - `getSessionMessagesController()`: 세션 메시지 목록 조회 (models/session.js의 getSessionMessages 호출)
       - `deleteSessionController()`: 세션 삭제
+
+  - `controllers/searchController.js`: 검색 기능 관련 API 처리 (위키피디아 검색 등)
+  - `controllers/aiInfoController.js`: AI 정보 조회 API 처리
 
 - **모델**
   - `models/user.js`: 사용자 관련 DB 접근 함수 (회원가입, 로그인, 설정/프로필 조회·수정, 프로필 이미지, 경험치/레벨, 회원 탈퇴)
     - 주요 함수:
-      - `registerUser(username, email, password)`: 회원가입, 비밀번호 해시, 중복 체크, 기본 설정/프로필 생성
+      - `registerUser(username, email, password)`: 회원가입, 비밀번호 해시(bcrypt), 중복 체크, 기본 설정/프로필 생성 및 트랜잭션 처리
       - `loginUser(email, password)`: 로그인, 비밀번호 검증, 계정 활성화 체크, 로그인 시간 업데이트
-      - `getUserSettings(user_id)`, `updateUserSettings(user_id, settings)`: 사용자 설정 조회/수정
-      - `getUserProfile(user_id)`, `updateUserProfile(user_id, profileData)`: 프로필 조회/수정
+      - `getUserSettings(user_id)`, `updateUserSettings(user_id, settings)`: 사용자 설정 조회/수정 (테마, 언어, 폰트 크기, AI 모델 선호도 등)
+      - `getUserProfile(user_id)`, `updateUserProfile(user_id, profileData)`: 프로필 조회/수정 (닉네임, 소개, 생년월일, 성별 등)
       - `updateUserProfileImage(user_id, profileImagePath)`: 프로필 이미지 경로 업데이트
-      - `addUserExperience(user_id, points)`: 경험치 추가 및 레벨업 처리
-      - `deleteUser(user_id)`: 회원 탈퇴(계정 및 연관 데이터 삭제)
+      - `addUserExperience(user_id, points)`: 경험치 추가 및 레벨업 처리 (레벨 테이블 기반 자동 계산)
+      - `deleteUser(user_id)`: 회원 탈퇴(계정 및 연관 데이터 완전 삭제, 트랜잭션 처리)
       - `checkEmailExists(email)`: 이메일 중복 여부 확인 (true/false 반환)
 
   - `models/chat.js`: 채팅 메시지, 첨부파일, CLOB 변환 등 채팅 관련 DB 접근 함수
     - 주요 함수:
-      - `getChatHistoryFromDB(connection, sessionId, includeCurrentUserMessage)`: 세션별 대화 기록 조회 (Vertex AI 포맷)
-      - `saveUserMessageToDB(connection, sessionId, user_id, message)`: 사용자 메시지 저장 (CLOB)
-      - `saveAiMessageToDB(connection, sessionId, user_id, message)`: AI 메시지 저장 (CLOB, RETURNING)
-      - `saveAttachmentToDB(messageId, file)`: 첨부파일 정보 저장
-      - `deleteUserMessageFromDB(messageId, user_id)`: 메시지 삭제 (user_id 체크 최소화)
-      - `getSessionMessagesForClient(sessionId)`: 세션 전체 메시지(첨부 포함) 조회 (CLOB 변환)
-      - `clobToString(clob)`: Oracle CLOB → 문자열 변환 유틸
+      - `getChatHistoryFromDB(connection, sessionId, includeCurrentUserMessage)`: 세션별 대화 기록 조회 (Vertex AI 포맷으로 변환, CLOB 처리)
+      - `saveUserMessageToDB(connection, sessionId, user_id, message)`: 사용자 메시지 저장 (CLOB, sequence 기반 ID 생성)
+      - `saveAiMessageToDB(connection, sessionId, user_id, message)`: AI 메시지 저장 (CLOB, RETURNING으로 ID 반환)
+      - `saveAttachmentToDB(messageId, file)`: 첨부파일 정보 저장 (파일명, 경로, 크기, MIME 타입)
+      - `deleteUserMessageFromDB(messageId, user_id)`: 메시지 삭제 (soft delete 방식, 사용자 권한 체크)
+      - `getSessionMessagesForClient(sessionId)`: 세션 전체 메시지(첨부 포함) 조회 (클라이언트용 포맷, CLOB 자동 변환)
+      - `clobToString(clob)`: Oracle CLOB → 문자열 변환 유틸 (스트림 처리)
 
   - `models/session.js`: 채팅 세션 생성/조회/수정/삭제 등 세션 관련 DB 접근 함수
     - 주요 함수:
-      - `createChatSession(user_id, title, category)`: 세션 생성
-      - `getUserChatSessions(user_id)`: 사용자 세션 목록 조회
-      - `updateChatSession(sessionId, updates)`: 세션 정보 수정 (제목, 카테고리, 보관 등)
-      - `deleteChatSession(sessionId, user_id)`: 세션 삭제 (메시지/세션 트랜잭션)
-      - `getSessionMessages(sessionId)`: 세션 메시지 목록 조회 (CLOB 변환)
-      - `getUserIdBySessionId(sessionId)`: 세션 ID로 사용자 ID 조회
+      - `createChatSession(user_id, title, category)`: 세션 생성 (sequence 기반 ID, 기본값 설정)
+      - `getUserChatSessions(user_id)`: 사용자 세션 목록 조회 (생성일 역순, 보관 상태 포함)
+      - `updateChatSession(sessionId, updates)`: 세션 정보 수정 (제목, 카테고리, 보관 여부, 업데이트 시간 자동 갱신)
+      - `deleteChatSession(sessionId, user_id)`: 세션 삭제 (메시지/첨부파일/세션 완전 삭제, 트랜잭션 처리)
+      - `getSessionMessages(sessionId)`: 세션 메시지 목록 조회 (시간순 정렬, CLOB 변환)
+      - `getUserIdBySessionId(sessionId)`: 세션 ID로 사용자 ID 조회 (권한 체크용)
 
 - **프론트엔드**
 
-  - `public/script.js`: 메인 채팅 프론트엔드 스크립트
-    - 주요 함수:
-      - `initializeSession()`: 세션 초기화 및 자동 연결
-      - `addMessage()`: 채팅 메시지 UI 추가
-      - `sendMessage()`: 메시지 전송 및 응답 처리
-      - `startEditing()`, `saveEdit()`, `deleteMessage()`: 메시지 편집/삭제
-
-  - `public/testScript.js`: API 테스트 및 디버깅용 프론트엔드 스크립트
-    - 주요 역할:
-      - 다양한 API 호출 테스트 함수 (회원가입, 로그인, 세션/메시지/파일 등)
-      - 테스트용 채팅 UI 및 API 응답 패널 관리
-      - `refreshSessionMessages()`: 세션 메시지 새로고침
-
+  - `public/script.js`: 메인 채팅 프론트엔드 스크립트 (index.html용)
+    - 주요 함수 및 기능:
+      - `initializeSession()`: 세션 초기화 및 자동 연결 (로컬 스토리지 기반 세션 복원)
+      - `addMessage(sender, text, messageId, isEdited)`: 채팅 메시지 UI 추가 (메시지 액션 버튼 포함)
+      - `sendMessage()`: 메시지 전송 및 AI 응답 처리 (스트리밍, 캔버스 모드 지원)
+      - `startEditing()`, `saveEdit()`, `deleteMessage()`: 메시지 편집/삭제 기능
+      - `refreshMessages()`: 서버에서 메시지 새로고침
+      - `fetchAiModelsAndPopulateSelector()`: AI 모델 목록 조회 및 드롭다운 생성
+      - `updateDisplayedModelInfo()`: 선택된 AI 모델 정보 UI 업데이트
+    - 전역 변수: currentSessionId, selectedAiProvider, selectedModelId, currentMaxOutputTokens, currentContextLimit
+  - `public/testScript.js`: API 테스트 및 디버깅용 프론트엔드 스크립트 (test.html용)
+    - 모듈화 구조: testScripts/ 디렉토리의 개별 모듈을 import
+      - `testScripts/user.js`: 사용자 관련 API 테스트 (회원가입, 로그인, 프로필, 설정)
+      - `testScripts/session.js`: 세션 관련 API 테스트 (생성, 조회, 수정, 삭제)
+      - `testScripts/message.js`: 메시지 관련 API 테스트 (편집, 리액션, 삭제, 파일 업로드)
+      - `testScripts/search.js`: 검색 기능 API 테스트 (위키피디아, 네이버, 카카오)
+      - `testScripts/chat.js`: 채팅 기능 (세션 초기화, 메시지 전송, 새로고침)
+      - `testScripts/utils.js`: 공통 유틸리티 함수 (API 응답 표시, 에러 처리)
+    - 주요 역할: API 엔드포인트 테스트, 응답 데이터 검증, 서버 상태 점검
   - `public/promptFeature.js`: 채팅 프롬프트(시스템 프롬프트) UI 기능
-    - 주요 역할:
-      - 프롬프트 버튼 및 옵션 패널 생성
-      - 프롬프트 선택 시 입력창 dataset에 저장
-      - 채팅 입력 UX 개선
+    - 주요 기능:
+      - 프롬프트 버튼 및 옵션 패널 생성 (promptOptions 배열 기반)
+      - 프롬프트 선택 시 입력창 dataset에 저장 (data-system-prompt 속성)
+      - 다양한 역할 프롬프트 지원 (Orbitmate 2.5, mate-star, mate-search, 문학작가, 비즈니스 컨설턴트, 철학자 등)
+      - 채팅 입력 UX 개선 (프롬프트 토글 버튼, 드롭다운 패널)
 
 ---
 
@@ -130,7 +138,11 @@
   - DOM 요소와 JS 코드 연결, 이벤트 리스너 누락/중복 점검
   - API 호출 시 실제 네트워크 요청 및 UI 반영, 콘솔 에러/경고 없는지 확인
 
-- **코드 일관성**
+- **API 설계 원칙**
+  - 성공 시: 데이터를 직접 반환 (배열이면 배열, 객체면 객체)
+  - 실패 시: 에러 메시지 형태로 반환
+  - 클라이언트는 유연하게 처리, 서버는 필수 데이터만 요구하고 전부 응답
+  - snake_case 통일 (standardizeApiResponse 유틸리티 활용)
   - 함수명, 변수명, 파일명, API 경로 등 copilot-instructions.md와 실제 코드가 일치하는지 수시로 교차 점검
 
 - **문서화**
@@ -148,149 +160,315 @@
     - `[2025-05-09] API 응답 케이싱 불일치: Oracle DB 필드가 대문자로 반환되어 응답이 API 문서와 불일치 → standardizeApiResponse 유틸로 snake_case 통일, CLOB 자동 변환 추가 (백엔드)`
 
 [2025-05-30] getConnection 함수 미정의 오류: chatController.js에서 config/database.js의 getConnection 함수를 import하지 않아서 발생 → import 문에 getConnection
+[2025-06-02] API 응답 형식 통일: standardizeApiResponse 함수를 원래 방식으로 복원 (단일 데이터 객체 반환), 검색 API는 createSearchApiResponse로 분리 (성공시 데이터 직접 반환, 실패시 에러 메시지 반환)
+[2025-06-02] 위키피디아 API 구현 완료: 백엔드/프론트엔드/테스트 UI 모두 구현, 검색 기능 정상 작동 확인 (백엔드/프론트엔드)
 ---
 
 ## 4. 작업 목록 (진행상황 체크)
 
+### 기존 기능 (완료)
 - [x] 채팅 메시지 전송 API (`POST /api/chat/sessions/:session_id/messages`)
 - [x] 채팅 세션 삭제 API (`DELETE /api/chat/sessions/:session_id`)
 - [x] 채팅 메시지 삭제 API (`DELETE /api/chat/messages/:message_id`)
 - [x] 메시지 리액션 제거 API (`DELETE /api/chat/messages/:message_id/reaction`)
 - [x] 파일 업로드/다운로드/권한 관리 (인증 최소화)
 - [x] JWT 인증/인가 (학습용 최소 구현)
+
+### 기존 개선 사항
 - [ ] API 오류 처리 표준화 및 상세화
 - [ ] 입력값 유효성 검사 강화
 - [ ] DB 커넥션 풀 최적화
 - [ ] API 응답 케이싱 통일 (standardizeApiResponse 유틸리티 추가 및 적용)
 - [ ] (선택) WebSocket 실시간 메시지
 
----
+### 신규 백엔드 기능 (우선순위별)
 
-## 5. 아키텍처 원칙
+#### 즉시 구현 가능 (Immediate) - 무료 API 활용
+- [x] **위키피디아 API 연동 (백엔드)**: 백과사전 정보 검색 ⭐ 최우선 **완료**
+  - 위키피디아 검색 API (`GET /api/search/wikipedia`)
+    - 무료, 무제한 사용 가능 (API 키 불필요)
+    - 다국어 지원 (한국어, 영어, 일본어 등)
+    - 요약/전문 조회 기능
+    - 환경변수 설정 완료: `WIKIPEDIA_API_BASE_URL`, `WIKIPEDIA_DEFAULT_LANGUAGE` 등
+    - 백엔드 구현 완료: `models/search.js`, `controllers/searchController.js`, `routes/search.js`
+    - 프론트엔드 구현 완료: `testScripts/search.js`, 모듈화된 테스트 UI
+  - 검색 결과 캐싱 시스템 (메모리 캐시, 1시간)
+  - 한국어 위키피디아 우선 검색 후 영어 위키피디아 대체
+  - AI 답변에 참조 자료로 활용 가능
 
-- **클라이언트-서버-DB/외부 API 분리**: 클라이언트는 서버 API를 통해서만 DB/외부 API와 상호작용. 직접 접근 금지.
+- [ ] **네이버 검색 API 연동 (백엔드)**: 통합 검색 기능
+  - 네이버 통합검색 API (`GET /api/search/naver`)
+    - 일 25,000회 무료 제공 (개발자 등록 필요)
+    - 웹문서, 뉴스, 블로그, 이미지, 백과사전, 카페글, 지식iN 검색
+    - 지역 검색 기능 ('OO역 맛집' 등)
+    - 환경변수: `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`
+  - 성인 검색어 필터링 및 오타 교정 기능
+  - API 사용량 모니터링 및 제한 관리
 
----
+- [ ] **카카오(다음) 검색 API 연동 (백엔드)**: 이미지 및 웹 검색
+  - 카카오 검색 API (`GET /api/search/kakao`)
+    - 일 30,000회 무료 제공 (개발자 등록 필요)
+    - 웹 검색, 이미지 검색, 동영상 검색
+    - 지도/장소 검색 API 활용
+    - 환경변수: `KAKAO_API_KEY`
+  - 검색 결과 통합 및 중복 제거
 
-## 6. 기타
+- [ ] **OpenWeatherMap API 연동 (백엔드)**: 날씨 정보 위젯
+  - 현재 날씨 조회 API (`GET /api/widgets/weather/current`)
+    - 무료 60회/분, 1000회/일 (충분한 용량)
+    - 위치별 현재 날씨, 온도, 습도, 바람
+    - 환경변수: `OPENWEATHER_API_KEY`
+  - 5일 예보 API (`GET /api/widgets/weather/forecast`)
+  - 날씨 데이터 캐싱 (30분 간격)
+  - 사용자 위치 기반 자동 날씨 조회
 
-- **정기적 점검 및 메모**: AI는 이 문서를 주기적으로 점검, 개선 아이디어/구조적 문제/반복 실수/테스트 자동화 필요성 등을 자유롭게 메모/추가
-- **문제 발생 시 즉시 기록**: 에러, 비표준 코드, API/DB 불일치, UI-API 연동 문제 등은 즉시 "버그 트래킹"에 기록
+#### 쉬움 (Easy) - 기본적인 CRUD 및 데이터 관리
+- [ ] **프로필 꾸미기 (백엔드)**: 테마, 뱃지 등 사용자 프로필 커스터마이징 데이터 저장/조회 API
+  - 프로필 테마 설정 API (`PUT /api/users/profile/theme`)
+  - 뱃지 목록 조회/설정 API (`GET|PUT /api/users/profile/badges`)
+  - 커스터마이징 옵션 메타데이터 API (`GET /api/profile/customization-options`)
 
+- [ ] **계정 레벨 기능 (백엔드)**: 사용자 레벨 관리 및 해금 시스템
+  - 레벨/경험치 조회 API (`GET /api/users/level`)
+  - 레벨업 처리 로직 (경험치 증가 시 자동 레벨업)
+  - 레벨별 해금 기능 조회 API (`GET /api/users/unlocked-features`)
 
----
+- [ ] **채팅 메시지 수정 기능 (백엔드)**: 메시지 편집 및 AI 재호출
+  - 메시지 편집 API (`PUT /api/chat/messages/:message_id`)
+  - 편집된 메시지에 대한 AI 재응답 로직
+  - 메시지 수정 이력 관리 (선택사항)
 
-## 7. API 테스트 데이터/문서화/DB 일관성 가이드
+- [ ] **언어 선택 기능 (백엔드)**: 다국어 지원 시스템
+  - 사용자 언어 설정 저장/조회 API (`GET|PUT /api/users/language`)
+  - 번역 리소스 관리 시스템
+  - i18n 번역 키 관리 API (`GET /api/translations/:lang`)
+  - 지원 언어: 한국어(ko), 영어(en), 일본어(ja)
 
-**테스트 유저/세션/메시지 고정값 및 오버라이드 규칙 (상세)**
-  - 모든 API 문서, 예시, 기본값, 실제 DB/백엔드 로직에서 아래 고정값을 반드시 사용(불변):
-    - 유저:  
-      - username: `APItest`
-      - email: `API@example.com`
-      - password: `password123`
-      - user_id: `API_TEST_USER_ID`
-    - 세션:  
-      - session_id: `API_TEST_SESSION_ID`
-    - 메시지:  
-      - user_message_id: `API_TEST_USER_MESSAGE_ID`
-      - ai_message_id: `API_TEST_AI_MESSAGE_ID`
-  - **관례/자동화**:  
-    - 테스트 유저/세션/메시지는 항상 동일 ID로 생성/덮어쓰기(중복 생성 X, 기존 데이터 자동 삭제)
-    - 테스트 세션 생성 시, 두 개의 기본 메시지(유저/AI)도 자동 생성
-    - 예시)  
-      - 회원가입/로그인/세션생성/메시지전송 등 모든 테스트 API는 위 고정값을 기본값으로 사용  
-      - 기존에 동일 ID가 있으면 자동 삭제 후 새로 생성(덮어쓰기)
-  - **문제/원인/해결**:  
-    - (예시) "테스트 계정이 여러 번 생성되어 user_id가 달라지는 문제" → 기존 데이터 자동 삭제 및 고정값 덮어쓰기 로직으로 해결
-    - (예시) "테스트 세션 생성 시 메시지 ID가 매번 달라짐" → 세션 생성 시 두 개의 메시지도 고정 ID로 자동 생성
+- [ ] **드래그 기능 데이터 저장 (백엔드)**: 스티커/위젯 위치 정보 관리
+  - 사용자별 UI 레이아웃 저장 API (`PUT /api/users/ui-layout`)
+  - 드래그 위치/상태 정보 JSON 저장
+  - 실시간 동기화를 위한 WebSocket 지원 (선택)
 
-**API 문서/예시/기본값/실제 응답 동기화 (상세)**
-  - `routes/api_docs.js`의 모든 예시 요청/응답, 폼 기본값, 설명은 실제 백엔드 출력과 1:1로 맞출 것
-  - 신규/수정 API 추가 시, 예시/기본값/응답 구조를 반드시 실 API 결과와 비교·동기화
-  - 필드명, casing, 값 타입(문자열/숫자/객체 등)까지 실제 응답과 일치시킬 것
-  - **예시)**
-    - API 문서 예시:
-      {
-        "user_id": "API_TEST_USER_ID",
-        "username": "APItest",
-        "email": "API@example.com"
-      }
-    - 실제 응답(JSON)도 위와 완전히 동일해야 함(필드명, casing, 타입, 값)
-  - **문제/원인/해결**
-    - (예시) "API 문서 예시와 실제 응답 구조가 다름" → 실제 응답 기준으로 문서/예시/기본값 모두 동기화
-    - (예시) "폼 기본값이 실제 테스트 계정과 다름" → 자동 입력 로직으로 고정값 반영
+- [ ] **간단한 게임 데이터 관리 (백엔드)**: 게임 점수 및 진행상황 저장
+  - 게임 점수/기록 저장 API (`POST /api/games/scores`)
+  - 리더보드 조회 API (`GET /api/games/leaderboard`)
+  - 게임별 설정/진행상황 관리
 
-**Oracle CLOB/LOB 반환 및 필드 casing 이슈 (상세)**
-  - Oracle DB에서 CLOB/BLOB 필드는 JS 객체로 반환될 수 있음(예: BIO, MESSAGE_CONTENT 등)
-  - 일부 응답에서 CLOB 객체가 그대로 노출되는 경우 있음 → `clobToString` 등 유틸로 문자열 변환 필요
-  - 필드명 casing(대문자/소문자) 불일치 주의: API 문서/코드/DB 모두 일관성 유지, 불가피할 경우 변환/주석 명시
-  - **문제/원인/해결**
-    - (예시) "메시지 내용이 { type: 'CLOB', ... } 형태로 반환됨" → `clobToString` 유틸로 문자열 변환 후 응답
-    - (예시) "DB 필드명은 대문자, JS/문서에서는 소문자" → 컨트롤러/모델에서 casing 변환 또는 주석 명시
-    - (예시) "API 응답이 일관되지 않은 케이싱 사용" → `standardizeApiResponse` 유틸리티로 모든 API 응답에 일관된 snake_case 적용
-  - **상태/관례**
-    - CLOB/LOB 자동 변환 및 casing 표준화는 향후 백엔드에서 일괄 개선 예정
-    - **현재 개선 방안**: 
-      1. `utils/apiResponse.js` 유틸리티 추가 (표준화된 응답 처리)
-      2. `utils/dbUtils.js` 유틸리티 확장 (CLOB 필드 자동 변환)
-      3. 모든 컨트롤러에서 일관된 응답 처리 적용 (DB → convertClobFields → standardizeApiResponse → 응답)
+- [ ] **계정 데이터 저장/삭제 기능 (백엔드)**: 사용자 데이터 관리
+  - 사용자 데이터 백업/내보내기 API (`GET /api/users/data-export`)
+  - 개인정보 처리 규정 준수 (GDPR 스타일 데이터 삭제)
+  - 계정 완전 삭제 API 개선 (연관 데이터 완전 삭제)
 
-**테스트/문서화 관례 (상세)**
-  - 테스트용 API 호출, 예시, 기본값, 응답 구조는 항상 위 고정값/구조를 따름
-  - 신규 진입자/AI는 반드시 실제 API 호출 결과와 문서 예시를 비교하여 불일치 즉시 수정
-  - **예시)**
-    - testScript.js, test.html 등에서 API 호출 시 자동으로 고정값 입력
-    - 신규 API/문서 추가 시, 실제 응답을 복사하여 예시/기본값/문서에 반영
-  - **문제/원인/해결**
-    - (예시) "문서 예시와 실제 응답이 다름" → 실제 응답 기준으로 문서/예시/기본값 모두 동기화
+- [ ] **화면 강제 잠금 기능 (백엔드)**: 세션 잠금 상태 관리
+  - 사용자 세션 잠금 상태 저장/조회 API (`GET|PUT /api/users/session-lock`)
+  - PIN/패스워드 설정 및 검증 API (`POST /api/users/unlock-session`)
+  - 잠금 설정 및 자동 잠금 시간 관리
 
-**향후/확장 아이디어**
-  - AI가 유저 메시지에 자동 리액션(이모지 등) 기능 추가 고려
-    - 예: 메시지 전송 시 AI가 자동으로 👍, 😂 등 리액션 부여
-  - 메시지 전송 API(`sendMessageController`)에 스트리밍 옵션 추가 및 문서화 필요(예: stream=true 쿼리)
-    - 예: stream=true 옵션 시, 응답을 스트리밍으로 전송/프론트에서 실시간 표시
-  - CLOB/LOB 자동 변환 및 응답 표준화(백엔드 개선 예정)
-    - 예: 모든 CLOB/BLOB 필드는 자동으로 문자열/버퍼로 변환 후 응답
-  - API 응답 케이싱 표준화
-    - 모든 API 응답을 일관된 snake_case로 변환하는 미들웨어 또는 전역 유틸 적용
-    - 구현: `standardizeApiResponse` 유틸리티 함수를 모든 컨트롤러에서 사용하도록 일괄 적용
+#### 보통 (Medium) - 파일 처리 및 외부 연동
+- [ ] **페이지 위젯 추가 (백엔드)**: 외부 API 연동 및 데이터 표시
+  - 날씨 위젯 API 연동 (`GET /api/widgets/weather`)
+    - OpenWeatherMap API 활용 (무료 60회/분, 1000회/일)
+    - 위치별 현재 날씨, 5일 예보 제공
+  - 캘린더 위젯 연동 (`GET /api/widgets/calendar`)
+    - Google Calendar API 또는 공공 휴일 API 연동
+  - 주식/금융 위젯 (`GET /api/widgets/finance`)
+    - 무료 주식 API (Alpha Vantage, 한국투자증권 등)
+  - 위젯 데이터 캐싱 시스템 (Redis)
+  - 사용자별 위젯 설정 저장
 
-**유지보수자를 위한 메모 (상세)**
-  - 테스트 데이터/문서/DB/코드가 불일치하면 디버깅/자동화/신규 기능 개발이 매우 어려워짐
-  - 모든 예시/기본값/응답 구조는 실제 동작과 반드시 일치시킬 것(수정 시 이 섹션도 함께 갱신)
-  - **예시)**
-    - 신규 진입자/AI가 테스트/문서/코드/DB 구조를 빠르게 파악할 수 있도록, 이 섹션을 항상 최신 상태로 유지
-    - 반복되는 실수/불일치/이슈는 즉시 이 섹션에 기록 및 개선
+- [ ] **문제 해결 챗봇 (백엔드)**: 튜토리얼 및 기본 시나리오 시스템
+  - 시나리오 관리 API (`GET|PUT /api/chatbot/scenarios`)
+  - 키워드 매칭 엔진 및 규칙 기반 응답
+  - 튜토리얼 단계별 진행상황 추적 API (`GET|PUT /api/users/tutorial-progress`)
+  - 사용자 질문 패턴 분석 및 FAQ 자동 업데이트
 
----
+- [ ] **통합 검색 기능 확장 (백엔드)**: 다중 검색 엔진 통합
+  - 통합 검색 결과 API (`GET /api/search/integrated`)
+  - 네이버, 카카오, 위키피디아 결과 병합
+  - 검색 결과 랭킹 및 중복 제거 알고리즘
+  - 사용자별 검색 기록 저장 (선택적)
 
-## 8. 필드명 casing(네이밍) 규칙
+- [ ] **날씨 정보 위젯 (백엔드)**: OpenWeatherMap API 연동
+  - 현재 날씨 조회 API (`GET /api/widgets/weather/current`)
+    - OpenWeatherMap API 활용 (무료 60회/분, 1000회/일)
+    - 위치별 현재 날씨, 온도, 습도, 바람
+  - 5일 예보 API (`GET /api/widgets/weather/forecast`)
+  - 위치 정보 기반 자동 날씨 조회
+  - 날씨 데이터 캐싱 (1시간 간격)
 
-- **snake_case(소문자+언더스코어)**:  
-  - DB 컬럼, 백엔드 모델/컨트롤러/응답(JSON), API 문서(exampleReq/exampleRes/params 등)  
-  - 예시: `user_id`, `created_at`, `session_id`, `message_content`
-- **camelCase**:  
-  - 프론트엔드 JS 코드 내부 변수/상태/함수명  
-  - 예시: `user_id`, `createdAt`, `sessionId`, `messageContent`
-- **변환 규칙**:  
-  - DB→백엔드→API 응답: snake_case로 통일  
-  - 프론트엔드에서 필요시 camelCase로 변환(또는 snake_case 그대로 사용)
-- **유틸 함수**:  
-  - Oracle 등에서 대문자/카멜/스네이크 혼용시, `toSnakeCaseObj` 유틸로 일괄 변환
-- **예시**
-  - API 응답/문서:
-    ```json
-    {
-      "user_id": "API_TEST_USER_ID",
-      "created_at": "2025-05-09T12:00:00.000Z"
-    }
-    ```
-  - 프론트엔드 변수:
-    ```js
-    const user_id = response.user_id;
-    ```
+- [ ] **공공데이터 기본 연동 (백엔드)**: 한국 공공데이터포털 API
+  - 실시간 대기질 정보 API (`GET /api/widgets/air-quality`)
+    - 한국환경공단 에어코리아 API (무료)
+    - 지역별 미세먼지, 초미세먼지, 오존 수치
+  - 공공데이터 캐싱 및 업데이트 스케줄링
+  - 사용자 위치 기반 대기질 정보 제공
 
----
+- [ ] **다국어 지원 (백엔드)**: 언어 설정 및 번역 리소스 관리
+  - 사용자 언어 설정 저장/조회 API (`GET|PUT /api/users/language`)
+  - 번역 리소스 관리 시스템
+  - i18n 번역 키 관리 API (`GET /api/translations/:lang`)
 
-인간 메모
-TODO: get 프로필 이미지 구현
+- [ ] **페이지 위젯 (백엔드)**: 외부 API 연동 및 데이터 캐싱
+  - 날씨 API 연동 (`GET /api/widgets/weather`)
+    - OpenWeatherMap API 활용 (무료 60회/분, 1000회/일)
+    - 위치별 현재 날씨, 5일 예보 제공
+  - 캘린더 이벤트 연동 (`GET /api/widgets/calendar`)
+  - 위젯 데이터 캐싱 시스템 (Redis)
+  - 사용자별 위젯 설정 저장
+
+- [ ] **통합 검색 기능 (백엔드)**: 다양한 무료 검색 API 연동
+  - 네이버 통합 검색 API (`GET /api/search/naver`)
+    - 웹, 뉴스, 블로그, 이미지 검색 (일 25,000회 무료)
+    - 지식iN, 카페, 백과사전 등 특화 검색
+  - 다음(카카오) 검색 API (`GET /api/search/daum`)
+    - 웹 검색, 이미지 검색 (일 30,000회 무료)
+    - 지도/장소 검색 API 활용
+  - 위키피디아 API (`GET /api/search/wikipedia`)
+    - 백과사전 정보 검색 (무료, 무제한)
+    - 다국어 지원, 요약/전문 조회
+  - 통합 검색 결과 정렬 및 캐싱
+
+#### 어려움 (Hard) - 고급 AI 및 실시간 기능
+- [ ] **AI 대화 요약 기능 (백엔드)**: 대화 내용 요약 및 최적화
+  - 긴 대화 세션 자동 요약 API (`POST /api/chat/sessions/:session_id/summarize`)
+  - 요약 AI 모델 연동 (Vertex AI 활용)
+  - 요약 결과 캐싱 및 성능 최적화
+  - API 비용 관리 및 모니터링
+
+- [ ] **채팅 메모리/개인화 (백엔드)**: 장기 기억 관리 시스템
+  - 사용자별 대화 컨텍스트 장기 저장
+  - 벡터 DB 연동 (ChromaDB, Pinecone 등)
+  - 개인화된 AI 응답 생성을 위한 컨텍스트 관리
+  - 메모리 압축 및 중요도 기반 저장
+
+- [ ] **음성 인식 및 TTS (백엔드)**: 오디오 처리 및 외부 서비스 연동
+  - STT 서비스 연동 API (`POST /api/speech/transcribe`)
+  - TTS 서비스 연동 API (`POST /api/speech/synthesize`)
+  - 오디오 파일 처리 및 스트리밍
+  - 음성 권한 관리 및 보안
+
+- [ ] **실시간 검색 순위 (백엔드)**: 실시간 데이터 집계 시스템
+  - 검색 로그 수집 및 실시간 집계
+  - Redis/메모리 캐시 기반 순위 관리
+  - 검색 트렌드 분석 API (`GET /api/search/trending`)
+  - 네이버 데이터랩 API 연동 (키워드 트렌드 분석)
+
+- [ ] **추천 검색 기능 (백엔드)**: ML 기반 추천 시스템
+  - 사용자 행동 분석 로깅
+  - 추천 알고리즘 구현 (협업 필터링, 컨텐츠 기반)
+  - 개인화된 검색 결과 API (`GET /api/search/recommendations`)
+  - 외부 API 결과 기반 개인화 필터링
+
+- [ ] **공공데이터 활용 위젯 (백엔드)**: 한국 공공데이터포털 API 연동
+  - 실시간 대기질 정보 (`GET /api/widgets/air-quality`)
+    - 한국환경공단 에어코리아 API
+  - 지역별 문화 행사 정보 (`GET /api/widgets/culture-events`)
+    - 문화데이터광장 API 연동
+  - 교통 정보 및 대중교통 (`GET /api/widgets/transport`)
+    - 국토교통부 공간정보 오픈플랫폼 API
+  - 공공데이터 캐싱 및 업데이트 관리
+
+#### 매우 어려움 (Very Hard) - 복잡한 시스템 통합
+- [ ] **쇼핑몰 연동 (백엔드)**: 외부 커머스 플랫폼 통합
+  - 네이버 쇼핑 API 연동 (상품 검색, 가격 비교)
+  - 쿠팡 파트너스 API 연동 (제휴 마케팅)
+  - 상품 정보 동기화 및 캐싱
+  - 주문/결제 시스템 연동
+  - 재고 관리 및 주문 상태 추적
+
+- [ ] **고급 공공데이터 통합 (백엔드)**: 다양한 정부 API 연동
+  - 문화 행사 정보 API (`GET /api/widgets/culture-events`)
+    - 문화데이터광장 API 연동 (무료)
+    - 지역별 공연, 전시, 축제 정보
+  - 교통 정보 API (`GET /api/widgets/transport`)
+    - 국토교통부 공간정보 오픈플랫폼 API
+    - 실시간 대중교통 정보, 교통상황
+  - 경제 지표 API (`GET /api/widgets/economic-stats`)
+    - 한국은행 ECOS API 연동 (무료)
+    - 환율, 금리, 주요 경제지표
+
+- [ ] **금융 정보 통합 (백엔드)**: 금융 데이터 API 연동 확장
+  - 기업 정보 조회 API (`GET /api/finance/company-info`)
+    - 금융감독원 DART API 연동 (무료)
+    - 기업 재무정보, 공시 정보 조회
+  - 주식 정보 API (`GET /api/finance/stock-info`)
+    - 증권사 API 연동 (개발자 계정 필요)
+    - 실시간 주식 시세, 차트 데이터
+  - 금융 데이터 실시간 캐싱 및 알림
+
+### 추가 백엔드 기능 분석 (사용자 요청 기반)
+
+#### 기본 UI/UX 기능의 백엔드 지원
+- [ ] **드래그 기능 데이터 저장 (백엔드)**: 스티커/위젯 위치 정보 관리
+  - 사용자별 UI 레이아웃 저장 API (`PUT /api/users/ui-layout`)
+  - 드래그 위치/상태 정보 JSON 저장
+  - 실시간 동기화를 위한 WebSocket 지원 (선택)
+
+- [ ] **간단한 게임 데이터 관리 (백엔드)**: 게임 점수 및 진행상황 저장
+  - 게임 점수/기록 저장 API (`POST /api/games/scores`)
+  - 리더보드 조회 API (`GET /api/games/leaderboard`)
+  - 게임별 설정/진행상황 관리
+
+#### 고급 검색 및 AI 기능 강화
+- [ ] **AI 검색 통합 (백엔드)**: 검색 결과와 AI 응답 결합
+  - 검색 결과 기반 AI 컨텍스트 생성
+  - 실시간 웹 크롤링 결과를 AI 응답에 통합
+  - 검색 의도 분석 및 맞춤형 응답 생성
+  - Vertex AI와 외부 검색 API 연동 최적화
+
+- [ ] **문제 해결 챗봇 시스템 (백엔드)**: 시나리오 기반 응답 시스템
+  - 사전 정의된 시나리오 관리 API (`GET|PUT /api/chatbot/scenarios`)
+  - 키워드 매칭 엔진 및 규칙 기반 응답
+  - 튜토리얼 단계별 진행상황 추적
+  - 사용자 질문 패턴 분석 및 FAQ 자동 업데이트
+
+### 우선순위 재정렬 (무료 API 활용 중심)
+
+#### 1순위 (즉시 구현 가능 - 무료, 무제한)
+1. **위키피디아 API 연동** - ✅ **완료** (무료, 무제한, 간단한 구현)
+   - 검색 결과를 AI 답변에 참조 자료로 활용 가능
+   - 교육적 가치가 높은 백과사전 정보 제공
+
+#### 2순위 (개발자 등록 필요, 무료 한도 내)
+1. **네이버 검색 API** - 일 25,000회 무료 (충분한 용량)
+   - 한국어 콘텐츠에 최적화된 검색 결과
+   - 지역 검색, 뉴스, 블로그 등 다양한 분야
+
+2. **카카오(다음) 검색 API** - 일 30,000회 무료 (넉넉한 용량)
+   - 이미지 검색 및 지도 정보 활용도 높음
+   - 카카오톡 연동 가능성 (향후 확장)
+
+3. **OpenWeatherMap API** - 일 1,000회 무료 (위젯용으로 충분)
+   - 날씨 위젯으로 실용적 가치 높음
+   - 캐싱으로 API 호출 최소화 가능
+
+#### 3순위 (정부 지원, 안정적 무료)
+1. **한국 공공데이터포털 API** - 정부 제공, 대부분 무료
+   - 대기질, 문화행사, 교통정보 등 실생활 정보
+   - 한국 사용자에게 특화된 유용한 데이터
+
+2. **한국은행 ECOS API** - 경제 데이터, 무료
+   - 환율, 금리 등 금융 정보 위젯 활용 가능
+
+#### 구현 전략 및 고려사항
+
+1. **API 사용량 관리**
+   - Redis를 활용한 일일 사용량 추적
+   - API 키 로테이션 시스템 (여러 개발자 계정 활용)
+   - 사용량 임계치 도달 시 자동 알림
+
+2. **캐싱 전략**
+   - 검색 결과: 1시간 캐싱 (동일 키워드 재검색 방지)
+   - 날씨 데이터: 30분 캐싱 (적당한 실시간성)
+   - 공공데이터: 24시간 캐싱 (업데이트 빈도 낮음)
+
+3. **오류 처리 및 대체 방안**
+   - API 장애 시 캐시된 데이터 활용
+   - 여러 검색 엔진 중 일부 실패 시 다른 엔진 결과 사용
+   - 사용량 초과 시 다음날까지 기능 일시 비활성화 안내
+
+4. **데이터 품질 관리**
+   - 검색 결과 필터링 (성인 콘텐츠, 스팸 등)
+   - 응답 시간 모니터링 및 성능 최적화
+   - 사용자 피드백 기반 검색 품질 개선
+````
