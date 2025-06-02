@@ -1,5 +1,6 @@
-const { oracledb } = require('../config/database'); // Removed getConnection
+const { getConnection, oracledb } = require('../config/database'); // Removed getConnection
 const { saveUserMessageToDB, saveAiMessageToDB, deleteUserMessageFromDB, getSessionMessagesForClient, getChatHistoryFromDB, saveAttachmentToDB } = require('../models/chat'); // getChatHistoryFromDB 추가, saveAttachmentToDB 추가
+const { getUserSettings } = require('../models/user'); // getUserSettings 추가
 const { fetchChatCompletion } = require('../utils/aiProvider'); // Updated import
 const { convertClobFields, withTransaction } = require('../utils/dbUtils'); // convertClobFields import 추가, withTransaction 추가
 const { standardizeApiResponse } = require('../utils/apiResponse'); // Import standardizeApiResponse
@@ -86,8 +87,8 @@ async function sendMessageController(req, res) {
     connection = await getConnection();
     
     // AI 제공자 및 모델 정보 결정
-    let actualAiProvider = 'vertexai'; // 기본값
-    let actualModelId = 'gemini-2.5-pro-exp-03-25'; // 기본값
+    let actualAiProvider = 'ollama'; // 기본값
+    let actualModelId = 'gemma3:4b'; // 기본 Ollama 모델
     
     // 사용자 설정에서 AI 제공자 확인
     const userSettings = await getUserSettings(user_id);

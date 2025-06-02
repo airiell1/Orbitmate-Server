@@ -147,6 +147,7 @@
     - `[2025-05-08] CLOB 반환 오류: Oracle CLOB 스트림 → clobToString 유틸 추가로 해결 (백엔드)`
     - `[2025-05-09] API 응답 케이싱 불일치: Oracle DB 필드가 대문자로 반환되어 응답이 API 문서와 불일치 → standardizeApiResponse 유틸로 snake_case 통일, CLOB 자동 변환 추가 (백엔드)`
 
+[2025-05-30] getConnection 함수 미정의 오류: chatController.js에서 config/database.js의 getConnection 함수를 import하지 않아서 발생 → import 문에 getConnection
 ---
 
 ## 4. 작업 목록 (진행상황 체크)
