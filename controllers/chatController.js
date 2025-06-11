@@ -10,6 +10,21 @@ const fs = require('fs');
 // 오류 처리 유틸리티 추가
 const { createErrorResponse, getHttpStatusByErrorCode, handleOracleError, logError } = require('../utils/errorHandler');
 
+// WebSocket 인스턴스를 저장할 변수 (app.js에서 설정됨)
+let io = null;
+
+// WebSocket 인스턴스 설정 함수
+function setSocketIO(socketIOInstance) {
+  io = socketIOInstance;
+}
+
+// WebSocket 브로드캐스트 헬퍼 함수
+function broadcastMessageToSession(sessionId, messageData) {
+  if (io && io.broadcastToSession) {
+    io.broadcastToSession(sessionId, 'new_message_from_api', messageData);
+  }
+}
+
 // 채팅 메시지 전송 및 AI 응답 받기 컨트롤러
 async function sendMessageController(req, res) {
   const { session_id } = req.params;
@@ -197,9 +212,7 @@ async function sendMessageController(req, res) {
       }
       const aiMessageId = aiMessageResult.ai_message_id.toString();
       const aiCreatedAt = aiMessageResult.created_at;
-      const actualAiContentSaved = aiMessageResult.content;
-
-      return {
+      const actualAiContentSaved = aiMessageResult.content;      return {
         user_message_id: userMessageId.toString(),
         ai_message_id: aiMessageId,
         message: actualAiContentSaved,
@@ -207,6 +220,38 @@ async function sendMessageController(req, res) {
         ai_message_token_count: aiMessageTokenCountToStore // Include in response
       };
     });
+
+    // WebSocket으로 새 메시지 브로드캐스트
+    try {
+      // 사용자 메시지 브로드캐스트
+      broadcastMessageToSession(session_id, {
+        type: 'user_message',
+        message_id: responseData.user_message_id,
+        user_id: user_id,
+        session_id: session_id,
+        message_type: 'user',
+        message_content: message,
+        created_at: new Date().toISOString(),
+        is_realtime: true
+      });
+
+      // AI 응답 메시지 브로드캐스트
+      broadcastMessageToSession(session_id, {
+        type: 'ai_message',
+        message_id: responseData.ai_message_id,
+        user_id: user_id,
+        session_id: session_id,
+        message_type: 'ai',
+        message_content: responseData.message,
+        created_at: responseData.created_at,
+        ai_provider: actualAiProvider,
+        model_id: actualModelId,
+        is_realtime: true
+      });
+    } catch (wsError) {
+      console.warn('WebSocket 브로드캐스트 실패:', wsError.message);
+      // WebSocket 실패는 치명적이지 않으므로 계속 진행
+    }
 
     // Send response based on responseData (non-streaming part)
     if (specialModeType === 'stream') {
@@ -632,5 +677,6 @@ module.exports = {
   deleteMessageController,
   removeReactionController, // 추가
   uploadFile,
-  getSessionMessagesController // 추가
+  getSessionMessagesController, // 추가
+  setSocketIO // WebSocket 인스턴스 설정 함수 추가
 };

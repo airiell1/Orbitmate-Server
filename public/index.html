@@ -164,11 +164,21 @@
                 </div>
             </div>
         </div>
+    </div>    <div class="footer">
+        <p>© 2025 Orbitmate - AI 채팅 서비스</p>
+        <div id="websocket-status" class="websocket-status ws-disconnected" style="margin-top: 5px; font-size: 0.9em;">
+            WebSocket 초기화 중...
+        </div>
+        <div id="typing-indicator" style="display: none; margin-top: 5px; font-style: italic; color: #888;">
+            <!-- 타이핑 상태가 여기에 표시됩니다 -->
+        </div>
     </div>
 
-    <div class="footer">
-        <p>© 2025 Orbitmate - AI 채팅 서비스</p>    </div>
-
+    <!-- Socket.IO 클라이언트 라이브러리 -->
+    <script src="/socket.io/socket.io.js"></script>
+    <!-- WebSocket 클라이언트 -->
+    <script src="websocket-client.js"></script>
+    <!-- 기존 스크립트들 -->
     <script src="script.js"></script>
     <script src="promptFeature.js"></script>
 </body>

@@ -292,6 +292,104 @@ const apis = [
     ],
     exampleReq: '(multipart/form-data: file=파일 선택, user_id=USER123)',
     exampleRes:  ` {\n  "message": "파일이 성공적으로 업로드되었습니다.",\n  "fileMessage": { ... }\n}`
+  },
+  
+  /* WebSocket 실시간 메시지 API */
+  {
+    method: 'GET',
+    path: '/api/websocket/status',
+    title: 'WebSocket 연결 상태 조회',
+    desc: 'WebSocket 서버의 현재 연결 상태와 활성 연결 정보를 조회합니다.',
+    params: [],
+    exampleReq: '',
+    exampleRes: `{
+  "websocket_status": "active",
+  "server_info": {
+    "total_connections": 5,
+    "active_users": 3,
+    "active_sessions": 2,
+    "timestamp": "2025-06-11T10:30:00.000Z"
+  },
+  "connection_details": {
+    "activeConnections": {...},
+    "sessionRooms": {...},
+    "socketUsers": {...}
+  }
+}`
+  },
+  {
+    method: 'POST',
+    path: '/api/websocket/broadcast/session/:session_id',
+    title: '세션에 메시지 브로드캐스트',
+    desc: '특정 세션의 모든 사용자에게 실시간 메시지를 브로드캐스트합니다.',
+    params: [
+      { name: 'session_id', type: 'text', label: '세션 ID', required: true, inPath: true },
+      { name: 'event', type: 'text', label: '이벤트명', required: true },
+      { name: 'data', type: 'textarea', label: '전송할 데이터 (JSON)', required: true }
+    ],
+    exampleReq: `{
+  "event": "custom_notification",
+  "data": {
+    "message": "시스템 공지사항",
+    "type": "announcement"
+  }
+}`,
+    exampleRes: `{
+  "message": "메시지가 성공적으로 브로드캐스트되었습니다.",
+  "session_id": "session_123",
+  "event": "custom_notification",
+  "timestamp": "2025-06-11T10:30:00.000Z"
+}`
+  },
+  {
+    method: 'POST',
+    path: '/api/websocket/send/user/:user_id',
+    title: '사용자에게 메시지 전송',
+    desc: '특정 사용자에게 실시간 메시지를 전송합니다.',
+    params: [
+      { name: 'user_id', type: 'text', label: '사용자 ID', required: true, inPath: true },
+      { name: 'event', type: 'text', label: '이벤트명', required: true },
+      { name: 'data', type: 'textarea', label: '전송할 데이터 (JSON)', required: true }
+    ],
+    exampleReq: `{
+  "event": "private_message",
+  "data": {
+    "message": "개인 메시지입니다",
+    "from": "system"
+  }
+}`,
+    exampleRes: `{
+  "message": "메시지가 성공적으로 전송되었습니다.",
+  "user_id": "guest",
+  "event": "private_message",
+  "timestamp": "2025-06-11T10:30:00.000Z"
+}`
+  },
+  {
+    method: 'POST',
+    path: '/api/websocket/test/event',
+    title: 'WebSocket 이벤트 테스트',
+    desc: 'WebSocket 연결 및 메시지 전송을 테스트합니다.',
+    params: [
+      { name: 'session_id', type: 'text', label: '세션 ID (선택)', required: false },
+      { name: 'user_id', type: 'text', label: '사용자 ID (선택)', required: false },
+      { name: 'event_type', type: 'text', label: '이벤트 타입 (기본: test_message)', required: false }
+    ],
+    exampleReq: `{
+  "session_id": "session_123",
+  "event_type": "test_message"
+}`,
+    exampleRes: `{
+  "message": "세션 테스트 메시지가 전송되었습니다.",
+  "target": {"session_id": "session_123"},
+  "event_type": "test_message",
+  "test_data": {
+    "message": "WebSocket 테스트 메시지입니다.",
+    "test_timestamp": "2025-06-11T10:30:00.000Z",
+    "from_api": true,
+    "test_id": "test_1718102200000"
+  }
+}`
   }
 ];
 
