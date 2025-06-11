@@ -7,7 +7,7 @@ const { logError } = require('../utils/errorHandler'); // Import logError
 let vertex_ai, generativeModel;
 const project = process.env.GOOGLE_PROJECT_ID;
 const keyFilename = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-const location = 'global'; // Vertex AI의 위치 설정 (global 또는 us-central1 등)
+const location = 'global';
 
 if (project && keyFilename) {
     try {

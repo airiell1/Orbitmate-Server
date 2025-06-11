@@ -21,9 +21,9 @@
       - `initializeDbPool()`: 커넥션 풀 생성 및 초기화
       - `getConnection()`: 커넥션 획득 (풀에서)
       - `oracledb`: oracledb 인스턴스 전체 내보내기 (트랜잭션, CLOB 등 활용)
-    - 참고: 커넥션 풀은 app.js/server.js에서 최초 1회만 초기화 필요. 각 모델/컨트롤러에서는 getConnection()으로 커넥션 획득 후 사용/반납
-  - `config/vertexai.js`:
+    - 참고: 커넥션 풀은 app.js/server.js에서 최초 1회만 초기화 필요. 각 모델/컨트롤러에서는 getConnection()으로 커넥션 획득 후 사용/반납  - `config/vertexai.js`:
     - Vertex AI 연동, Google Cloud Gemini 2.5 pro 모델 사용
+    - **리전 설정: `global` exp는 이 리전에서만 사용 가능
     - 안전성 필터(증오/성적/위험/학대), 스트림/캔버스/검색 등 특수 모드 지원
     - 주요 함수 및 내보내기:
       - `getVertexAiApiResponse(currentUserMessage, history, systemMessageText, specialModeType, streamResponseCallback, options)`: Vertex AI에 대화 요청, 스트림/캔버스/검색 등 특수 모드 지원 (systemPrompt, specialModeType, stream 콜백, options 객체로 model_id_override, max_output_tokens_override 등 다양한 옵션 지원)
@@ -31,8 +31,13 @@
       - `generativeModel`: Gemini 2.5 pro 모델 인스턴스 (기본 설정)
     - 참고: specialModeType에 따라 systemPrompt가 자동 강화(캔버스/검색 등), streamResponseCallback으로 스트리밍 응답 처리 가능
 
-- **API 라우트**
-  - `routes/users.js`, `routes/chat.js`, `routes/sessions.js`, `routes/aiInfo.js`, `routes/search.js`
+- **AI 제공자 및 유틸리티 (utils/)**
+  - `utils/aiProvider.js`: AI 제공자 추상화 레이어
+    - **기본 provider: `'vertexai'` (Gemini)** - 2025년 6월 10일 ollama에서 변경
+    - 주요 함수:
+      - `fetchChatCompletion(aiProvider, currentUserMessage, history, systemMessageText, specialModeType, streamResponseCallback, options)`: AI 제공자별 요청 라우팅
+    - Vertex AI와 Ollama 간 통합 인터페이스 제공
+    - 옵션을 통한 모델별 설정 지원 (ollamaModel, vertexModelId, max_output_tokens_override 등)
 
 - **컨트롤러**
 
@@ -47,6 +52,7 @@
       - `checkEmailExists()`: 이메일 중복 확인 API 처리
 
   - `controllers/chatController.js`: 채팅 메시지 전송, AI 응답, 메시지 편집/삭제/리액션, 파일 업로드 등 채팅 관련 API 처리
+    - **기본 AI Provider: `'vertexai'`, 테스트 사용자 ID: `'test-guest'`**
     - 주요 함수:
       - `sendMessageController()`: 메시지 전송 및 AI 응답 처리 (aiProvider 추상화를 통한 Vertex AI/Ollama 연동, 스트림/캔버스 모드 지원)
       - `editMessageController()`: 메시지 편집
@@ -63,8 +69,20 @@
       - `getSessionMessagesController()`: 세션 메시지 목록 조회 (models/session.js의 getSessionMessages 호출)
       - `deleteSessionController()`: 세션 삭제
 
-  - `controllers/searchController.js`: 검색 기능 관련 API 처리 (위키피디아 검색 등)
   - `controllers/aiInfoController.js`: AI 정보 조회 API 처리
+    - **기본 provider: `'vertexai'`로 설정됨**
+    - 주요 함수:
+      - `getModelsInfoController()`: 사용 가능한 AI 모델 목록 조회 (기본값으로 Vertex AI 설정)
+
+  - `controllers/searchController.js`: 검색 기능 관련 API 처리 (위키피디아 검색 등)
+    - 주요 함수:
+      - `searchWikipediaController()`: 위키피디아 검색 API 처리
+      - `getUserSessionsController()`: 사용자 세션 목록 조회
+      - `updateSessionController()`: 세션 정보 수정 (제목, 카테고리, 보관 여부)
+      - `getSessionMessagesController()`: 세션 메시지 목록 조회 (models/session.js의 getSessionMessages 호출)
+      - `deleteSessionController()`: 세션 삭제
+- **API 라우트**
+  - `routes/users.js`, `routes/chat.js`, `routes/sessions.js`, `routes/aiInfo.js`, `routes/search.js`
 
 - **모델**
   - `models/user.js`: 사용자 관련 DB 접근 함수 (회원가입, 로그인, 설정/프로필 조회·수정, 프로필 이미지, 경험치/레벨, 회원 탈퇴)
@@ -109,6 +127,11 @@
       - `fetchAiModelsAndPopulateSelector()`: AI 모델 목록 조회 및 드롭다운 생성
       - `updateDisplayedModelInfo()`: 선택된 AI 모델 정보 UI 업데이트
     - 전역 변수: currentSessionId, selectedAiProvider, selectedModelId, currentMaxOutputTokens, currentContextLimit
+
+  - `public/test.html`: API 테스트 페이지
+    - **기본 AI Provider: Gemini(vertexai) 선택됨**
+    - Gemini 선택 시 Ollama 모델 선택 및 양자화 옵션 자동 비활성화
+
   - `public/testScript.js`: API 테스트 및 디버깅용 프론트엔드 스크립트 (test.html용)
     - 모듈화 구조: testScripts/ 디렉토리의 개별 모듈을 import
       - `testScripts/user.js`: 사용자 관련 API 테스트 (회원가입, 로그인, 프로필, 설정)
@@ -116,8 +139,12 @@
       - `testScripts/message.js`: 메시지 관련 API 테스트 (편집, 리액션, 삭제, 파일 업로드)
       - `testScripts/search.js`: 검색 기능 API 테스트 (위키피디아, 네이버, 카카오)
       - `testScripts/chat.js`: 채팅 기능 (세션 초기화, 메시지 전송, 새로고침)
+        - **기본 AI Provider: `'vertexai'`로 설정됨**
+        - Gemini UI 선택 시 `vertexai`로 자동 변환 (`radio.value === 'gemini' ? 'vertexai' : radio.value`)
       - `testScripts/utils.js`: 공통 유틸리티 함수 (API 응답 표시, 에러 처리)
     - 주요 역할: API 엔드포인트 테스트, 응답 데이터 검증, 서버 상태 점검
+    - **UI 최적화**: `toggleOllamaOptions()` 함수로 AI Provider 변경 시 Ollama 옵션 자동 비활성화/활성화
+
   - `public/promptFeature.js`: 채팅 프롬프트(시스템 프롬프트) UI 기능
     - 주요 기능:
       - 프롬프트 버튼 및 옵션 패널 생성 (promptOptions 배열 기반)
@@ -159,9 +186,12 @@
     - `[2025-05-08] CLOB 반환 오류: Oracle CLOB 스트림 → clobToString 유틸 추가로 해결 (백엔드)`
     - `[2025-05-09] API 응답 케이싱 불일치: Oracle DB 필드가 대문자로 반환되어 응답이 API 문서와 불일치 → standardizeApiResponse 유틸로 snake_case 통일, CLOB 자동 변환 추가 (백엔드)`
 
-[2025-05-30] getConnection 함수 미정의 오류: chatController.js에서 config/database.js의 getConnection 함수를 import하지 않아서 발생 → import 문에 getConnection
-[2025-06-02] API 응답 형식 통일: standardizeApiResponse 함수를 원래 방식으로 복원 (단일 데이터 객체 반환), 검색 API는 createSearchApiResponse로 분리 (성공시 데이터 직접 반환, 실패시 에러 메시지 반환)
-[2025-06-02] 위키피디아 API 구현 완료: 백엔드/프론트엔드/테스트 UI 모두 구현, 검색 기능 정상 작동 확인 (백엔드/프론트엔드)
+[2025-05-30] getConnection 함수 미정의 오류: chatController.js에서 config/database.js의 getConnection 함수를 import하지 않아서 발생 → import 문에 getConnection 추가 (해결)
+[2025-06-02] API 응답 형식 통일: standardizeApiResponse 함수를 원래 방식으로 복원 (단일 데이터 객체 반환), 검색 API는 createSearchApiResponse로 분리 (성공시 데이터 직접 반환, 실패시 에러 메시지 반환) (해결)
+[2025-06-02] 위키피디아 API 구현 완료: 백엔드/프론트엔드/테스트 UI 모두 구현, 검색 기능 정상 작동 확인 (해결)
+[2025-06-10] 기본 AI Provider 변경: ollama → vertexai 전체 시스템 변경 완료 (해결)
+[2025-06-10] GUEST_USER_ID 오류: chatController.js에서 GUEST_USER_ID가 미정의 → 'test-guest'로 변경 (해결)
+[2025-06-10] 테스트 페이지 UI 개선: Gemini 선택 시 Ollama 옵션 자동 비활성화 및 gemini → vertexai 자동 변환 완료 (해결)
 ---
 
 ## 4. 작업 목록 (진행상황 체크)
@@ -471,4 +501,37 @@
    - 검색 결과 필터링 (성인 콘텐츠, 스팸 등)
    - 응답 시간 모니터링 및 성능 최적화
    - 사용자 피드백 기반 검색 품질 개선
-````
+
+---
+
+## 최신 시스템 상태 (2025-06-10 기준)
+
+### 🔧 현재 기본 설정
+- **기본 AI Provider**: `vertexai` (Gemini 2.5 Pro)
+- **기본 지역**: `global` 
+- **테스트 사용자 ID**: `test-guest`
+- **Vertex AI 모델**: `gemini-2.5-pro-exp-03-25`
+- **Ollama 모델**: `gemma3:4b` (대체 옵션)
+
+### 🌟 주요 최적화 사항
+1. **UI/UX 개선**: Gemini 선택 시 Ollama 옵션 자동 비활성화
+2. **자동 매핑**: 테스트 페이지에서 `gemini` → `vertexai` 자동 변환
+3. **기본값 통일**: 전체 시스템에서 Vertex AI 우선 사용
+
+### 🚀 성능 향상
+- Gemini 2.5 Pro의 고품질 응답 제공
+- 스트림/캔버스 모드 완벽 지원
+- 검색 기능과 AI 응답 통합
+
+### 📋 주요 변경 사항 요약 (2025-06-10)
+1. **기본 AI Provider 변경**: `ollama` → `vertexai`
+2. **테스트 ID 수정**: `GUEST_USER_ID` → `test-guest`
+3. **UI 개선**: Gemini 선택 시 Ollama 옵션 자동 비활성화
+4. **자동 변환**: 프론트엔드에서 `gemini` → `vertexai` 매핑
+
+### 🔍 디버깅 로그 개선
+- chatController에 AI provider 결정 로그 추가
+- 요청 파라미터 디버깅 로그 활성화
+- AI provider 매핑 상태 실시간 확인 가능
+
+---

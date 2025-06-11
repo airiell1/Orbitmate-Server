@@ -1,7 +1,7 @@
 // testScript.js - API 테스트 페이지 전용 스크립트 (모듈화된 버전)
 
 // 모듈 import
-import { initializeSession, sendMessage, refreshSessionMessages } from './testScripts/chat.js';
+import { initializeSession, sendMessage, refreshSessionMessages, initializeAiProviderToggle } from './testScripts/chat.js';
 import { 
     registerUserTest, 
     loginUserTest, 
@@ -37,6 +37,49 @@ import {
 
 // DOMContentLoaded 이벤트로 초기화
 document.addEventListener('DOMContentLoaded', function() {
+    // AI Provider 변경 시 Ollama 옵션 비활성화/활성화
+    function toggleOllamaOptions() {
+        const aiProviderRadios = document.querySelectorAll('input[name="aiProvider"]');
+        const ollamaModelRadios = document.querySelectorAll('input[name="ollamaModel"]');
+        const qatCheckbox = document.getElementById('it-qat');
+        const ollamaModelSpan = document.querySelector('#ai-selector span:nth-of-type(2)'); // "Ollama Model:" 스팬
+        
+        let selectedProvider = 'vertexai'; // 기본값
+        aiProviderRadios.forEach(radio => {
+            if (radio.checked) {
+                selectedProvider = radio.value;
+            }
+        });
+        
+        const isOllamaSelected = (selectedProvider === 'ollama');
+        
+        // Ollama 모델 라디오 버튼들 비활성화/활성화
+        ollamaModelRadios.forEach(radio => {
+            radio.disabled = !isOllamaSelected;
+            radio.parentElement.style.opacity = isOllamaSelected ? '1' : '0.5';
+        });
+        
+        // 양자화 체크박스 비활성화/활성화
+        if (qatCheckbox) {
+            qatCheckbox.disabled = !isOllamaSelected;
+            qatCheckbox.parentElement.style.opacity = isOllamaSelected ? '1' : '0.5';
+        }
+        
+        // "Ollama Model:" 레이블 비활성화/활성화
+        if (ollamaModelSpan) {
+            ollamaModelSpan.style.opacity = isOllamaSelected ? '1' : '0.5';
+        }
+    }
+    
+    // AI Provider 라디오 버튼에 이벤트 리스너 추가
+    const aiProviderRadios = document.querySelectorAll('input[name="aiProvider"]');
+    aiProviderRadios.forEach(radio => {
+        radio.addEventListener('change', toggleOllamaOptions);
+    });
+    
+    // 초기 상태 설정
+    toggleOllamaOptions();
+
     // 사용자 관리 버튼들
     const registerButton = document.getElementById('register-button');
     const loginButton = document.getElementById('login-button');

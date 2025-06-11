@@ -61,4 +61,4 @@ export function addMessageActions(messageElement, messageId, sender) {
 
 // 공통 상수
 export const GUEST_USER_ID = 'guest';
-export const API_TEST_USER_ID = 'API_TEST_USER_ID';
+export const API_TEST_USER_ID = 'test-guest';

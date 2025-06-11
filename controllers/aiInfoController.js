@@ -4,7 +4,7 @@ const { createErrorResponse, getHttpStatusByErrorCode, logError } = require('../
 
 async function getModelsInfoController(req, res) {
     try {
-        const defaultProvider = process.env.DEFAULT_AI_PROVIDER || 'ollama'; // Default to 'ollama' if not set
+        const defaultProvider = process.env.DEFAULT_AI_PROVIDER || 'vertexai'; // Default to 'vertexai' if not set
         const defaultOllamaModel = process.env.OLLAMA_MODEL || 'gemma3:4b'; // Example if Ollama has submodels
         const defaultVertexModel = process.env.VERTEX_AI_MODEL || 'gemini-2.5-pro-exp-03-25';
 
@@ -20,7 +20,7 @@ async function getModelsInfoController(req, res) {
             {
                 provider: 'vertexai',
                 id: defaultVertexModel,
-                name: `Vertex AI (${defaultVertexModel})`,
+                name: `Vertex AI (${defaultVertexModel})`, // Display name
                 max_input_tokens: 1048576,
                 max_output_tokens: 65535,
                 is_default: defaultProvider === 'vertexai'
@@ -29,10 +29,11 @@ async function getModelsInfoController(req, res) {
             // e.g., { provider: 'ollama', id: 'codellama', name: 'Ollama CodeLlama', ... }
         ];
 
-        res.json(standardizeApiResponse(models));
+        // Return standardized response without nesting under 'data'
+        res.status(200).json(standardizeApiResponse(models));
     } catch (err) {
-        logError('aiInfoControllerGetModels', err);
-        const errorPayload = createErrorResponse('SERVER_ERROR', 'Failed to get AI models information.');
+        logError('aiInfoController', err);
+        const errorPayload = createErrorResponse('SERVER_ERROR', `AI 모델 정보 조회 중 오류 발생: ${err.message}`);
         res.status(getHttpStatusByErrorCode('SERVER_ERROR')).json(standardizeApiResponse(errorPayload));
     }
 }

@@ -135,14 +135,13 @@ export async function sendMessage() {
     isMessageSending = true;
     sendButton.disabled = true;
     addMessage('user', messageText, null, 'user_message');
-    messageInput.value = '';
-
-    // AI Provider 선택
-    let selectedAiProvider = 'ollama';
+    messageInput.value = '';    // AI Provider 선택
+    let selectedAiProvider = 'vertexai';
     const aiProviderRadios = document.querySelectorAll('input[name="aiProvider"]');
     aiProviderRadios.forEach(radio => {
         if (radio.checked) {
-            selectedAiProvider = radio.value;
+            // gemini 값을 vertexai로 변환
+            selectedAiProvider = radio.value === 'gemini' ? 'vertexai' : radio.value;
         }
     });
 
@@ -299,6 +298,53 @@ export async function refreshSessionMessages() {
         updateApiResponse({ error: { message: error.message } });
         addMessage('error', `메시지 로드 중 오류: ${error.message}`, null, new Date().toISOString());
     }
+}
+
+// AI Provider 변경 시 Ollama 옵션 비활성화/활성화
+function toggleOllamaOptions() {
+    const aiProviderRadios = document.querySelectorAll('input[name="aiProvider"]');
+    const ollamaModelRadios = document.querySelectorAll('input[name="ollamaModel"]');
+    const qatCheckbox = document.getElementById('it-qat');
+    
+    let selectedProvider = 'vertexai'; // 기본값
+    aiProviderRadios.forEach(radio => {
+        if (radio.checked) {
+            selectedProvider = radio.value;
+        }
+    });
+    
+    const isOllamaSelected = (selectedProvider === 'ollama');
+    
+    // Ollama 모델 라디오 버튼들 비활성화/활성화
+    ollamaModelRadios.forEach(radio => {
+        radio.disabled = !isOllamaSelected;
+        radio.parentElement.style.opacity = isOllamaSelected ? '1' : '0.5';
+        radio.parentElement.style.cursor = isOllamaSelected ? 'pointer' : 'not-allowed';
+    });
+    
+    // 양자화 체크박스 비활성화/활성화
+    if (qatCheckbox) {
+        qatCheckbox.disabled = !isOllamaSelected;
+        qatCheckbox.parentElement.style.opacity = isOllamaSelected ? '1' : '0.5';
+        qatCheckbox.parentElement.style.cursor = isOllamaSelected ? 'pointer' : 'not-allowed';
+    }
+    
+    // "Ollama Model:" 레이블 비활성화/활성화
+    const ollamaModelSpan = document.querySelector('#ai-selector span[style*="margin-left: 15px"]');
+    if (ollamaModelSpan && ollamaModelSpan.textContent.includes('Ollama Model:')) {
+        ollamaModelSpan.style.opacity = isOllamaSelected ? '1' : '0.5';
+    }
+}
+
+// AI Provider 변경 이벤트 리스너
+export function initializeAiProviderToggle() {
+    const aiProviderRadios = document.querySelectorAll('input[name="aiProvider"]');
+    aiProviderRadios.forEach(radio => {
+        radio.addEventListener('change', toggleOllamaOptions);
+    });
+    
+    // 초기 상태 설정
+    toggleOllamaOptions();
 }
 
 // getter 함수들
