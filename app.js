@@ -1,4 +1,3 @@
-// Express 앱 초기화 (이건 먼저 해도 괜찮아)
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -26,7 +25,7 @@ let aiInfoRouter; // Declare aiInfoRouter
 let searchRouter;
 
 
-// 미들웨어 설정 (DB 연결 필요 없는 것들)
+// 미들웨어 설정
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
