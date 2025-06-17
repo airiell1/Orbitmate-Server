@@ -4,14 +4,9 @@ const { clobToString, convertClobFields, toSnakeCaseObj } = require('../utils/db
 
 // 사용자 등록 함수
 async function registerUser(username, email, password) {
-
   // 테스트 계정 고정 UID 적용 (DB에 항상 동일한 UID로 저장)
-  const isTestUser = (
-    username === 'APItest' &&
-    email === 'API@example.com' &&
-    password === 'password123'
-  );
-
+  const isTestUser = (email === 'API@example.com');
+  const testUserId = 'API_TEST_USER_ID';
 
   let connection;
   try {
@@ -21,92 +16,88 @@ async function registerUser(username, email, password) {
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(password, saltRounds);
 
-    // 이미 가입된 이메일인지 확인 (이중 체크: 트랜잭션 내에서 잠금)
-    let user_id;
-    let alreadyRegisteredUser = null;
-    await connection.execute('SET TRANSACTION ISOLATION LEVEL SERIALIZABLE');
+    // 이미 가입된 이메일인지 확인
     const emailCheck = await connection.execute(
-      `SELECT user_id, username, email FROM users WHERE email = :email FOR UPDATE`,
+      `SELECT user_id, username, email FROM users WHERE email = :email`,
       { email: email },
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
+
     if (emailCheck.rows.length > 0) {
-      alreadyRegisteredUser = {
-        user_id: emailCheck.rows[0].user_id || emailCheck.rows[0].USER_ID,
-        username: emailCheck.rows[0].username || emailCheck.rows[0].USERNAME,
-        email: emailCheck.rows[0].email || emailCheck.rows[0].EMAIL,
+      // 이미 가입된 사용자 반환
+      const existingUser = emailCheck.rows[0];
+      return {
+        user_id: existingUser.user_id || existingUser.USER_ID,
+        username: existingUser.username || existingUser.USERNAME,
+        email: existingUser.email || existingUser.EMAIL,
         already_registered: true
       };
-    } else {
-      // 신규 사용자 INSERT
-      if (isTestUser) {
-        // 테스트 계정은 항상 동일한 UID로 저장 (있으면 덮어쓰기, 없으면 생성)
-        // 먼저 기존에 UID가 있는지 확인
-        const testUserId = 'API_TEST_USER_ID';
-        // 기존에 같은 UID가 있으면 삭제(덮어쓰기 보장)
-        await connection.execute(
-          `DELETE FROM users WHERE user_id = :user_id OR email = :email`,
-          { user_id: testUserId, email: email },
-          { autoCommit: false }
-        );
-        // 새로 삽입
-        const result = await connection.execute(
-          `INSERT INTO users (user_id, username, email, password_hash)
-           VALUES (:user_id, :username, :email, :passwordHash)
-           RETURNING user_id INTO :user_idOut`,
-          {
-            user_id: testUserId,
-            username: username,
-            email: email,
-            passwordHash: passwordHash,
-            user_idOut: { type: oracledb.STRING, dir: oracledb.BIND_OUT }
-          },
-          { autoCommit: false }
-        );
-        user_id = result.outBinds.user_idOut[0];
-      } else {
-        const result = await connection.execute(
-          `INSERT INTO users (username, email, password_hash)
-           VALUES (:username, :email, :passwordHash)
-           RETURNING user_id INTO :user_id`,
-          {
-            username: username,
-            email: email,
-            passwordHash: passwordHash,
-            user_id: { type: oracledb.STRING, dir: oracledb.BIND_OUT }
-          },
-          { autoCommit: false }
-        );
-        user_id = result.outBinds.user_id[0];
-      }
     }
 
-    // 이미 가입된 경우, 트랜잭션 롤백 및 반환
-    if (alreadyRegisteredUser) {
-      await connection.rollback();
-      return alreadyRegisteredUser;
-    }
-    
+    // 신규 사용자 INSERT
+    let user_id;
+    if (isTestUser) {
+      // 테스트 계정의 경우 고정 ID로 생성
+      // 만약 동일한 user_id가 이미 존재한다면 제거 후 재생성
+      const existingTestUser = await connection.execute(
+        `SELECT user_id FROM users WHERE user_id = :user_id`,
+        { user_id: testUserId },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
+      );
+
+      if (existingTestUser.rows.length > 0) {
+        // 기존 테스트 사용자가 있으면 완전 삭제 (CASCADE로 연관 데이터도 삭제됨)
+        await connection.execute(
+          `DELETE FROM users WHERE user_id = :user_id`,
+          { user_id: testUserId },
+          { autoCommit: false }
+        );
+      }
+
+      // 새로운 테스트 사용자 생성
+      await connection.execute(
+        `INSERT INTO users (user_id, username, email, password_hash)
+         VALUES (:user_id, :username, :email, :passwordHash)`,
+        {
+          user_id: testUserId,
+          username: username,
+          email: email,
+          passwordHash: passwordHash
+        },
+        { autoCommit: false }
+      );
+      user_id = testUserId;
+    } else {
+      // 일반 사용자의 경우 시스템이 자동 생성하는 GUID 사용
+      const result = await connection.execute(
+        `INSERT INTO users (username, email, password_hash)
+         VALUES (:username, :email, :passwordHash)
+         RETURNING user_id INTO :user_id`,
+        {
+          username: username,
+          email: email,
+          passwordHash: passwordHash,
+          user_id: { type: oracledb.STRING, dir: oracledb.BIND_OUT }
+        },
+        { autoCommit: false }
+      );
+      user_id = result.outBinds.user_id[0];
+    }    
     // 사용자 설정 기본값 생성
     await connection.execute(
       `INSERT INTO user_settings (user_id, theme, language, font_size, notifications_enabled)
        VALUES (:user_id, 'light', 'ko', 14, 1)`,
-      { user_id: user_id }
+      { user_id: user_id },
+      { autoCommit: false }
     );
 
-    // 사용자 프로필이 이미 존재하는지 확인
-    const profileCheck = await connection.execute(
-      `SELECT COUNT(*) FROM user_profiles WHERE user_id = :user_id`,
-      { user_id: user_id }
+    // 사용자 프로필 기본값 생성
+    await connection.execute(
+      `INSERT INTO user_profiles (user_id, theme_preference, bio, badge, experience, "level")
+       VALUES (:user_id, 'light', NULL, NULL, 0, 1)`,
+      { user_id: user_id },
+      { autoCommit: false }
     );
-    // 프로필이 없는 경우에만 생성
-    if (profileCheck.rows[0][0] === 0) {
-      await connection.execute(
-        `INSERT INTO user_profiles (user_id, theme_preference, bio, badge, experience, "level")
-         VALUES (:user_id, 'light', NULL, NULL, 0, 1)`,
-        { user_id: user_id }
-      );
-    }
     
     await connection.commit(); // 모든 INSERT 작업 후 커밋
 

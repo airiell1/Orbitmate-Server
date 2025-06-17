@@ -30,14 +30,22 @@
       - `vertex_ai`: VertexAI 인스턴스 (직접 모델 생성/설정 가능)
       - `generativeModel`: Gemini 2.5 pro 모델 인스턴스 (기본 설정)
     - 참고: specialModeType에 따라 systemPrompt가 자동 강화(캔버스/검색 등), streamResponseCallback으로 스트리밍 응답 처리 가능
+  - `config/geminiapi.js`:
+    - Google AI Studio 연동, Gemini 2.0 Flash Exp 모델 사용
+    - **API 키 설정: `GEMINI_API_KEY` 환경변수 필요**
+    - 안전성 필터(괴롭힘/증오/성적/위험 콘텐츠), 스트림/캔버스 등 특수 모드 지원
+    - 주요 함수 및 내보내기:
+      - `getGeminiApiResponse(currentUserMessage, history, systemMessageText, specialModeType, streamResponseCallback, options)`: Google AI Studio에 대화 요청, 스트림/캔버스 등 특수 모드 지원
+      - `genAI`: GoogleGenerativeAI 인스턴스 (직접 모델 생성/설정 가능)
+      - `defaultModel`: 기본 모델 이름 ('gemini-2.0-flash-thinking-exp-01-21')
+    - 참고: specialModeType에 따라 systemPrompt가 자동 강화(캔버스/검색 등), 토큰 사용량 추적 기능 제공
 
 - **AI 제공자 및 유틸리티 (utils/)**
   - `utils/aiProvider.js`: AI 제공자 추상화 레이어
-    - **기본 provider: `'vertexai'` (Gemini)** - 2025년 6월 10일 ollama에서 변경
-    - 주요 함수:
-      - `fetchChatCompletion(aiProvider, currentUserMessage, history, systemMessageText, specialModeType, streamResponseCallback, options)`: AI 제공자별 요청 라우팅
-    - Vertex AI와 Ollama 간 통합 인터페이스 제공
-    - 옵션을 통한 모델별 설정 지원 (ollamaModel, vertexModelId, max_output_tokens_override 등)
+    - **기본 provider: `'geminiapi'` (Google AI Studio)** - 2025년 6월 17일 vertexai에서 변경
+    - 주요 함수:      - `fetchChatCompletion(aiProvider, currentUserMessage, history, systemMessageText, specialModeType, streamResponseCallback, options)`: AI 제공자별 요청 라우팅
+    - Google AI Studio, Vertex AI, Ollama 간 통합 인터페이스 제공
+    - 옵션을 통한 모델별 설정 지원 (ollamaModel, vertexModelId, geminiModel, max_output_tokens_override 등)
 
 - **컨트롤러**
 
@@ -192,6 +200,11 @@
 [2025-06-10] 기본 AI Provider 변경: ollama → vertexai 전체 시스템 변경 완료 (해결)
 [2025-06-10] GUEST_USER_ID 오류: chatController.js에서 GUEST_USER_ID가 미정의 → 'test-guest'로 변경 (해결)
 [2025-06-10] 테스트 페이지 UI 개선: Gemini 선택 시 Ollama 옵션 자동 비활성화 및 gemini → vertexai 자동 변환 완료 (해결)
+[2025-06-17] API 라우트 404 오류: 서버 IP 변경 시 API 요청이 404 에러 발생 → 라우트 설정 및 서버 연결 상태 확인 필요 (진행중)
+[2025-06-17] 회원탈퇴 후 CASCADE 오류: 사용자 삭제 시 연관 메시지/세션이 CASCADE로 삭제되어 리액션 API에서 참조 오류 발생 → 리액션 API에서 메시지 존재 여부 체크 강화 및 우아한 오류 처리 필요 (진행중)
+[2025-06-17] 기본 AI Provider 변경: vertexai → geminiapi (Google AI Studio) 전체 시스템 변경 완료 (해결)
+[2025-06-17] Google AI Studio API 통합: config/geminiapi.js 추가, 최신 공짜모델인 gemini-2.0-flash-thinking-exp-01-21 모델 사용 (해결)
+[2025-06-17] API 명세 업데이트: geminiapi provider 추가, 기본값 변경 반영 완료 (해결)
 ---
 
 ## 4. 작업 목록 (진행상황 체크)
@@ -504,30 +517,30 @@
 
 ---
 
-## 최신 시스템 상태 (2025-06-10 기준)
+## 최신 시스템 상태 (2025-06-17 기준)
 
 ### 🔧 현재 기본 설정
-- **기본 AI Provider**: `vertexai` (Gemini 2.5 Pro)
-- **기본 지역**: `global` 
+- **기본 AI Provider**: `geminiapi` (Google AI Studio)
+- **기본 모델**: `gemini-2.0-flash-thinking-exp-01-21`
 - **테스트 사용자 ID**: `test-guest`
-- **Vertex AI 모델**: `gemini-2.5-pro-exp-03-25`
+- **Vertex AI 모델**: `gemini-2.5-pro-exp-03-25` (대체 옵션)
 - **Ollama 모델**: `gemma3:4b` (대체 옵션)
 
 ### 🌟 주요 최적화 사항
 1. **UI/UX 개선**: Gemini 선택 시 Ollama 옵션 자동 비활성화
-2. **자동 매핑**: 테스트 페이지에서 `gemini` → `vertexai` 자동 변환
-3. **기본값 통일**: 전체 시스템에서 Vertex AI 우선 사용
+2. **자동 매핑**: 테스트 페이지에서 `gemini` → `geminiapi` 자동 변환
+3. **기본값 통일**: 전체 시스템에서 Google AI Studio 우선 사용
 
 ### 🚀 성능 향상
-- Gemini 2.5 Pro의 고품질 응답 제공
+- Gemini 2.0 Flash Thinking Exp의 고품질 응답 제공
 - 스트림/캔버스 모드 완벽 지원
 - 검색 기능과 AI 응답 통합
 
-### 📋 주요 변경 사항 요약 (2025-06-10)
-1. **기본 AI Provider 변경**: `ollama` → `vertexai`
-2. **테스트 ID 수정**: `GUEST_USER_ID` → `test-guest`
+### 📋 주요 변경 사항 요약 (2025-06-17)
+1. **기본 AI Provider 변경**: `vertexai` → `geminiapi` (Google AI Studio)
+2. **기본 모델 업데이트**: `gemini-2.0-flash-thinking-exp-01-21` 사용
 3. **UI 개선**: Gemini 선택 시 Ollama 옵션 자동 비활성화
-4. **자동 변환**: 프론트엔드에서 `gemini` → `vertexai` 매핑
+4. **자동 변환**: 프론트엔드에서 `gemini` → `geminiapi` 매핑
 
 ### 🔍 디버깅 로그 개선
 - chatController에 AI provider 결정 로그 추가
@@ -535,3 +548,4 @@
 - AI provider 매핑 상태 실시간 확인 가능
 
 ---
+````

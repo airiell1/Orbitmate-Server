@@ -28,6 +28,14 @@ const apis = [
     exampleReq: '', // No request body
     exampleRes: `[
    {
+     "provider": "geminiapi",
+     "id": "gemini-2.0-flash-thinking-exp-01-21", 
+     "name": "Google AI Studio (gemini-2.0-flash-thinking-exp-01-21)",
+     "max_input_tokens": 1048576, 
+     "max_output_tokens": 8192,
+     "is_default": true 
+   },
+   {
      "provider": "ollama",
      "id": "llama2", 
      "name": "Ollama (llama2)",
@@ -41,7 +49,7 @@ const apis = [
      "name": "Vertex AI (gemini-2.5-pro-exp-03-25)",
      "max_input_tokens": 1048576,
      "max_output_tokens": 65535,
-     "is_default": true 
+     "is_default": false 
    }
  ]`
   },
@@ -160,9 +168,28 @@ const apis = [
       { name: 'badge', type: 'text', label: '배지 (최대 50자)', required: false }
     ],
     exampleReq:  `{\n  "username": "APItestUser",\n  "theme_preference": "dark",\n  "bio": "새로운 자기소개입니다.",\n  "badge": "Gold Star"\n}`,
-    exampleRes:  `{\n  "user_id": "API_TEST_USER_ID",\n  "username": "APItest",\n  "email": "API@example.com",\n  "created_at": "YYYY-MM-DDTHH:mm:ss.sssZ",\n  "is_active": 1,\n  "profile_image_path": null,\n  "theme_preference": "light",\n  "bio": "테스트 계정입니다.",\n  "badge": null,\n  "experience": 0,\n  "level": 1,\n  "updated_at": "YYYY-MM-DDTHH:mm:ss.sssZ"\n}`
+    exampleRes:  `{\n  "user_id": "API_TEST_USER_ID",\n  "username": "APItest",\n  "email": "API@example.com",\n  "created_at": "YYYY-MM-DDTHH:mm:ss.sssZ",\n  "is_active": 1,\n  "profile_image_path": null,\n  "theme_preference": "light",\n  "bio": "테스트 계정입니다.",\n  "badge": null,\n  "experience": 0,\n  "level": 1,\n  "updated_at": "YYYY-MM-DDTHH:mm:ss.sssZ"\n}`  },
+  
+  /* 3. 채팅 세션 관리 */  {
+    method: 'GET',
+    path: '/api/sessions/:user_id/chat/sessions',
+    title: '사용자 세션 목록 조회',
+    desc: '특정 사용자의 모든 채팅 세션 목록을 조회합니다.<br>Validation Rules: <ul><li>`user_id` (URL param): 필수, 최대 36자.</li></ul><span class="api-desc-note">user_id에 "API_TEST_USER_ID"를 입력하면 테스트 계정의 세션 목록을 조회할 수 있습니다.</span>',
+    params: [
+      { name: 'user_id', type: 'text', label: '사용자 ID (최대 36자)', required: true, inPath: true }
+    ],
+    exampleReq: '',
+    exampleRes: `[
+  {
+    "session_id": "API_TEST_SESSION_ID",
+    "title": "테스트 세션",
+    "created_at": "YYYY-MM-DDTHH:mm:ss.sssZ",
+    "updated_at": "YYYY-MM-DDTHH:mm:ss.sssZ",
+    "category": "일반",
+    "is_archived": false
+  }
+]`
   },
-  /* 3. 채팅 세션 관리 */
   {
     method: 'POST',
     path: '/api/chat/sessions',
@@ -198,9 +225,8 @@ const apis = [
     params: [
       { name: 'session_id', type: 'text', label: '세션 ID (최대 36자)', required: true, inPath: true },
       { name: 'user_id', type: 'text', label: '사용자 ID (최대 36자, 요청 본문)', required: true, inPath: false }
-    ],
-    exampleReq: `{\n  "user_id": "USER123"\n}`,
-    exampleRes: `{\n  "message": "세션 및 관련 메시지가 성공적으로 삭제되었습니다.",\n  "deleted_session_id": "API_TEST_SESSION_ID",\n  "deleted_messages_count": 0\n}` // 메시지 카운트는 실제 삭제된 수에 따라 달라질 수 있습니다.
+    ],    exampleReq: `{\n  "user_id": "API_TEST_USER_ID"\n}`,
+    exampleRes: `{\n  "message": "세션이 성공적으로 삭제되었습니다."\n}`
   },
   {
     method: 'GET',
@@ -290,25 +316,51 @@ const apis = [
       { name: 'file', type: 'file', label: '업로드 파일 (다양한 타입 허용, max 5MB)', required: true },
       { name: 'user_id', type: 'text', label: '사용자 ID (최대 36자)', required: false }
     ],
-    exampleReq: '(multipart/form-data: file=파일 선택, user_id=USER123)',
-    exampleRes:  ` {\n  "message": "파일이 성공적으로 업로드되었습니다.",\n  "fileMessage": { ... }\n}`
+    exampleReq: '(multipart/form-data: file=파일 선택, user_id=USER123)',    exampleRes:  ` {\n  "message": "파일이 성공적으로 업로드되었습니다.",\n  "fileMessage": { ... }\n}`
   },
   
-  /* WebSocket 실시간 메시지 API */
+  /* 6. 검색 기능 */  {
+    method: 'GET',
+    path: '/api/search/wikipedia',
+    title: '위키피디아 검색',
+    desc: '위키피디아에서 키워드를 검색하여 관련 정보를 가져옵니다.<br>Query Parameters: <ul><li>`q`: 검색어 (필수, 1-500자)</li><li>`limit`: 결과 개수 (선택, 1-50, 기본값: 10)</li><li>`language`: 언어 코드 (선택, ko/en/ja/zh/fr/de/es/ru, 기본값: ko)</li></ul>',
+    params: [
+      { name: 'q', type: 'text', label: '검색어 (1-500자)', required: true, default: '대한민국' },
+      { name: 'limit', type: 'number', label: '결과 개수 (1-50, 기본값: 10)', required: false, default: '5' },
+      { name: 'language', type: 'text', label: '언어 코드 (ko/en/ja 등, 기본값: ko)', required: false, default: 'ko' }
+    ],
+    exampleReq: '?q=대한민국&limit=5&language=ko',
+    exampleRes: `{
+  "query": "대한민국",
+  "language": "ko", 
+  "limit": 5,
+  "results": [
+    {
+      "title": "대한민국",
+      "snippet": "대한민국은 동아시아의 한반도 남부에 위치한 공화국이다...",
+      "url": "https://ko.wikipedia.org/wiki/대한민국",
+      "thumbnail": "https://upload.wikimedia.org/...",
+      "page_id": "123456"
+    }
+  ],
+  "total_found": 1
+}`
+  },
+  
+  /* 7. WebSocket 실시간 메시지 API */
   {
     method: 'GET',
     path: '/api/websocket/status',
     title: 'WebSocket 연결 상태 조회',
     desc: 'WebSocket 서버의 현재 연결 상태와 활성 연결 정보를 조회합니다.',
     params: [],
-    exampleReq: '',
-    exampleRes: `{
+    exampleReq: '',    exampleRes: `{
   "websocket_status": "active",
   "server_info": {
     "total_connections": 5,
     "active_users": 3,
     "active_sessions": 2,
-    "timestamp": "2025-06-11T10:30:00.000Z"
+    "timestamp": "2025-06-17T10:30:00.000Z"
   },
   "connection_details": {
     "activeConnections": {...},
@@ -333,12 +385,11 @@ const apis = [
     "message": "시스템 공지사항",
     "type": "announcement"
   }
-}`,
-    exampleRes: `{
+}`,    exampleRes: `{
   "message": "메시지가 성공적으로 브로드캐스트되었습니다.",
   "session_id": "session_123",
   "event": "custom_notification",
-  "timestamp": "2025-06-11T10:30:00.000Z"
+  "timestamp": "2025-06-17T10:30:00.000Z"
 }`
   },
   {
@@ -357,12 +408,11 @@ const apis = [
     "message": "개인 메시지입니다",
     "from": "system"
   }
-}`,
-    exampleRes: `{
+}`,    exampleRes: `{
   "message": "메시지가 성공적으로 전송되었습니다.",
-  "user_id": "guest",
+  "user_id": "test-guest",
   "event": "private_message",
-  "timestamp": "2025-06-11T10:30:00.000Z"
+  "timestamp": "2025-06-17T10:30:00.000Z"
 }`
   },
   {
@@ -378,16 +428,15 @@ const apis = [
     exampleReq: `{
   "session_id": "session_123",
   "event_type": "test_message"
-}`,
-    exampleRes: `{
+}`,    exampleRes: `{
   "message": "세션 테스트 메시지가 전송되었습니다.",
-  "target": {"session_id": "session_123"},
+  "target": {"session_id": "API_TEST_SESSION_ID"},
   "event_type": "test_message",
   "test_data": {
     "message": "WebSocket 테스트 메시지입니다.",
-    "test_timestamp": "2025-06-11T10:30:00.000Z",
+    "test_timestamp": "2025-06-17T10:30:00.000Z",
     "from_api": true,
-    "test_id": "test_1718102200000"
+    "test_id": "test_1734422400000"
   }
 }`
   }

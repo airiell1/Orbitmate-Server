@@ -3,8 +3,8 @@
 import { updateApiResponse } from './utils.js';
 import { addMessage, setCurrentSessionId } from './chat.js';
 
-const GUEST_USER_ID = 'guest';
-const API_TEST_USER_ID = 'test-guest';
+const GUEST_USER_ID = 'test-guest';
+const API_TEST_USER_ID = 'API_TEST_USER_ID';
 
 // *** 채팅 세션 관리 테스트 함수들 ***
 export async function createChatSessionTest() {
@@ -125,11 +125,10 @@ export async function deleteChatSessionTest() {
     
     if (!confirm(`정말로 세션 ${sessId}를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) return;
 
-    try {
-        const response = await fetch(`/api/chat/sessions/${sessId}`, {
+    try {        const response = await fetch(`/api/chat/sessions/${sessId}`, {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: GUEST_USER_ID })
+            body: JSON.stringify({ user_id: API_TEST_USER_ID })
         });
         const data = await response.json();
         updateApiResponse(data);

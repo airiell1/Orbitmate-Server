@@ -136,12 +136,12 @@ export async function sendMessage() {
     sendButton.disabled = true;
     addMessage('user', messageText, null, 'user_message');
     messageInput.value = '';    // AI Provider 선택
-    let selectedAiProvider = 'vertexai';
+    let selectedAiProvider = 'geminiapi';
     const aiProviderRadios = document.querySelectorAll('input[name="aiProvider"]');
     aiProviderRadios.forEach(radio => {
         if (radio.checked) {
             // gemini 값을 vertexai로 변환
-            selectedAiProvider = radio.value === 'gemini' ? 'vertexai' : radio.value;
+            selectedAiProvider = radio.value === 'gemini' ? 'geminiapi' : radio.value;
         }
     });
 

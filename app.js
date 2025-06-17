@@ -42,6 +42,11 @@ app.get('/test', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'test.html'));
 });
 
+// favicon.ico 요청 처리 (404 오류 방지)
+app.get('/favicon.ico', (req, res) => {
+  res.status(204).end(); // No Content
+});
+
 // API 문서 라우트를 app.js에서 직접 처리
 app.get('/api/docs', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'api_docs.html'));
@@ -76,8 +81,7 @@ async function startServer() {
     
     // WebSocket 인스턴스를 채팅 컨트롤러에 전달
     const chatController = require('./controllers/chatController');
-    chatController.setSocketIO(io);
-    
+    chatController.setSocketIO(io);    
     // WebSocket API 라우트 설정
     const { router: websocketRouter, setSocketIO: setWebSocketRouterIO } = require('./routes/websocket');
     setWebSocketRouterIO(io);
@@ -86,7 +90,9 @@ async function startServer() {
     chatRouter = require('./routes/chat');
     sessionsRouter = require('./routes/sessions');
     aiInfoRouter = require('./routes/aiInfo'); // Require aiInfoRouter
-    searchRouter = require('./routes/search'); // Require searchRouter    app.use('/api/users', usersRouter);
+    searchRouter = require('./routes/search'); // Require searchRouter
+
+    app.use('/api/users', usersRouter);
     app.use('/api/chat', chatRouter);
     app.use('/api/sessions', sessionsRouter);
     app.use('/api/ai', aiInfoRouter); // Mount aiInfoRouter

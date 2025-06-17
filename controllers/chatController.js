@@ -110,10 +110,9 @@ async function sendMessageController(req, res) {
     
     // 임시 게스트 사용자 ID (테스트용)
     const user_id = 'test-guest'; // 테스트용 사용자 ID
-    
-    // AI 제공자 및 모델 정보 결정
-    let actualAiProvider = 'vertexai'; // 기본값
-    let actualModelId = 'gemini-2.5-pro-exp-03-25'; // 기본 Vertex AI 모델
+      // AI 제공자 및 모델 정보 결정
+    let actualAiProvider = 'geminiapi'; // 기본값
+    let actualModelId = 'gemini-2.0-flash-thinking-exp-01-21'; // 기본 Gemini API Studio 모델
     
     // 사용자 설정에서 AI 제공자 확인 (게스트 사용자는 제외)
     let userSettings = null;
@@ -130,10 +129,9 @@ async function sendMessageController(req, res) {
         // 사용자 설정을 가져올 수 없는 경우 기본값 사용
         console.warn('사용자 설정을 가져올 수 없습니다. 기본값을 사용합니다.', err.message);
       }
-    }
-
-    const responseData = await withTransaction(async (connection) => {
+    }    const responseData = await withTransaction(async (connection) => {
       const userMessageTokenCountToStore = user_message_token_count !== undefined ? user_message_token_count : null;
+      
       const userMessageResult = await saveUserMessageToDB(connection, session_id, user_id, message, userMessageTokenCountToStore);
       
       if (!userMessageResult || !userMessageResult.user_message_id) {
@@ -149,14 +147,14 @@ async function sendMessageController(req, res) {
 
       const effectiveSystemPrompt = systemPrompt && systemPrompt.trim() ? systemPrompt.trim() : null;
         // Determine AI Provider and Model
-      const defaultUserProvider = process.env.DEFAULT_AI_PROVIDER || 'vertexai';
+      const defaultUserProvider = process.env.DEFAULT_AI_PROVIDER || 'geminiapi';
       console.log(`[chatController] ai_provider_override: ${ai_provider_override}, defaultUserProvider: ${defaultUserProvider}`);
       const actualAiProvider = ai_provider_override || defaultUserProvider;
-      console.log(`[chatController] actualAiProvider: ${actualAiProvider}`);
-
-      let actualModelId = model_id_override;
+      console.log(`[chatController] actualAiProvider: ${actualAiProvider}`);      let actualModelId = model_id_override;
       if (!actualModelId) {
-          if (actualAiProvider === 'ollama') {
+          if (actualAiProvider === 'geminiapi') {
+              actualModelId = process.env.GEMINI_MODEL || 'gemini-2.0-flash-thinking-exp-01-21';
+          } else if (actualAiProvider === 'ollama') {
               actualModelId = process.env.OLLAMA_MODEL || 'gemma3:4b'; // Default Ollama model
           } else if (actualAiProvider === 'vertexai') {
               actualModelId = process.env.VERTEX_AI_MODEL || 'gemini-2.5-pro-exp-03-25';
@@ -310,10 +308,9 @@ async function sendMessageController(req, res) {
     if (err.code === 'DB_BIND_ERROR' || (err.message && err.message.includes('NJS-044'))) { // NJS-044 is an example, adjust if needed
         const errorPayload = createErrorResponse('DB_BIND_ERROR', `데이터베이스 바인딩 오류: ${err.message}`);
         return res.status(getHttpStatusByErrorCode('DB_BIND_ERROR')).json(standardizeApiResponse(errorPayload));
-    }
-    if (err.code === 'SESSION_NOT_FOUND' || (err.message && err.message.startsWith("세션 ID"))) { 
-        const errorPayload = createErrorResponse('SESSION_NOT_FOUND', err.message);
-        return res.status(getHttpStatusByErrorCode('SESSION_NOT_FOUND')).json(standardizeApiResponse(errorPayload));
+    }    if (err.code === 'SESSION_NOT_FOUND' || (err.message && err.message.includes("세션 ID"))) { 
+        const errorPayload = createErrorResponse('SESSION_NOT_FOUND', '세션이 존재하지 않습니다. 세션이 삭제되었거나 만료되었을 수 있습니다.');
+        return res.status(404).json(standardizeApiResponse(errorPayload));
     }
      if (err.code === 'DB_ERROR') {
         const errorPayload = createErrorResponse('DB_ERROR', err.message);
@@ -427,30 +424,47 @@ async function addReactionController(req, res) {
     const errorPayload = createErrorResponse('INVALID_INPUT', '리액션이 너무 깁니다 (최대 10자).');
     return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
   }
-  
-  try {
+    try {
+    let reactionUpdated = false;
     await withTransaction(async (connection) => {
+      // 먼저 메시지가 존재하는지 확인
+      const messageCheck = await connection.execute(
+        `SELECT message_id FROM chat_messages WHERE message_id = :messageId`,
+        { messageId },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
+      );
+
+      if (messageCheck.rows.length === 0) {
+        // 메시지가 존재하지 않으면 404 오류가 아닌 200으로 처리 (이미 삭제된 메시지)
+        console.warn(`메시지 ${messageId}가 존재하지 않습니다. 이미 삭제된 메시지일 수 있습니다.`);
+        return;
+      }
+
       const result = await connection.execute(
         `UPDATE chat_messages SET reaction = :reaction WHERE message_id = :messageId`,
         { reaction, messageId },
-        { autoCommit: false } // withTransaction handles commit
+        { autoCommit: false }
       );
 
-      if (result.rowsAffected === 0) {
-        // console.warn(`Warning in addReactionController: Message with ID ${messageId} not found or reaction not added.`);
-        const errorPayload = createErrorResponse('MESSAGE_NOT_FOUND', '메시지를 찾을 수 없거나 리액션이 추가되지 않았습니다.');
-        const err = new Error(errorPayload.error.message);
-        err.code = 'MESSAGE_NOT_FOUND';
-        throw err;
+      if (result.rowsAffected > 0) {
+        reactionUpdated = true;
       }
     });
-    res.status(200).json(standardizeApiResponse({ message: '리액션이 성공적으로 추가되었습니다.' }));
+
+    if (reactionUpdated) {
+      res.status(200).json(standardizeApiResponse({ 
+        message: '리액션이 성공적으로 추가되었습니다.',
+        reaction: reaction
+      }));
+    } else {
+      // 메시지가 존재하지 않는 경우 부드럽게 처리
+      res.status(200).json(standardizeApiResponse({ 
+        message: '메시지가 존재하지 않아 리액션을 추가할 수 없습니다. 메시지가 삭제되었을 가능성이 있습니다.',
+        warning: 'MESSAGE_NOT_FOUND'
+      }));
+    }
   } catch (err) {
     logError('chatControllerAddReaction', err);
-    if (err.code === 'MESSAGE_NOT_FOUND') {
-        const errorPayload = createErrorResponse(err.code, err.message);
-        return res.status(getHttpStatusByErrorCode(err.code)).json(standardizeApiResponse(errorPayload));
-    }
     const errorPayload = createErrorResponse('SERVER_ERROR', `리액션 추가 중 오류 발생: ${err.message}`);
     res.status(getHttpStatusByErrorCode('SERVER_ERROR')).json(standardizeApiResponse(errorPayload));
   }
@@ -469,30 +483,46 @@ async function removeReactionController(req, res) {
     const errorPayload = createErrorResponse('INVALID_INPUT', '메시지 ID가 너무 깁니다 (최대 36자).');
     return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
   }
-
   try {
+    let reactionRemoved = false;
     await withTransaction(async (connection) => {
+      // 먼저 메시지가 존재하는지 확인
+      const messageCheck = await connection.execute(
+        `SELECT message_id FROM chat_messages WHERE message_id = :messageId`,
+        { messageId },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
+      );
+
+      if (messageCheck.rows.length === 0) {
+        // 메시지가 존재하지 않으면 200으로 처리 (이미 삭제된 메시지)
+        console.warn(`메시지 ${messageId}가 존재하지 않습니다. 이미 삭제된 메시지일 수 있습니다.`);
+        return;
+      }
+
       const result = await connection.execute(
         `UPDATE chat_messages SET reaction = NULL WHERE message_id = :messageId`,
         { messageId },
-        { autoCommit: false } // withTransaction handles commit
+        { autoCommit: false }
       );
 
-      if (result.rowsAffected === 0) {
-        // console.warn(`Warning in removeReactionController: Message with ID ${messageId} not found or reaction not removed.`);
-        const errorPayload = createErrorResponse('MESSAGE_NOT_FOUND', '메시지를 찾을 수 없거나 리액션이 제거되지 않았습니다. 해당 메시지에 리액션이 없거나, 다른 사용자의 리액션일 수 있습니다.');
-        const err = new Error(errorPayload.error.message);
-        err.code = 'MESSAGE_NOT_FOUND';
-        throw err;
+      if (result.rowsAffected > 0) {
+        reactionRemoved = true;
       }
     });
-    res.status(200).json(standardizeApiResponse({ message: '리액션이 성공적으로 제거되었습니다.' }));
+
+    if (reactionRemoved) {
+      res.status(200).json(standardizeApiResponse({ 
+        message: '리액션이 성공적으로 제거되었습니다.'
+      }));
+    } else {
+      // 메시지가 존재하지 않는 경우 부드럽게 처리
+      res.status(200).json(standardizeApiResponse({ 
+        message: '메시지가 존재하지 않아 리액션을 제거할 수 없습니다. 메시지가 삭제되었을 가능성이 있습니다.',
+        warning: 'MESSAGE_NOT_FOUND'
+      }));
+    }
   } catch (err) {
     logError('chatControllerRemoveReaction', err);
-     if (err.code === 'MESSAGE_NOT_FOUND') {
-        const errorPayload = createErrorResponse(err.code, err.message);
-        return res.status(getHttpStatusByErrorCode(err.code)).json(standardizeApiResponse(errorPayload));
-    }
     const errorPayload = createErrorResponse('SERVER_ERROR', `리액션 제거 중 오류 발생: ${err.message}`);
     res.status(getHttpStatusByErrorCode('SERVER_ERROR')).json(standardizeApiResponse(errorPayload));
   }

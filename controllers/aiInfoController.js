@@ -3,12 +3,20 @@ const { standardizeApiResponse } = require('../utils/apiResponse');
 const { createErrorResponse, getHttpStatusByErrorCode, logError } = require('../utils/errorHandler');
 
 async function getModelsInfoController(req, res) {
-    try {
-        const defaultProvider = process.env.DEFAULT_AI_PROVIDER || 'vertexai'; // Default to 'vertexai' if not set
+    try {        const defaultProvider = process.env.DEFAULT_AI_PROVIDER || 'geminiapi'; // Default to 'geminiapi' if not set
         const defaultOllamaModel = process.env.OLLAMA_MODEL || 'gemma3:4b'; // Example if Ollama has submodels
         const defaultVertexModel = process.env.VERTEX_AI_MODEL || 'gemini-2.5-pro-exp-03-25';
+        const defaultGeminiModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash-thinking-exp-01-21';
 
         const models = [
+            {
+                provider: 'geminiapi',
+                id: defaultGeminiModel,
+                name: `Google AI Studio (${defaultGeminiModel})`, // Display name
+                max_input_tokens: 1048576,
+                max_output_tokens: 8192,
+                is_default: defaultProvider === 'geminiapi'
+            },
             {
                 provider: 'ollama',
                 id: defaultOllamaModel, // This might need to be more dynamic if multiple Ollama models are selectable

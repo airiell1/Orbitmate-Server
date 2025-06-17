@@ -100,13 +100,18 @@ async function getChatHistoryFromDB(connection, sessionId, includeCurrentUserMes
 // connection, user_id 인자를 추가하고 순서를 맞춤
 async function saveUserMessageToDB(connection, sessionId, user_id, message, userTokenCount = null) {
   try {
+    // 세션 존재 여부 확인
     const sessionCheck = await connection.execute(
       `SELECT 1 FROM chat_sessions WHERE session_id = :sessionId`,
       { sessionId: sessionId }
     );
     
     if (sessionCheck.rows.length === 0) {
-      throw new Error(`세션 ID '${sessionId}'가 존재하지 않습니다. 메시지를 저장할 수 없습니다.`);
+      // 세션이 없는 경우 부드럽게 처리
+      console.warn(`세션 ID '${sessionId}'가 존재하지 않습니다. 사용자가 삭제했거나 세션이 만료되었을 수 있습니다.`);
+      const error = new Error(`세션 ID '${sessionId}'가 존재하지 않습니다. 세션이 삭제되었거나 만료되었을 수 있습니다.`);
+      error.code = 'SESSION_NOT_FOUND';
+      throw error;
     }
 
     const result = await connection.execute(
