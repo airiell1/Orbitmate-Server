@@ -1,4 +1,4 @@
-// testScripts/utils.js - 공통 유틸리티 함수들
+// testScripts/utils.js - 테스트 페이지 유틸리티 함수들
 
 // API 응답 패널 업데이트 함수
 export function updateApiResponse(data) {
@@ -58,7 +58,3 @@ export function addMessageActions(messageElement, messageId, sender) {
     actionsDiv.appendChild(deleteButton);
     messageElement.appendChild(actionsDiv);
 }
-
-// 공통 상수
-export const GUEST_USER_ID = 'test-guest';
-export const API_TEST_USER_ID = 'API_TEST_USER_ID';

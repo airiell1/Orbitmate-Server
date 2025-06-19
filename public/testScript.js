@@ -28,7 +28,8 @@ import {
 import { 
     searchWikipediaTest, 
     searchNaverTest, 
-    searchKakaoTest 
+    searchKakaoTest,
+    searchWeatherTest 
 } from './testScripts/search.js';
 
 // =========================
@@ -105,6 +106,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const searchWikipediaButton = document.getElementById('wikipedia-search-button');
     const searchNaverButton = document.getElementById('search-naver-button');
     const searchKakaoButton = document.getElementById('search-kakao-button');
+    const searchWeatherButton = document.getElementById('weather-search-button');
 
     // 채팅 UI 버튼들
     const sendButton = document.getElementById('send-button');
@@ -128,9 +130,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (getUserSessionsButton) getUserSessionsButton.addEventListener('click', getUserSessionsTest);
     if (updateSessionButton) updateSessionButton.addEventListener('click', updateChatSessionTest);
     if (deleteSessionButton) deleteSessionButton.addEventListener('click', deleteChatSessionTest);
-    if (getSessionMessagesButton) getSessionMessagesButton.addEventListener('click', getSessionMessagesTest);
-
-    // 메시지 관리 이벤트 연결
+    if (getSessionMessagesButton) getSessionMessagesButton.addEventListener('click', getSessionMessagesTest);    // 메시지 관리 이벤트 연결
     if (editMessageButton) editMessageButton.addEventListener('click', editMessageTest);
     if (addReactionButton) addReactionButton.addEventListener('click', addReactionTest);
     if (removeReactionButton) removeReactionButton.addEventListener('click', removeReactionTest);
@@ -141,6 +141,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (searchWikipediaButton) searchWikipediaButton.addEventListener('click', searchWikipediaTest);
     if (searchNaverButton) searchNaverButton.addEventListener('click', searchNaverTest);
     if (searchKakaoButton) searchKakaoButton.addEventListener('click', searchKakaoTest);
+    if (searchWeatherButton) searchWeatherButton.addEventListener('click', searchWeatherTest);
 
     // 채팅 UI 이벤트 연결
     if (sendButton) sendButton.addEventListener('click', sendMessage);

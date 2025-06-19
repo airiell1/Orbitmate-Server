@@ -73,13 +73,16 @@ async function getChatHistoryFromDB(connection, sessionId, includeCurrentUserMes
     const bindParams = { sessionId: sessionId };
     if (sql.includes(':context_message_limit')) {
         bindParams.context_message_limit = parseInt(context_message_limit);
-    }
-
-    const result = await connection.execute(
+    }    const result = await connection.execute(
       sql,
       bindParams,
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
+
+    console.log(`[getChatHistoryFromDB] 세션 ${sessionId}: DB에서 ${result.rows.length}개 메시지 조회`);
+    result.rows.forEach((row, index) => {
+      console.log(`[getChatHistoryFromDB] 메시지 ${index + 1}: ${row.MESSAGE_TYPE} - 시간: ${row.CREATED_AT}`);
+    });
 
     // 모든 메시지 CLOB 변환
     const rows = await Promise.all(result.rows.map(async row => {

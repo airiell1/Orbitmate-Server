@@ -138,6 +138,72 @@ module.exports = (io) => {
       }
     });
 
+    // AI 스트리밍 메시지 요청 처리
+    socket.on('ai_streaming_request', async (data) => {
+      try {
+        console.log('AI 스트리밍 요청 받음:', data);
+        
+        const { sessionId, userId, message, ai_provider, systemPrompt, ollama_model, specialModeType } = data;
+        
+        if (!sessionId || !userId || !message) {
+          socket.emit('streaming_error', {
+            error: '필수 데이터가 누락되었습니다.',
+            timestamp: new Date().toISOString()
+          });
+          return;
+        }
+
+        // AI Provider 및 스트리밍 콜백 설정
+        const { fetchChatCompletion } = require('../utils/aiProvider');
+        
+        // 스트리밍 콜백 함수 정의
+        const streamResponseCallback = (chunk) => {
+          // 실시간으로 클라이언트에게 청크 전송
+          socket.emit('streaming_message', {
+            sessionId,
+            delta: chunk,
+            timestamp: new Date().toISOString()
+          });
+        };
+
+        // 대화 기록 조회
+        const connection = await getConnection();
+        const { getChatHistoryFromDB } = require('../models/chat');
+        const chatHistory = await getChatHistoryFromDB(connection, sessionId, false);
+        
+        // AI 응답 요청 (스트리밍 모드)
+        const aiResponse = await fetchChatCompletion(
+          ai_provider || 'geminiapi',
+          message,
+          chatHistory,
+          systemPrompt,
+          'stream', // 강제로 스트리밍 모드
+          streamResponseCallback,
+          {
+            ollamaModel: ollama_model,
+            max_output_tokens_override: 2048
+          }
+        );
+
+        // 스트리밍 완료 알림
+        socket.emit('message_complete', {
+          sessionId,
+          messageId: aiResponse?.ai_message_id || null,
+          totalTokens: aiResponse?.total_tokens || 0,
+          timestamp: new Date().toISOString()
+        });
+
+        await connection.close();
+
+      } catch (error) {
+        console.error('AI 스트리밍 오류:', error);
+        socket.emit('streaming_error', {
+          error: error.message || '스트리밍 중 오류가 발생했습니다.',
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+
     // 세션 나가기
     socket.on('leave_session', (data) => {
       const { sessionId } = data;

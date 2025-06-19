@@ -58,11 +58,11 @@
       - `uploadProfileImageController()`: 프로필 이미지 업로드
       - `deleteUserController()`: 회원 탈퇴
       - `checkEmailExists()`: 이메일 중복 확인 API 처리
-
   - `controllers/chatController.js`: 채팅 메시지 전송, AI 응답, 메시지 편집/삭제/리액션, 파일 업로드 등 채팅 관련 API 처리
-    - **기본 AI Provider: `'vertexai'`, 테스트 사용자 ID: `'test-guest'`**
+    - **기본 AI Provider: `'geminiapi'`, 테스트 사용자 ID: `'guest'`**
+    - **HTTP SSE 스트리밍**: WebSocket 제거, Server-Sent Events만 사용
     - 주요 함수:
-      - `sendMessageController()`: 메시지 전송 및 AI 응답 처리 (aiProvider 추상화를 통한 Vertex AI/Ollama 연동, 스트림/캔버스 모드 지원)
+      - `sendMessageController()`: 메시지 전송 및 AI 응답 처리 (aiProvider 추상화를 통한 HTTP SSE 스트리밍 지원)
       - `editMessageController()`: 메시지 편집
       - `addReactionController()`, `removeReactionController()`: 메시지 리액션 추가/제거
       - `deleteMessageController()`: 메시지 삭제
@@ -124,12 +124,12 @@
       - `getUserIdBySessionId(sessionId)`: 세션 ID로 사용자 ID 조회 (권한 체크용)
 
 - **프론트엔드**
-
   - `public/script.js`: 메인 채팅 프론트엔드 스크립트 (index.html용)
+    - **HTTP SSE 스트리밍**: WebSocket 제거, Server-Sent Events만 사용
     - 주요 함수 및 기능:
       - `initializeSession()`: 세션 초기화 및 자동 연결 (로컬 스토리지 기반 세션 복원)
       - `addMessage(sender, text, messageId, isEdited)`: 채팅 메시지 UI 추가 (메시지 액션 버튼 포함)
-      - `sendMessage()`: 메시지 전송 및 AI 응답 처리 (스트리밍, 캔버스 모드 지원)
+      - `sendMessage()`: 메시지 전송 및 AI 응답 처리 (HTTP SSE 스트리밍 지원)
       - `startEditing()`, `saveEdit()`, `deleteMessage()`: 메시지 편집/삭제 기능
       - `refreshMessages()`: 서버에서 메시지 새로고침
       - `fetchAiModelsAndPopulateSelector()`: AI 모델 목록 조회 및 드롭다운 생성
@@ -139,16 +139,16 @@
   - `public/test.html`: API 테스트 페이지
     - **기본 AI Provider: Gemini(vertexai) 선택됨**
     - Gemini 선택 시 Ollama 모델 선택 및 양자화 옵션 자동 비활성화
-
   - `public/testScript.js`: API 테스트 및 디버깅용 프론트엔드 스크립트 (test.html용)
+    - **HTTP SSE 스트리밍**: WebSocket 제거, Server-Sent Events만 사용
     - 모듈화 구조: testScripts/ 디렉토리의 개별 모듈을 import
       - `testScripts/user.js`: 사용자 관련 API 테스트 (회원가입, 로그인, 프로필, 설정)
       - `testScripts/session.js`: 세션 관련 API 테스트 (생성, 조회, 수정, 삭제)
       - `testScripts/message.js`: 메시지 관련 API 테스트 (편집, 리액션, 삭제, 파일 업로드)
       - `testScripts/search.js`: 검색 기능 API 테스트 (위키피디아, 네이버, 카카오)
       - `testScripts/chat.js`: 채팅 기능 (세션 초기화, 메시지 전송, 새로고침)
-        - **기본 AI Provider: `'vertexai'`로 설정됨**
-        - Gemini UI 선택 시 `vertexai`로 자동 변환 (`radio.value === 'gemini' ? 'vertexai' : radio.value`)
+        - **기본 AI Provider: `'geminiapi'`로 설정됨**
+        - Gemini UI 선택 시 `geminiapi` 사용 (`radio.value === 'gemini' ? 'geminiapi' : radio.value`)
       - `testScripts/utils.js`: 공통 유틸리티 함수 (API 응답 표시, 에러 처리)
     - 주요 역할: API 엔드포인트 테스트, 응답 데이터 검증, 서버 상태 점검
     - **UI 최적화**: `toggleOllamaOptions()` 함수로 AI Provider 변경 시 Ollama 옵션 자동 비활성화/활성화
@@ -198,13 +198,16 @@
 [2025-06-02] API 응답 형식 통일: standardizeApiResponse 함수를 원래 방식으로 복원 (단일 데이터 객체 반환), 검색 API는 createSearchApiResponse로 분리 (성공시 데이터 직접 반환, 실패시 에러 메시지 반환) (해결)
 [2025-06-02] 위키피디아 API 구현 완료: 백엔드/프론트엔드/테스트 UI 모두 구현, 검색 기능 정상 작동 확인 (해결)
 [2025-06-10] 기본 AI Provider 변경: ollama → vertexai 전체 시스템 변경 완료 (해결)
-[2025-06-10] GUEST_USER_ID 오류: chatController.js에서 GUEST_USER_ID가 미정의 → 'test-guest'로 변경 (해결)
+[2025-06-10] GUEST_USER_ID 오류: chatController.js에서 GUEST_USER_ID가 미정의 → 'guest'로 변경 (해결)
 [2025-06-10] 테스트 페이지 UI 개선: Gemini 선택 시 Ollama 옵션 자동 비활성화 및 gemini → vertexai 자동 변환 완료 (해결)
 [2025-06-17] API 라우트 404 오류: 서버 IP 변경 시 API 요청이 404 에러 발생 → 라우트 설정 및 서버 연결 상태 확인 필요 (진행중)
-[2025-06-17] 회원탈퇴 후 CASCADE 오류: 사용자 삭제 시 연관 메시지/세션이 CASCADE로 삭제되어 리액션 API에서 참조 오류 발생 → 리액션 API에서 메시지 존재 여부 체크 강화 및 우아한 오류 처리 필요 (진행중)
+[2025-06-17] 회원탈퇴 후 CASCADE 오류: 사용자 삭제 시 연관 메시지/세션이 CASCADE로 삭제되어 리액션 API에서 참조 오류 발생 → 리액션 API에서 메시지 존재 여부 체크 강화 및 우아한 오류 처리 필요 (해결)
 [2025-06-17] 기본 AI Provider 변경: vertexai → geminiapi (Google AI Studio) 전체 시스템 변경 완료 (해결)
 [2025-06-17] Google AI Studio API 통합: config/geminiapi.js 추가, 최신 공짜모델인 gemini-2.0-flash-thinking-exp-01-21 모델 사용 (해결)
 [2025-06-17] API 명세 업데이트: geminiapi provider 추가, 기본값 변경 반영 완료 (해결)
+[2025-06-19] WebSocket 완전 제거: 모든 WebSocket 관련 코드 제거, HTTP SSE 스트리밍만 사용하도록 단순화 → 팀원 사용 편의성 대폭 향상 (해결)
+[2025-06-19] 사용자 ID 통일: 모든 시스템에서 'guest' 사용, 일관성 확보 (해결)
+[2025-06-19] DB 저장 디버깅 강화: 스트리밍 모드에서도 DB 저장 상태 실시간 로그 확인 가능 (해결)
 ---
 
 ## 4. 작업 목록 (진행상황 체크)
@@ -216,13 +219,14 @@
 - [x] 메시지 리액션 제거 API (`DELETE /api/chat/messages/:message_id/reaction`)
 - [x] 파일 업로드/다운로드/권한 관리 (인증 최소화)
 - [x] JWT 인증/인가 (학습용 최소 구현)
+- [x] HTTP SSE 스트리밍 (WebSocket 제거 완료)
 
 ### 기존 개선 사항
 - [ ] API 오류 처리 표준화 및 상세화
 - [ ] 입력값 유효성 검사 강화
 - [ ] DB 커넥션 풀 최적화
-- [ ] API 응답 케이싱 통일 (standardizeApiResponse 유틸리티 추가 및 적용)
-- [ ] (선택) WebSocket 실시간 메시지
+- [x] API 응답 케이싱 통일 (standardizeApiResponse 유틸리티 추가 및 적용)
+- [x] WebSocket 완전 제거 및 HTTP SSE 스트리밍으로 단순화
 
 ### 신규 백엔드 기능 (우선순위별)
 
@@ -522,30 +526,36 @@
 ### 🔧 현재 기본 설정
 - **기본 AI Provider**: `geminiapi` (Google AI Studio)
 - **기본 모델**: `gemini-2.0-flash-thinking-exp-01-21`
-- **테스트 사용자 ID**: `test-guest`
+- **테스트 사용자 ID**: `guest`
 - **Vertex AI 모델**: `gemini-2.5-pro-exp-03-25` (대체 옵션)
 - **Ollama 모델**: `gemma3:4b` (대체 옵션)
+- **스트리밍 방식**: HTTP SSE (Server-Sent Events) 전용
 
 ### 🌟 주요 최적화 사항
-1. **UI/UX 개선**: Gemini 선택 시 Ollama 옵션 자동 비활성화
-2. **자동 매핑**: 테스트 페이지에서 `gemini` → `geminiapi` 자동 변환
-3. **기본값 통일**: 전체 시스템에서 Google AI Studio 우선 사용
+1. **WebSocket 제거**: 복잡한 WebSocket 코드 완전 제거, HTTP SSE 스트리밍만 사용
+2. **팀원 친화적**: 표준 HTTP API, 브라우저 네트워크 탭에서 확인 가능
+3. **UI/UX 개선**: Gemini 선택 시 Ollama 옵션 자동 비활성화
+4. **자동 매핑**: 테스트 페이지에서 `gemini` → `geminiapi` 자동 변환
+5. **기본값 통일**: 전체 시스템에서 Google AI Studio 우선 사용, 'guest' 사용자 ID 통일
 
 ### 🚀 성능 향상
 - Gemini 2.0 Flash Thinking Exp의 고품질 응답 제공
 - 스트림/캔버스 모드 완벽 지원
 - 검색 기능과 AI 응답 통합
+- DB 저장 보장 (스트리밍 모드에서도 메시지 정상 저장)
 
-### 📋 주요 변경 사항 요약 (2025-06-17)
-1. **기본 AI Provider 변경**: `vertexai` → `geminiapi` (Google AI Studio)
-2. **기본 모델 업데이트**: `gemini-2.0-flash-thinking-exp-01-21` 사용
-3. **UI 개선**: Gemini 선택 시 Ollama 옵션 자동 비활성화
-4. **자동 변환**: 프론트엔드에서 `gemini` → `geminiapi` 매핑
+### 📋 주요 변경 사항 요약 (2025-06-19)
+1. **WebSocket 완전 제거**: 프론트엔드/백엔드 모든 WebSocket 관련 코드 제거
+2. **HTTP SSE 스트리밍 전용**: 표준 HTTP 기반 Server-Sent Events만 사용
+3. **사용자 ID 통일**: 모든 시스템에서 `'guest'` 사용
+4. **팀원 사용성 개선**: 복잡한 WebSocket 설정 없이 바로 사용 가능
+5. **네트워크 디버깅**: 브라우저 개발자 도구에서 스트리밍 요청 확인 가능
 
 ### 🔍 디버깅 로그 개선
 - chatController에 AI provider 결정 로그 추가
 - 요청 파라미터 디버깅 로그 활성화
 - AI provider 매핑 상태 실시간 확인 가능
+- 스트리밍 모드에서 DB 저장 성공/실패 로그 추가
 
 ---
 ````

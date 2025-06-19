@@ -7,23 +7,7 @@ const { standardizeApiResponse } = require('../utils/apiResponse'); // Import st
 const path = require('path');
 const fs = require('fs');
 
-// 오류 처리 유틸리티 추가
 const { createErrorResponse, getHttpStatusByErrorCode, handleOracleError, logError } = require('../utils/errorHandler');
-
-// WebSocket 인스턴스를 저장할 변수 (app.js에서 설정됨)
-let io = null;
-
-// WebSocket 인스턴스 설정 함수
-function setSocketIO(socketIOInstance) {
-  io = socketIOInstance;
-}
-
-// WebSocket 브로드캐스트 헬퍼 함수
-function broadcastMessageToSession(sessionId, messageData) {
-  if (io && io.broadcastToSession) {
-    io.broadcastToSession(sessionId, 'new_message_from_api', messageData);
-  }
-}
 
 // 채팅 메시지 전송 및 AI 응답 받기 컨트롤러
 async function sendMessageController(req, res) {
@@ -79,7 +63,6 @@ async function sendMessageController(req, res) {
     const errorPayload = createErrorResponse('INVALID_INPUT', `잘못된 specialModeType 값입니다. 허용되는 값: ${allowedSpecialModeTypes.join(', ')}.`);
     return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
   }
-
   const user_id = req.user ? req.user.user_id : 'guest';
 
   // Additional validation for new optional parameters
@@ -104,19 +87,16 @@ async function sendMessageController(req, res) {
     return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
   }
   let connection;
-
   try {
     connection = await getConnection();
-    
-    // 임시 게스트 사용자 ID (테스트용)
-    const user_id = 'test-guest'; // 테스트용 사용자 ID
+    // 게스트 사용자 ID 사용
+    const user_id = 'guest'; // 일관성을 위해 'guest' 사용
       // AI 제공자 및 모델 정보 결정
     let actualAiProvider = 'geminiapi'; // 기본값
     let actualModelId = 'gemini-2.0-flash-thinking-exp-01-21'; // 기본 Gemini API Studio 모델
-    
-    // 사용자 설정에서 AI 제공자 확인 (게스트 사용자는 제외)
+      // 사용자 설정에서 AI 제공자 확인 (게스트 사용자는 제외)
     let userSettings = null;
-    if (user_id !== 'test-guest') {
+    if (user_id !== 'guest') {
       try {
         userSettings = await getUserSettings(user_id);
         if (userSettings && userSettings.preferred_ai_provider) {
@@ -131,8 +111,14 @@ async function sendMessageController(req, res) {
       }
     }    const responseData = await withTransaction(async (connection) => {
       const userMessageTokenCountToStore = user_message_token_count !== undefined ? user_message_token_count : null;
+        const userMessageResult = await saveUserMessageToDB(connection, session_id, user_id, message, userMessageTokenCountToStore);
       
-      const userMessageResult = await saveUserMessageToDB(connection, session_id, user_id, message, userMessageTokenCountToStore);
+      console.log(`[chatController] 사용자 메시지 저장 결과:`, {
+        specialModeType,
+        user_message_id: userMessageResult?.user_message_id,
+        message_length: message?.length,
+        streaming: specialModeType === 'stream'
+      });
       
       if (!userMessageResult || !userMessageResult.user_message_id) {
         const err = new Error('사용자 메시지 저장에 실패했습니다.');
@@ -140,10 +126,14 @@ async function sendMessageController(req, res) {
         throw err;
       }
 
-      const userMessageId = userMessageResult.user_message_id;
-
-      const effectiveContextLimit = context_message_limit !== undefined ? context_message_limit : null;
+      const userMessageId = userMessageResult.user_message_id;      const effectiveContextLimit = context_message_limit !== undefined ? context_message_limit : null;
       let chatHistoryForAI = await getChatHistoryFromDB(connection, session_id, false, effectiveContextLimit);
+      
+      // 디버깅: 대화 기록 확인
+      console.log(`[chatController] 대화 기록 조회 결과: ${chatHistoryForAI.length}개 메시지`);
+      chatHistoryForAI.forEach((msg, index) => {
+        console.log(`[chatController] 메시지 ${index + 1}: ${msg.role} - ${msg.parts[0].text.substring(0, 50)}...`);
+      });
 
       const effectiveSystemPrompt = systemPrompt && systemPrompt.trim() ? systemPrompt.trim() : null;
         // Determine AI Provider and Model
@@ -177,8 +167,26 @@ async function sendMessageController(req, res) {
       // This ensures fetchChatCompletion gets the correct model for ollama via its options parameter.
       if (actualAiProvider === 'ollama') {
           callOptions.ollamaModel = actualModelId;
-      }
+      }      // 스트리밍 콜백 함수 정의
+      let streamResponseCallback = null;
+      if (specialModeType === 'stream') {
+        // SSE 헤더 설정
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.flushHeaders();
 
+        // 스트리밍 콜백 함수
+        streamResponseCallback = (chunk) => {
+          if (chunk && typeof chunk === 'string') {
+            res.write(`data: ${JSON.stringify({ delta: chunk })}\\n\\n`);
+          }
+        };
+        
+        // 사용자 메시지 ID 먼저 전송
+        res.write(`event: ids\\ndata: ${JSON.stringify({ userMessageId: userMessageId.toString() })}\\n\\n`);
+      }
 
       // Updated AI call
       const aiResponseFull = await fetchChatCompletion(
@@ -187,7 +195,7 @@ async function sendMessageController(req, res) {
           chatHistoryForAI,           // History
           effectiveSystemPrompt,      // System prompt
           specialModeType,            // e.g., 'canvas', 'stream'
-          null,                       // streamResponseCallback - PASSING NULL
+          streamResponseCallback,     // 실제 스트리밍 콜백 전달
           callOptions                 // Options object
       );
 
@@ -199,95 +207,49 @@ async function sendMessageController(req, res) {
 
       }
       const aiContentFromVertex = aiResponseFull.content;
-      const aiMessageTokenCountToStore = aiResponseFull.actual_output_tokens !== undefined ? aiResponseFull.actual_output_tokens : null;
+      const aiMessageTokenCountToStore = aiResponseFull.actual_output_tokens !== undefined ? aiResponseFull.actual_output_tokens : null;      const aiMessageResult = await saveAiMessageToDB(connection, session_id, user_id, aiContentFromVertex, aiMessageTokenCountToStore);
 
-      const aiMessageResult = await saveAiMessageToDB(connection, session_id, user_id, aiContentFromVertex, aiMessageTokenCountToStore);
+      console.log(`[chatController] AI 메시지 저장 결과:`, {
+        specialModeType,
+        ai_message_id: aiMessageResult?.ai_message_id,
+        content_length: aiContentFromVertex?.length,
+        streaming: specialModeType === 'stream',
+        db_save_success: !!aiMessageResult?.ai_message_id
+      });
 
       if (!aiMessageResult || !aiMessageResult.ai_message_id) {
         const err = new Error('AI 메시지 저장에 실패했습니다.');
         err.code = 'DB_ERROR';
         throw err;
-      }
-      const aiMessageId = aiMessageResult.ai_message_id.toString();
+      }const aiMessageId = aiMessageResult.ai_message_id.toString();
       const aiCreatedAt = aiMessageResult.created_at;
-      const actualAiContentSaved = aiMessageResult.content;      return {
+      const actualAiContentSaved = aiMessageResult.content;
+
+      // 스트리밍 모드에서 AI 메시지 ID 전송
+      if (specialModeType === 'stream') {
+        res.write(`event: ai_message_id\\ndata: ${JSON.stringify({ aiMessageId: aiMessageId })}\\n\\n`);
+      }      return {
         user_message_id: userMessageId.toString(),
         ai_message_id: aiMessageId,
         message: actualAiContentSaved,
         created_at: aiCreatedAt ? new Date(aiCreatedAt).toISOString() : new Date().toISOString(),
         ai_message_token_count: aiMessageTokenCountToStore // Include in response
       };
-    });
-
-    // WebSocket으로 새 메시지 브로드캐스트
-    try {
-      // 사용자 메시지 브로드캐스트
-      broadcastMessageToSession(session_id, {
-        type: 'user_message',
-        message_id: responseData.user_message_id,
-        user_id: user_id,
-        session_id: session_id,
-        message_type: 'user',
-        message_content: message,
-        created_at: new Date().toISOString(),
-        is_realtime: true
-      });
-
-      // AI 응답 메시지 브로드캐스트
-      broadcastMessageToSession(session_id, {
-        type: 'ai_message',
-        message_id: responseData.ai_message_id,
-        user_id: user_id,
-        session_id: session_id,
-        message_type: 'ai',
-        message_content: responseData.message,
-        created_at: responseData.created_at,
-        ai_provider: actualAiProvider,
-        model_id: actualModelId,
-        is_realtime: true
-      });
-    } catch (wsError) {
-      console.warn('WebSocket 브로드캐스트 실패:', wsError.message);
-      // WebSocket 실패는 치명적이지 않으므로 계속 진행
-    }
-
-    // Send response based on responseData (non-streaming part)
+    });    // Send response based on responseData (non-streaming part)
     if (specialModeType === 'stream') {
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
-      res.flushHeaders();
-
-      res.write(`event: ids\\ndata: ${JSON.stringify({ userMessageId: responseData.user_message_id, aiMessageId: responseData.ai_message_id })}\\n\\n`);
-
-      const chunkSize = 100;
-      for (let i = 0; i < responseData.message.length; i += chunkSize) {
-        const chunk = responseData.message.substring(i, i + chunkSize);
-        res.write(`data: ${JSON.stringify({ type: 'chunk', content: chunk })}\\n\\n`);
-        await new Promise(resolve => setTimeout(resolve, 50));
-      }
+      // 스트리밍이 완료되었음을 알림
+      console.log(`[chatController] 스트리밍 완료 - DB 저장된 메시지:`, {
+        user_message_id: responseData.user_message_id,
+        ai_message_id: responseData.ai_message_id,
+        session_id: session_id
+      });
       res.write(`event: end\\ndata: ${JSON.stringify({ message: 'Stream ended' })}\\n\\n`);
-      return;    } else {
+      res.end();
+      return;
+    } else {
       // AI 제공자 및 모델 정보 추가
-      responseData.ai_provider = actualAiProvider; // selectedAiProvider -> actualAiProvider로 수정
-      if (actualAiProvider === 'ollama') { // selectedAiProvider -> actualAiProvider로 수정
-        responseData.ollama_model = actualModelId; // selectedOllamaModel -> actualModelId로 수정 (일관성 유지)
-      }
-
-      if (specialModeType === 'canvas') {
-        const htmlRegex = /```html\n([\s\S]*?)\n```/;
-        const cssRegex = /```css\n([\s\S]*?)\n```/;
-        const jsRegex = /```javascript\n([\s\S]*?)\n```/;
-        const htmlMatch = responseData.message.match(htmlRegex);
-        const cssMatch = responseData.message.match(cssRegex);
-        const jsMatch = responseData.message.match(jsRegex);
-        responseData.canvas_html = htmlMatch ? htmlMatch[1].trim() : '';
-        responseData.canvas_css = cssMatch ? cssMatch[1].trim() : '';
-        responseData.canvas_js = jsMatch ? jsMatch[1].trim() : '';
-      }
-      // AI 제공자 및 모델 정보 추가
-      responseData.ai_provider = actualAiProvider; // The provider that was actually used
-      responseData.model_id = actualModelId;       // The model_id that was actually used or resolved
+      responseData.ai_provider = actualAiProvider;
+      responseData.model_id = actualModelId;
       
       if (specialModeType === 'canvas') {
         const htmlRegex = /```html\n([\s\S]*?)\n```/;
@@ -300,6 +262,7 @@ async function sendMessageController(req, res) {
         responseData.canvas_css = cssMatch ? cssMatch[1].trim() : '';
         responseData.canvas_js = jsMatch ? jsMatch[1].trim() : '';
       }
+      
       res.json(standardizeApiResponse(responseData));
     }
   } catch (err) {
@@ -705,8 +668,7 @@ module.exports = {
   editMessageController,
   addReactionController,
   deleteMessageController,
-  removeReactionController, // 추가
+  removeReactionController,
   uploadFile,
-  getSessionMessagesController, // 추가
-  setSocketIO // WebSocket 인스턴스 설정 함수 추가
+  getSessionMessagesController
 };

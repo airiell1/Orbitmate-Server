@@ -123,11 +123,12 @@
                 <input type="file" id="chat-file-input">
                 <button id="upload-file-button">파일 업로드 (채팅)</button>
             </div>
-        </div>
-
-        <!-- 검색 기능 -->
+        </div>        <!-- 검색 기능 -->
         <div class="api-section">
             <h3>검색 기능</h3>
+            
+            <!-- 위키피디아 검색 -->
+            <h4>📚 위키피디아 검색</h4>
             <div>
                 <input type="text" id="wikipedia-search-query" placeholder="위키피디아 검색어" value="대한민국">
                 <input type="number" id="wikipedia-search-limit" placeholder="결과 개수" value="5" min="1" max="50">
@@ -136,21 +137,50 @@
                     <option value="en">영어 (en)</option>
                     <option value="ja">일본어 (ja)</option>
                     <option value="zh">중국어 (zh)</option>
-                </select>                <button id="wikipedia-search-button">위키피디아 검색</button>
+                </select>
+                <button id="wikipedia-search-button">위키피디아 검색</button>
             </div>
             
             <!-- 위키피디아 검색 결과 표시 영역 -->
             <div id="wikipedia-results-display" class="search-results-container"></div>
+            
+            <!-- 날씨 검색 -->
+            <h4>🌤️ 날씨 검색 (IP 기반 자동 위치 감지)</h4>
+            <div>
+                <select id="weather-units">
+                    <option value="metric">섭씨 (°C)</option>
+                    <option value="imperial">화씨 (°F)</option>
+                    <option value="kelvin">켈빈 (K)</option>
+                </select>
+                <select id="weather-lang">
+                    <option value="ko">한국어</option>
+                    <option value="en">영어</option>
+                    <option value="ja">일본어</option>
+                </select>
+                <input type="text" id="weather-city" placeholder="도시명 (선택사항 - 비워두면 IP 기반 자동감지)">
+                <button id="weather-search-button">날씨 검색</button>
+            </div>
+            
+            <!-- 좌표 직접 입력 (고급 옵션) -->
+            <div style="margin-top: 10px;">
+                <input type="number" id="weather-lat" placeholder="위도 (선택사항)" step="any" min="-90" max="90">
+                <input type="number" id="weather-lon" placeholder="경도 (선택사항)" step="any" min="-180" max="180">
+                <span style="font-size: 0.9em; color: #666;">※ 위도/경도 직접 입력 시 IP 감지 무시</span>
+            </div>
+            
+            <!-- 날씨 검색 결과 표시 영역 -->
+            <div id="weather-results-display" class="search-results-container"></div>
         </div>
 
         <div class="api-section">
             <h3>API 응답</h3>
             <pre id="api-response"></pre>
         </div>
+    </div>    <div class="footer">
+        <p>© 2025 Orbitmate - API 테스트 도구 (HTTP SSE 스트리밍)</p>
     </div>
 
-    <div class="footer">
-        <p>© 2025 Orbitmate - API 테스트 도구</p>
-    </div>    <script type="module" src="testScript.js"></script>
+    <!-- 메인 테스트 스크립트 -->
+    <script type="module" src="testScript.js"></script>
 </body>
 </html>

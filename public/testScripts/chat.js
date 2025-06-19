@@ -1,10 +1,17 @@
 // testScripts/chat.js - 채팅 관련 기능
 
-import { updateApiResponse, appendToApiResponse, addMessageActions, GUEST_USER_ID } from './utils.js';
+import { updateApiResponse, appendToApiResponse, addMessageActions } from './utils.js';
+
+// 게스트 사용자 ID
+const GUEST_USER_ID = 'guest';
 
 // 전역 변수
 let currentSessionId = null;
 let isMessageSending = false;
+
+// 스트리밍 메시지 처리
+let currentStreamingElement = null;
+let currentStreamingContentSpan = null;
 
 // 페이지 로드 시 새 세션 생성 또는 기존 세션 ID 사용 로직
 export async function initializeSession() {
@@ -47,11 +54,9 @@ export async function initializeSession() {
         }
         
         const data = await response.json();
-        currentSessionId = data.session_id;
-        
+        currentSessionId = data.session_id;        
         // 세션 ID 저장
         localStorage.setItem('currentTestSessionId', currentSessionId);
-        
         console.log('새 테스트 세션 생성됨:', currentSessionId);
         addMessage('시스템', `새로운 테스트 세션 시작 (ID: ${currentSessionId})`, null, 'system-message');
         
@@ -135,12 +140,14 @@ export async function sendMessage() {
     isMessageSending = true;
     sendButton.disabled = true;
     addMessage('user', messageText, null, 'user_message');
-    messageInput.value = '';    // AI Provider 선택
+    messageInput.value = '';
+
+    // AI Provider 선택
     let selectedAiProvider = 'geminiapi';
     const aiProviderRadios = document.querySelectorAll('input[name="aiProvider"]');
     aiProviderRadios.forEach(radio => {
         if (radio.checked) {
-            // gemini 값을 vertexai로 변환
+            // gemini 값을 geminiapi로 변환
             selectedAiProvider = radio.value === 'gemini' ? 'geminiapi' : radio.value;
         }
     });
@@ -181,69 +188,109 @@ export async function sendMessage() {
     console.log('전송할 요청 본문:', requestBody);
     
     let aiMessageElement = null;
-    let aiMessageContentSpan = null;
+    let aiMessageContentSpan = null;    try {
+        // HTTP 요청 방식으로 메시지 전송
+        await sendHttpRequest();
 
-    try {
-        const response = await fetch(`/api/chat/sessions/${currentSessionId}/messages`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(requestBody)
-        });
+        // HTTP 요청 함수
+        async function sendHttpRequest() {
+            const response = await fetch(`/api/chat/sessions/${currentSessionId}/messages`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody)
+            });
 
-        const apiResponse = document.getElementById('api-response');
-        apiResponse.textContent = '';
-        
-        if (streamMode && response.ok && response.headers.get('Content-Type')?.includes('text/event-stream')) {
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-            let eolIndex;
+            const apiResponse = document.getElementById('api-response');
+            apiResponse.textContent = '';
             
-            // AI 응답 메시지 요소 미리 생성
-            const aiMessageObj = addMessage('ai', '', null, 'ai_message');
-            aiMessageElement = aiMessageObj.messageElement;
-            aiMessageContentSpan = aiMessageObj.contentSpan;
+            if (streamMode && response.ok && response.headers.get('Content-Type')?.includes('text/event-stream')) {
+                // Server-Sent Events 스트리밍
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let eolIndex;
+                
+                // AI 응답 메시지 요소 미리 생성
+                const aiMessageObj = addMessage('ai', '', null, 'ai_message');
+                aiMessageElement = aiMessageObj.messageElement;
+                aiMessageContentSpan = aiMessageObj.contentSpan;
 
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                
-                buffer += decoder.decode(value, { stream: true });
-                
-                while ((eolIndex = buffer.indexOf('\n\n')) >= 0) {
-                    const chunk = buffer.slice(0, eolIndex);
-                    buffer = buffer.slice(eolIndex + 2);
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
                     
-                    if (chunk.startsWith('data: ')) {
-                        const dataStr = chunk.slice(6);
-                        if (dataStr === '[DONE]') break;
-                        
-                        try {
-                            const chunkData = JSON.parse(dataStr);
-                            if (chunkData.delta) {
-                                aiMessageContentSpan.textContent += chunkData.delta;
-                                const chatBox = document.getElementById('chat-box');
-                                chatBox.scrollTop = chatBox.scrollHeight;
-                                appendToApiResponse(chunkData.delta);
+                    buffer += decoder.decode(value, { stream: true });
+                    
+                    while ((eolIndex = buffer.indexOf('\n\n')) >= 0) {
+                        const chunk = buffer.slice(0, eolIndex);
+                        buffer = buffer.slice(eolIndex + 2);
+                          if (chunk.startsWith('data: ')) {
+                            const dataStr = chunk.slice(6);
+                            if (dataStr === '[DONE]') break;
+                              try {
+                                const chunkData = JSON.parse(dataStr);
+                                if (chunkData.delta) {
+                                    aiMessageContentSpan.textContent += chunkData.delta;
+                                    const chatBox = document.getElementById('chat-box');
+                                    chatBox.scrollTop = chatBox.scrollHeight;
+                                    appendToApiResponse(chunkData.delta);
+                                }
+                                // 사용자 메시지 ID 처리
+                                if (chunkData.userMessageId) {
+                                    console.log('사용자 메시지 ID 수신:', chunkData.userMessageId);
+                                }
+                                // AI 메시지 ID 처리
+                                if (chunkData.aiMessageId) {
+                                    console.log('AI 메시지 ID 수신:', chunkData.aiMessageId);
+                                    if (aiMessageElement) {
+                                        aiMessageElement.dataset.messageId = chunkData.aiMessageId;
+                                        addMessageActions(aiMessageElement, chunkData.aiMessageId, 'ai');
+                                    }
+                                }
+                            } catch (e) {
+                                console.error('청크 파싱 오류:', e, dataStr);                            }
+                        } else if (chunk.startsWith('event: ids')) {
+                            // ID 이벤트 처리
+                            const idsDataStr = chunk.slice(chunk.indexOf('data: ') + 6);
+                            try {
+                                const idsData = JSON.parse(idsDataStr);
+                                if (idsData.userMessageId) {
+                                    console.log('사용자 메시지 ID 수신:', idsData.userMessageId);
+                                }
+                            } catch (e) {
+                                console.error('ID 파싱 오류:', e, idsDataStr);
                             }
-                        } catch (e) {
-                            console.error('청크 파싱 오류:', e, dataStr);
+                        } else if (chunk.startsWith('event: ai_message_id')) {
+                            // AI 메시지 ID 이벤트 처리
+                            const aiIdDataStr = chunk.slice(chunk.indexOf('data: ') + 6);
+                            try {
+                                const aiIdData = JSON.parse(aiIdDataStr);
+                                if (aiIdData.aiMessageId && aiMessageElement) {
+                                    console.log('AI 메시지 ID 수신:', aiIdData.aiMessageId);
+                                    aiMessageElement.dataset.messageId = aiIdData.aiMessageId;
+                                    addMessageActions(aiMessageElement, aiIdData.aiMessageId, 'ai');
+                                }
+                            } catch (e) {
+                                console.error('AI ID 파싱 오류:', e, aiIdDataStr);
+                            }
                         }
                     }
                 }
-            }
-        } else {
-            const data = await response.json();
-            updateApiResponse(data);
-            
-            if (response.ok && data.ai_message && data.ai_message.content) {
-                const aiMessageObj = addMessage('ai', data.ai_message.content, data.ai_message.message_id, 'ai_message');
-                aiMessageElement = aiMessageObj.messageElement;
-                aiMessageContentSpan = aiMessageObj.contentSpan;
             } else {
-                addMessage('시스템', `오류: ${data.message || '알 수 없는 오류'}`, null, 'error-message');
+                // 일반 응답 처리
+                const data = await response.json();
+                updateApiResponse(data);
+                
+                if (response.ok && data.message) {
+                    // 일반 API 응답 형식 처리
+                    const aiMessageObj = addMessage('ai', data.message, data.ai_message_id, 'ai_message');
+                    aiMessageElement = aiMessageObj.messageElement;
+                    aiMessageContentSpan = aiMessageObj.contentSpan;
+                } else {
+                    addMessage('시스템', `오류: ${data.error?.message || data.message || '알 수 없는 오류'}`, null, 'error-message');
+                }
             }
         }
     } catch (error) {
@@ -276,6 +323,8 @@ export async function refreshSessionMessages() {
         }
         
         const messages = await response.json();
+        console.log('받은 메시지 데이터:', messages);
+        
         updateApiResponse({success: true, message_count: messages.length, data: messages});
         
         chatBox.innerHTML = '';
@@ -287,8 +336,28 @@ export async function refreshSessionMessages() {
             chatBox.appendChild(emptyMsg);
         } else {
             messages.forEach(msg => {
-                const sender = msg.sender === 'user' ? 'user' : 'ai';
-                addMessage(sender, msg.content, msg.message_id);
+                console.log('메시지 처리 중:', msg);
+                
+                // 백엔드 응답 형식 확인: message_type, message_content 또는 MESSAGE_TYPE, MESSAGE_CONTENT
+                const messageType = msg.message_type || msg.MESSAGE_TYPE;
+                const messageContent = msg.message_content || msg.MESSAGE_CONTENT;
+                const messageId = msg.message_id || msg.MESSAGE_ID;
+                
+                if (!messageType || !messageContent) {
+                    console.warn('메시지 형식 오류:', msg);
+                    return;
+                }
+                
+                const sender = messageType === 'user' ? 'user' : 'ai';
+                
+                // 메시지 내용이 비어있거나 '(내용 없음)'인 경우 처리
+                let displayContent = messageContent;
+                if (!displayContent || displayContent.trim() === '' || displayContent === '(내용 없음)') {
+                    displayContent = `[${sender === 'user' ? '사용자' : 'AI'} 메시지 - 내용 없음]`;
+                }
+                
+                console.log(`메시지 추가: ${sender} - ${displayContent.substring(0, 50)}...`);
+                addMessage(sender, displayContent, messageId);
             });
         }
         

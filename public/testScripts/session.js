@@ -3,7 +3,7 @@
 import { updateApiResponse } from './utils.js';
 import { addMessage, setCurrentSessionId } from './chat.js';
 
-const GUEST_USER_ID = 'test-guest';
+const GUEST_USER_ID = 'guest';
 const API_TEST_USER_ID = 'API_TEST_USER_ID';
 
 // *** 채팅 세션 관리 테스트 함수들 ***

@@ -36,8 +36,7 @@ class OrbitWebSocket {
     }
   }
 
-  setupConnectionHandlers() {
-    // 연결 성공
+  setupConnectionHandlers() {    // 연결 성공
     this.socket.on('connect', () => {
       console.log('WebSocket 연결 성공:', this.socket.id);
       this.isConnected = true;
@@ -45,6 +44,9 @@ class OrbitWebSocket {
       
       // 연결 상태 UI 업데이트
       this.updateConnectionStatus('connected');
+      
+      // 연결 성공 이벤트 발행
+      this.emit('connect');
       
       // 이전에 참가했던 세션이 있으면 자동 재참가
       if (this.currentSessionId && this.currentUserId) {
@@ -88,11 +90,13 @@ class OrbitWebSocket {
     });
   }
 
-  setupEventListeners() {
-    // 세션 참가 성공
+  setupEventListeners() {    // 세션 참가 성공
     this.socket.on('join_session_success', (data) => {
       console.log('세션 참가 성공:', data);
       this.emit('sessionJoined', data);
+      
+      // 연결 상태 UI 업데이트
+      this.updateConnectionStatus('session_joined');
     });
 
     // 세션 참가 실패
@@ -141,6 +145,24 @@ class OrbitWebSocket {
     this.socket.on('message_error', (data) => {
       console.error('메시지 오류:', data);
       this.emit('messageError', data);
+    });
+
+    // AI 스트리밍 메시지 수신
+    this.socket.on('streaming_message', (data) => {
+      console.log('스트리밍 메시지 수신:', data);
+      this.emit('streamingMessage', data);
+    });
+
+    // 스트리밍 완료 알림
+    this.socket.on('message_complete', (data) => {
+      console.log('메시지 완료:', data);
+      this.emit('messageComplete', data);
+    });
+
+    // 스트리밍 오류
+    this.socket.on('streaming_error', (data) => {
+      console.error('스트리밍 오류:', data);
+      this.emit('streamingError', data);
     });
 
     // 테스트 메시지
@@ -199,6 +221,38 @@ class OrbitWebSocket {
       timestamp: new Date().toISOString()
     });
 
+    return true;
+  }
+  // AI 스트리밍 메시지 전송
+  sendStreamingMessage(data) {
+    if (!this.isConnected) {
+      console.warn('WebSocket이 연결되지 않았습니다. 재연결을 시도합니다.');
+      this.socket.connect();
+      return false;
+    }
+
+    // 세션 정보가 없으면 데이터에서 가져오기
+    if (!this.currentSessionId && data.sessionId) {
+      this.currentSessionId = data.sessionId;
+    }
+    if (!this.currentUserId && data.userId) {
+      this.currentUserId = data.userId;
+    }
+
+    // 세션에 아직 참가하지 않았으면 먼저 참가 시도
+    if (!this.currentSessionId || !this.currentUserId) {
+      console.warn('세션 정보가 누락되었습니다.');
+      return false;
+    }
+
+    this.socket.emit('ai_streaming_request', {
+      sessionId: this.currentSessionId,
+      userId: this.currentUserId,
+      timestamp: new Date().toISOString(),
+      ...data
+    });
+
+    console.log('스트리밍 메시지 전송:', data);
     return true;
   }
 

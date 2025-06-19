@@ -72,8 +72,7 @@ async function getGeminiApiResponse(currentUserMessage, history, systemMessageTe
 
     // 대화 기록 변환 (Gemini API 형식으로)
     const chatHistory = [];
-    
-    // 시스템 메시지가 있는 경우 첫 번째 메시지로 추가
+      // 시스템 메시지가 있는 경우 첫 번째 메시지로 추가
     if (systemMessageText && systemMessageText.trim()) {
       chatHistory.push({
         role: 'user',
@@ -83,21 +82,23 @@ async function getGeminiApiResponse(currentUserMessage, history, systemMessageTe
         role: 'model',
         parts: [{ text: '네, 이해했습니다. 지시사항에 따라 도움을 드리겠습니다.' }]
       });
-    }
-
-    // 기존 대화 기록 추가
+    }    // 기존 대화 기록 추가
     if (history && Array.isArray(history)) {
       history.forEach(msg => {
-        if (msg.role === 'user') {
-          chatHistory.push({
-            role: 'user',
-            parts: [{ text: msg.content }]
-          });
-        } else if (msg.role === 'assistant' || msg.role === 'model') {
-          chatHistory.push({
-            role: 'model',
-            parts: [{ text: msg.content }]
-          });
+        // DB 형식 (parts[0].text) 또는 기존 형식 (content) 둘 다 지원
+        const messageText = (msg.parts && msg.parts[0] && msg.parts[0].text) || msg.content;
+        if (messageText && messageText.trim()) {
+          if (msg.role === 'user') {
+            chatHistory.push({
+              role: 'user',
+              parts: [{ text: messageText.trim() }]
+            });
+          } else if (msg.role === 'assistant' || msg.role === 'model') {
+            chatHistory.push({
+              role: 'model',
+              parts: [{ text: messageText.trim() }]
+            });
+          }
         }
       });
     }
@@ -108,13 +109,61 @@ async function getGeminiApiResponse(currentUserMessage, history, systemMessageTe
       enhancedMessage = `${currentUserMessage}\n\n[Canvas 모드] HTML, CSS, JavaScript 코드를 생성할 때는 다음 형식을 사용해주세요:\n\`\`\`html\n(HTML 코드)\n\`\`\`\n\`\`\`css\n(CSS 코드)\n\`\`\`\n\`\`\`javascript\n(JavaScript 코드)\n\`\`\``;
     } else if (specialModeType === 'search') {
       enhancedMessage = `${currentUserMessage}\n\n[검색 모드] 최신 정보가 필요한 질문입니다. 가능한 한 정확하고 최신의 정보를 제공해주세요.`;
+    }    console.log(`[GeminiAPI] 요청 시작 - 모델: ${modelName}, 기록 개수: ${chatHistory.length}, 메시지 길이: ${enhancedMessage.length}`);
+    console.log(`[GeminiAPI] 대화 기록:`, chatHistory.map((msg, i) => `${i+1}. ${msg.role}: ${msg.parts[0].text.substring(0, 50)}...`));
+    
+    // 채팅 세션 시작 - 대화 기록이 비어있으면 빈 배열로 시작
+    const chat = model.startChat({
+      history: chatHistory.length > 0 ? chatHistory : [],
+    });    // 현재 메시지가 비어있지 않은지 확인
+    if (!enhancedMessage || enhancedMessage.trim() === '') {
+      throw new Error('메시지 내용이 비어있습니다.');
     }
 
-    // 채팅 세션 시작
-    const chat = model.startChat({
-      history: chatHistory,
-    });
+    // 스트리밍 모드 처리
+    if (streamResponseCallback && typeof streamResponseCallback === 'function') {
+      console.log(`[GeminiAPI] 스트리밍 모드로 요청 처리 중...`);
+      
+      try {
+        // 스트리밍으로 메시지 전송
+        const result = await chat.sendMessageStream(enhancedMessage);
+        let fullText = '';
+        
+        // 스트림 청크 처리
+        for await (const chunk of result.stream) {
+          const chunkText = chunk.text();
+          if (chunkText) {
+            fullText += chunkText;
+            // 콜백으로 청크 전송
+            streamResponseCallback(chunkText);
+          }
+        }
+        
+        // 최종 결과 가져오기
+        const finalResult = await result.response;
+        const usageMetadata = finalResult.usageMetadata || {};
+        
+        console.log(`[GeminiAPI] 스트리밍 완료 - 총 길이: ${fullText.length}`);
+        
+        return {
+          content: fullText,
+          actual_input_tokens: usageMetadata.promptTokenCount || 0,
+          actual_output_tokens: usageMetadata.candidatesTokenCount || 0,
+          total_tokens: usageMetadata.totalTokenCount || 0,
+          model_used: modelName,
+          provider: 'geminiapi',
+          finish_reason: 'stop',
+          streaming: true
+        };
+      } catch (streamError) {
+        console.error('Gemini API 스트리밍 오류:', streamError);
+        throw streamError;
+      }
+    }
 
+    // 일반 모드 처리 (스트리밍 아님)
+    console.log(`[GeminiAPI] 일반 모드로 요청 처리 중...`);
+    
     // 메시지 전송 및 응답 받기
     const result = await chat.sendMessage(enhancedMessage);
     const response = await result.response;

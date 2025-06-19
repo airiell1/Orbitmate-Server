@@ -39,9 +39,7 @@ async function initOracleClient() {
 // DB 연결 풀 초기화
 async function initializeDbPool() {
     try {
-        console.log('Initializing database connection pool...');
         await oracledb.createPool(dbConfig);
-        console.log('Database pool initialized successfully.');
     } catch (err) {
         console.error('Error initializing database pool:', err);
         process.exit(1);

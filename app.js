@@ -3,19 +3,10 @@ const cors = require('cors');
 const path = require('path');
 const multer = require('multer');
 const fs = require('fs');
-const http = require('http');
-const socketIo = require('socket.io');
 require('dotenv').config(); // 환경 변수 로드
 
 const { initOracleClient, initializeDbPool } = require('./config/database'); // DB 관련 함수들 가져오기
 const app = express();
-const server = http.createServer(app);
-const io = socketIo(server, {
-  cors: {
-    origin: "*", // 개발 환경에서는 모든 출처 허용
-    methods: ["GET", "POST"]
-  }
-});
 
 // ** 라우터 변수만 선언 (require는 나중에) **
 let usersRouter;
@@ -69,23 +60,10 @@ const upload = multer({ storage: storage });
 
 // ** Oracle 초기화 및 서버 시작 함수 (async) **
 async function startServer() {
-  try {
-    console.log('서버 시작을 위한 DB 초기화 중...');
-    // ** DB 초기화를 먼저 완료 **
+  try {    // ** DB 초기화를 먼저 완료 **
     await initOracleClient(); // Oracle Thick 모드 활성화 완료 대기
     await initializeDbPool(); // DB 풀 초기화 완료 대기
-    console.log('DB 초기화 완료.');    // ** DB 초기화가 끝난 후에 DB 연결이 필요한 라우터들을 require 하고 등록 **
-    console.log('DB 연결 필요한 라우터 로드 및 등록...');
-      // WebSocket 이벤트 핸들러 설정
-    require('./config/websocket')(io);
-    
-    // WebSocket 인스턴스를 채팅 컨트롤러에 전달
-    const chatController = require('./controllers/chatController');
-    chatController.setSocketIO(io);    
-    // WebSocket API 라우트 설정
-    const { router: websocketRouter, setSocketIO: setWebSocketRouterIO } = require('./routes/websocket');
-    setWebSocketRouterIO(io);
-    
+
     usersRouter = require('./routes/users');
     chatRouter = require('./routes/chat');
     sessionsRouter = require('./routes/sessions');
@@ -97,7 +75,6 @@ async function startServer() {
     app.use('/api/sessions', sessionsRouter);
     app.use('/api/ai', aiInfoRouter); // Mount aiInfoRouter
     app.use('/api/search', searchRouter); // Mount searchRouter
-    app.use('/api/websocket', websocketRouter); // Mount WebSocket API router
 
     // 서버 상태 확인용 엔드포인트
     app.get('/api/health', (req, res) => {
@@ -105,9 +82,8 @@ async function startServer() {
     });    const port = process.env.PORT || 7777;
     
     // ** Express 서버 시작 **
-    server.listen(port, () => {
+    app.listen(port, () => {
       console.log(`서버가 http://localhost:${port} 에서 실행 중입니다.`);
-      console.log(`WebSocket 서버도 동일한 포트에서 실행 중입니다.`);
     });
 
   } catch (err) {
@@ -126,4 +102,4 @@ if (process.env.NODE_ENV !== 'test') {
   });
 }
 
-module.exports = { app, server, io };
+module.exports = { app };

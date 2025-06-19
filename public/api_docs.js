@@ -96,11 +96,10 @@ const apis = [
   },
   {
     method: 'GET',
-    path: '/api/users/:user_id/settings',
-    title: '사용자 설정 조회',
+    path: '/api/users/:user_id/settings',    title: '사용자 설정 조회',
     desc: '특정 사용자의 설정을 조회합니다.<br>Validation Rules: <ul><li>`user_id` (URL param): 필수, 최대 36자.</li>',
     params: [
-      { name: 'user_id', type: 'text', label: '사용자 ID (최대 36자)', required: true, inPath: true }
+      { name: 'user_id', type: 'text', label: '사용자 ID (최대 36자)', required: true, inPath: true, value: 'guest' }
     ],
     exampleReq: '',
     exampleRes:  `{\n  "user_id": "API_TEST_USER_ID",\n  "theme": "light",\n  "language": "ko",\n  "font_size": 14,\n  "notifications_enabled": true,\n  "ai_model_preference": null\n}`
@@ -118,7 +117,7 @@ const apis = [
       { name: 'notifications_enabled', type: 'checkbox', label: '알림 사용 (true/false)', required: false },
       { name: 'ai_model_preference', type: 'text', label: 'AI 모델 (최대 50자)', required: false }
     ],
-    exampleReq:  `{\n  "theme": "dark",\n  "language": "en",\n  "font_size": 16,\n  "notifications_enabled": false,\n  "ai_model_preference": "gemini-2.5-pro-exp-03-25"\n}`,
+    exampleReq:  `{\n  "theme": "dark",\n  "language": "en",\n  "font_size": 16,\n  "notifications_enabled": false,\n  "ai_model_preference": "gemini-2.0-flash-thinking-exp-01-21"\n}`,
     exampleRes:  `{\n  "user_id": "API_TEST_USER_ID",\n  "theme": "light",\n  "language": "ko",\n  "font_size": 14,\n  "notifications_enabled": false,\n  "ai_model_preference": null\n}`
   },
   {
@@ -256,8 +255,8 @@ const apis = [
       { name: 'max_output_tokens_override', type: 'number', label: '최대 출력 토큰 재정의 (선택, 양의 정수 > 0)', required: false },
       { name: 'context_message_limit', type: 'number', label: '컨텍스트 메시지 제한 (선택, 0 이상 정수)', required: false }
     ],
-    exampleReq:  `{\n  "message": "안녕하세요! 오늘 날씨에 대해 알려주세요.",\n  "system_prompt": "AI는 친절하게 답변합니다.",\n  "special_mode_type": "stream",\n  "ai_provider_override": "vertexai",\n  "model_id_override": "gemini-1.0-pro",\n  "user_message_token_count": 15,\n  "max_output_tokens_override": 500,\n  "context_message_limit": 10\n}`,
-    exampleRes:  `{\n  "user_message_id": "API_TEST_USER_MESSAGE_ID",\n  "ai_message_id": "API_TEST_AI_MESSAGE_ID",\n  "message": "안녕하세요! 오늘 날씨는 맑고 화창합니다.",\n  "created_at": "YYYY-MM-DDTHH:mm:ss.sssZ",\n  "ai_message_token_count": 25,\n  "ai_provider": "vertexai",\n  "model_id": "gemini-1.0-pro"\n}`
+    exampleReq:  `{\n  "message": "안녕하세요! 오늘 날씨에 대해 알려주세요.",\n  "system_prompt": "AI는 친절하게 답변합니다.",\n  "special_mode_type": "stream",\n  "ai_provider_override": "vertexai",\n  "model_id_override": "gemini-2.0-flash-thinking-exp-01-21",\n  "user_message_token_count": 15,\n  "max_output_tokens_override": 500,\n  "context_message_limit": 10\n}`,
+    exampleRes:  `{\n  "user_message_id": "API_TEST_USER_MESSAGE_ID",\n  "ai_message_id": "API_TEST_AI_MESSAGE_ID",\n  "message": "안녕하세요! 오늘 날씨는 맑고 화창합니다.",\n  "created_at": "YYYY-MM-DDTHH:mm:ss.sssZ",\n  "ai_message_token_count": 25,\n  "ai_provider": "vertexai",\n  "model_id": "gemini-2.0-flash-thinking-exp-01-21"\n}`
   },
   {
     method: 'PUT',
@@ -316,10 +315,10 @@ const apis = [
       { name: 'file', type: 'file', label: '업로드 파일 (다양한 타입 허용, max 5MB)', required: true },
       { name: 'user_id', type: 'text', label: '사용자 ID (최대 36자)', required: false }
     ],
-    exampleReq: '(multipart/form-data: file=파일 선택, user_id=USER123)',    exampleRes:  ` {\n  "message": "파일이 성공적으로 업로드되었습니다.",\n  "fileMessage": { ... }\n}`
-  },
+    exampleReq: '(multipart/form-data: file=파일 선택, user_id=USER123)',    exampleRes:  ` {\n  "message": "파일이 성공적으로 업로드되었습니다.",\n  "fileMessage": { ... }\n}`  },
   
-  /* 6. 검색 기능 */  {
+  /* 6. 검색 기능 */
+  {
     method: 'GET',
     path: '/api/search/wikipedia',
     title: '위키피디아 검색',
@@ -344,6 +343,76 @@ const apis = [
     }
   ],
   "total_found": 1
+}`
+  },
+  
+  {
+    method: 'GET',
+    path: '/api/search/weather',
+    title: '날씨 검색 (IP 기반 자동 위치 감지)',
+    desc: '사용자의 IP 주소를 기반으로 위치를 자동 감지하여 현재 날씨와 예보를 제공합니다.<br>Query Parameters: <ul><li>`units`: 온도 단위 (선택, metric/imperial/kelvin, 기본값: metric)</li><li>`lang`: 언어 코드 (선택, ko/en/ja 등, 기본값: ko)</li><li>`city`: 도시명 (선택, 제공시 IP 감지 대신 사용)</li><li>`lat`, `lon`: 위도, 경도 (선택, 제공시 정확한 좌표 사용)</li></ul><br><b>기능:</b> IP 기반 자동 위치 감지, 현재 날씨 + 8시간 예보, 메모리 캐싱, 로컬 IP 시 서울 기본값',
+    params: [
+      { name: 'units', type: 'text', label: '온도 단위 (metric/imperial/kelvin)', required: false, default: 'metric' },
+      { name: 'lang', type: 'text', label: '언어 코드 (ko/en/ja)', required: false, default: 'ko' },
+      { name: 'city', type: 'text', label: '도시명 (선택사항)', required: false, default: '' },
+      { name: 'lat', type: 'number', label: '위도 (-90~90)', required: false, default: '' },
+      { name: 'lon', type: 'number', label: '경도 (-180~180)', required: false, default: '' }
+    ],
+    exampleReq: '?units=metric&lang=ko (IP 기반 자동 감지)',
+    exampleRes: `{
+  "location": {
+    "name": "Seoul",
+    "country": "KR",
+    "coordinates": {
+      "latitude": 37.5665,
+      "longitude": 126.978
+    },
+    "timezone": 32400
+  },
+  "current": {
+    "temperature": 15,
+    "feels_like": 13,
+    "description": "맑음",
+    "main": "Clear",
+    "icon": "01d",
+    "humidity": 65,
+    "pressure": 1015,
+    "visibility": 10000,
+    "wind": {
+      "speed": 3.2,
+      "direction": 180
+    },
+    "clouds": 10,
+    "sunrise": "2025-06-19T05:30:00.000Z",
+    "sunset": "2025-06-19T10:45:00.000Z",
+    "timestamp": "2025-06-19T08:00:00.000Z"
+  },
+  "forecast": [
+    {
+      "datetime": "2025-06-19T09:00:00.000Z",
+      "temperature": {
+        "current": 17,
+        "min": 15,
+        "max": 18
+      },
+      "description": "구름 조금",
+      "icon": "02d",
+      "humidity": 60,
+      "wind_speed": 2.8,
+      "clouds": 25,
+      "rain": 0
+    }
+  ],
+  "units": "metric",
+  "language": "ko",
+  "timestamp": "2025-06-19T08:00:00.000Z",
+  "ip_detected": {
+    "ip": "123.45.67.89",
+    "detected_city": "Seoul",
+    "detected_country": "South Korea",
+    "is_local_ip": false,
+    "used_fallback": false
+  }
 }`
   },
   
@@ -410,7 +479,7 @@ const apis = [
   }
 }`,    exampleRes: `{
   "message": "메시지가 성공적으로 전송되었습니다.",
-  "user_id": "test-guest",
+  "user_id": "guest",
   "event": "private_message",
   "timestamp": "2025-06-17T10:30:00.000Z"
 }`
@@ -460,13 +529,20 @@ apis.forEach((api, idx) => {
     '<details><summary>요청/응답 예시 보기</summary>' +
       '<div><b>요청 예시:</b><pre>' + (api.exampleReq || '-') + '</pre></div>' +
       '<div><b>응답 예시:</b><pre>' + (api.exampleRes || '-') + '</pre></div>' +
-    '</details>',
-    '<form class="api-test" onsubmit="return false;" id="form-' + idx + '">',
+    '</details>',    '<form class="api-test" onsubmit="return false;" id="form-' + idx + '">',
       api.params.filter(function(p){return p.inPath;}).map(function(p) {
         const def = defaultValues[p.name] ? ' value="' + defaultValues[p.name] + '"' : '';
         return '<label>' + p.label + (p.required ? ' *' : '') + '</label>' +
           '<input type=\"text\" name=\"' + p.name + '\"' + (p.required ? ' required' : '') + def + ' placeholder=\"(URL 경로에 사용)\">';
       }).join(''),
+      // GET 요청의 쿼리 파라미터 처리
+      (api.method === 'GET' && api.params.filter(function(p){return !p.inPath && p.type!=='file';}).length > 0
+        ? api.params.filter(function(p){return !p.inPath && p.type!=='file';}).map(function(p) {
+          const def = p.default ? ' value="' + p.default + '"' : '';
+          return '<label>' + p.label + (p.required ? ' *' : '') + '</label>' +
+            '<input type=\"' + (p.type === 'number' ? 'number' : 'text') + '\" name=\"' + p.name + '\"' + (p.required ? ' required' : '') + def + ' placeholder=\"(쿼리 파라미터)\">';
+        }).join('')
+        : ''),
       ((api.method === 'POST' || api.method === 'PUT' || api.method === 'DELETE') && api.params.filter(function(p){return !p.inPath && p.type!=='file';}).length > 0
         ? '<label>요청 JSON</label><textarea name="jsonBody" rows="5">' + (api.exampleReq && api.exampleReq !== '' && api.exampleReq !== '(multipart/form-data)' ? api.exampleReq : '{}') + '</textarea>'
         : ''),
@@ -481,17 +557,33 @@ apis.forEach((api, idx) => {
   apiList.appendChild(div);
   setTimeout(function() { 
     var form = document.getElementById('form-' + idx);
-    if (!form) return;
-      form.onsubmit = async function(event) {
+    if (!form) return;      form.onsubmit = async function(event) {
       event.preventDefault();
       const resultDiv = form.querySelector('.result');
       resultDiv.style.display = 'block';
       resultDiv.textContent = '요청 중...';
       let url = api.path;
+      
+      // URL path 파라미터 처리
       api.params.filter(p => p.inPath).forEach(p => {
         const v = form.elements[p.name].value;
         url = url.replace(':' + p.name, encodeURIComponent(v));
       });
+      
+      // GET 요청의 쿼리 파라미터 처리
+      if (api.method === 'GET') {
+        const queryParams = [];
+        api.params.filter(p => !p.inPath && p.type !== 'file').forEach(p => {
+          const v = form.elements[p.name] ? form.elements[p.name].value : '';
+          if (v !== '') {
+            queryParams.push(encodeURIComponent(p.name) + '=' + encodeURIComponent(v));
+          }
+        });
+        if (queryParams.length > 0) {
+          url += '?' + queryParams.join('&');
+        }
+      }
+      
       let fetchOpts = { method: api.method, headers: {} };
       const hasFile = api.params.some(p => p.type === 'file');
       if (hasFile) {

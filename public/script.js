@@ -50,9 +50,6 @@ const GUEST_USER_ID = 'guest'; // 게스트 사용자 ID
 // 메시지 전송 중 상태 추적
 let isMessageSending = false;
 
-// WebSocket 인스턴스
-let webSocket = null;
-
 // 세션 초기화 상태 추적 - 전역 변수로 만들어 다른 스크립트에서도 접근 가능하게 함
 window.sessionInitialized = false;
 
@@ -69,16 +66,10 @@ async function initializeSession() {
                 console.log('세션 유효성 확인 중...');
                 const checkResponse = await fetch(`/api/chat/sessions/${savedSessionId}/messages`);
                 console.log('세션 유효성 확인 응답:', checkResponse.status);
-                
-                if (checkResponse.ok) {
+                  if (checkResponse.ok) {
                     currentSessionId = savedSessionId;
                     console.log('기존 세션 사용:', currentSessionId);
                     addMessage('시스템', `저장된 세션 사용 중 (ID: ${currentSessionId})`);
-                    
-                    // WebSocket 세션 연결
-                    if (webSocket && webSocket.isWebSocketConnected()) {
-                        webSocket.joinSession(currentSessionId, GUEST_USER_ID);
-                    }
                     
                     // 저장된 메시지 불러오기
                     refreshMessages();
@@ -120,17 +111,11 @@ async function initializeSession() {
         const data = await response.json();
         if (!data || !data.session_id) {
             throw new Error('서버 응답에 세션 ID가 없습니다.');
-        }
-          currentSessionId = data.session_id;
+        }        currentSessionId = data.session_id;
         console.log('새 게스트 세션 생성됨:', currentSessionId);
         
         // 세션 ID 저장
         localStorage.setItem('currentSessionId', currentSessionId);
-        
-        // WebSocket 세션 연결
-        if (webSocket && webSocket.isWebSocketConnected()) {
-            webSocket.joinSession(currentSessionId, GUEST_USER_ID);
-        }
         
         addMessage('시스템', `게스트 세션 시작 (ID: ${currentSessionId})`);
     } catch (error) {
@@ -696,11 +681,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
          // Initialize with default
         currentContextLimit = parseInt(contextLimitControl.value, 10);
-    }
-      if (sendButton) { // sendButton이 있는 페이지(index.html)에서만 실행
-        // WebSocket 초기화 먼저 수행
-        initializeWebSocketConnection();
-        
+    }    if (sendButton) { // sendButton이 있는 페이지(index.html)에서만 실행        
         initializeSession().then(() => {
              fetchAiModelsAndPopulateSelector(); // Fetch models after session is initialized
         });
@@ -745,27 +726,3 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('세션 초기화 완료');
     }
 });
-
-// WebSocket 연결 초기화 함수
-function initializeWebSocketConnection() {
-    try {
-        // WebSocket 인스턴스 생성
-        webSocket = initializeWebSocket();
-        
-        console.log('WebSocket 클라이언트 초기화 완료');
-        
-        // WebSocket 연결 상태 확인
-        setTimeout(() => {
-            if (webSocket && webSocket.isWebSocketConnected()) {
-                console.log('WebSocket 연결 성공');
-                if (currentSessionId) {
-                    webSocket.joinSession(currentSessionId, GUEST_USER_ID);
-                }
-            }
-        }, 1000); // 1초 후 연결 상태 확인
-        
-    } catch (error) {
-        console.error('WebSocket 초기화 실패:', error);
-        addMessage('시스템', `실시간 연결 초기화 실패: ${error.message}`);
-    }
-}
