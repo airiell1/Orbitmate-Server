@@ -1,3 +1,9 @@
+// 게스트 사용자 ID
+const GUEST_USER_ID = 'guest';
+
+// 전역 변수
+let currentSessionId = null;
+
 // 메시지 액션 버튼 추가 기능 (편집, 삭제 버튼)
 function addMessageActions(messageElement, messageId, sender) {
     const existingActions = messageElement.querySelector('.message-actions');
@@ -44,9 +50,6 @@ const chatBox = document.getElementById('chat-box');
 const messageInput = document.getElementById('message-input');
 const sendButton = document.getElementById('send-button');
 
-// 임시 세션 ID (실제 애플리케이션에서는 로그인 등을 통해 동적으로 관리해야 함)
-let currentSessionId = null;
-const GUEST_USER_ID = 'guest'; // 게스트 사용자 ID
 // 메시지 전송 중 상태 추적
 let isMessageSending = false;
 

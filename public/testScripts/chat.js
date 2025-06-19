@@ -121,8 +121,10 @@ export function addMessage(sender, text, messageId = null, className = null) {
 }
 
 export async function sendMessage() {
+    console.log('[sendMessage] 함수 호출됨, isMessageSending:', isMessageSending);
+    
     if (isMessageSending) {
-        console.warn("메시지 전송 중입니다. 잠시 후 다시 시도해주세요.");
+        console.warn("[sendMessage] 메시지 전송 중입니다. 중복 호출을 차단합니다.");
         return;
     }
     
@@ -130,167 +132,197 @@ export async function sendMessage() {
     const sendButton = document.getElementById('send-button');
     const messageText = messageInput.value.trim();
     
-    if (!messageText) return;
+    if (!messageText) {
+        console.warn('[sendMessage] 빈 메시지는 전송하지 않습니다.');
+        return;
+    }
 
     if (!currentSessionId) {
         alert("세션이 초기화되지 않았습니다. 페이지를 새로고침하거나 새 세션을 시작해주세요.");
         return;
     }
 
+    console.log('[sendMessage] 메시지 전송 시작:', messageText.substring(0, 50) + '...');
+    
+    // 즉시 플래그 설정으로 중복 호출 차단
     isMessageSending = true;
     sendButton.disabled = true;
-    addMessage('user', messageText, null, 'user_message');
-    messageInput.value = '';
+    sendButton.textContent = '전송 중...';
+    
+    try {
+        // 사용자 메시지를 먼저 UI에 추가 (ID는 스트리밍 응답에서 받아서 업데이트)
+        const userMessageObj = addMessage('user', messageText, null, 'user_message');
+        const userMessageElement = userMessageObj.messageElement;
+        messageInput.value = '';
 
-    // AI Provider 선택
-    let selectedAiProvider = 'geminiapi';
-    const aiProviderRadios = document.querySelectorAll('input[name="aiProvider"]');
-    aiProviderRadios.forEach(radio => {
-        if (radio.checked) {
-            // gemini 값을 geminiapi로 변환
-            selectedAiProvider = radio.value === 'gemini' ? 'geminiapi' : radio.value;
-        }
-    });
-
-    // Ollama 모델 선택
-    let selectedOllamaModel = 'gemma3:4b';
-    if (selectedAiProvider === 'ollama') {
-        const ollamaModelRadios = document.querySelectorAll('input[name="ollamaModel"]');
-        const qatCheckbox = document.getElementById('it-qat');
-        ollamaModelRadios.forEach(radio => {
+        // AI Provider 선택
+        let selectedAiProvider = 'geminiapi';
+        const aiProviderRadios = document.querySelectorAll('input[name="aiProvider"]');
+        aiProviderRadios.forEach(radio => {
             if (radio.checked) {
-                selectedOllamaModel = radio.value;
+                // gemini 값을 geminiapi로 변환
+                selectedAiProvider = radio.value === 'gemini' ? 'geminiapi' : radio.value;
             }
         });
-        if (qatCheckbox.checked && selectedOllamaModel) {
-            selectedOllamaModel += ':q8_0';
-        }
-    }
 
-    // 시스템 프롬프트 및 스트리밍 모드
-    const systemPromptInput = document.getElementById('system-prompt-input');
-    const streamModeCheckbox = document.getElementById('stream-mode-checkbox');
-    const systemPrompt = systemPromptInput.value.trim();
-    const streamMode = streamModeCheckbox.checked;
-    const specialModeType = streamMode ? 'stream' : null;
-
-    const requestBody = {
-        message: messageText,
-        ai_provider: selectedAiProvider,
-        ollama_model: selectedAiProvider === 'ollama' ? selectedOllamaModel : undefined,
-        specialModeType: specialModeType
-    };
-    
-    if (systemPrompt && systemPrompt.length > 0) {
-        requestBody.systemPrompt = systemPrompt;
-    }
-
-    console.log('전송할 요청 본문:', requestBody);
-    
-    let aiMessageElement = null;
-    let aiMessageContentSpan = null;    try {
-        // HTTP 요청 방식으로 메시지 전송
-        await sendHttpRequest();
-
-        // HTTP 요청 함수
-        async function sendHttpRequest() {
-            const response = await fetch(`/api/chat/sessions/${currentSessionId}/messages`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(requestBody)
+        // Ollama 모델 선택
+        let selectedOllamaModel = 'gemma3:4b';
+        if (selectedAiProvider === 'ollama') {
+            const ollamaModelRadios = document.querySelectorAll('input[name="ollamaModel"]');
+            const qatCheckbox = document.getElementById('it-qat');
+            ollamaModelRadios.forEach(radio => {
+                if (radio.checked) {
+                    selectedOllamaModel = radio.value;
+                }
             });
+            if (qatCheckbox.checked && selectedOllamaModel) {
+                selectedOllamaModel += ':q8_0';
+            }
+        }
 
-            const apiResponse = document.getElementById('api-response');
-            apiResponse.textContent = '';
+        // 시스템 프롬프트 및 스트리밍 모드
+        const systemPromptInput = document.getElementById('system-prompt-input');
+        const streamModeCheckbox = document.getElementById('stream-mode-checkbox');
+        const systemPrompt = systemPromptInput.value.trim();
+        const streamMode = streamModeCheckbox.checked;
+        const specialModeType = streamMode ? 'stream' : null;
+
+        const requestBody = {
+            message: messageText,
+            ai_provider_override: selectedAiProvider,
+            model_id_override: selectedAiProvider === 'ollama' ? selectedOllamaModel : undefined,
+            specialModeType: specialModeType
+        };
+        
+        if (systemPrompt && systemPrompt.length > 0) {
+            requestBody.systemPrompt = systemPrompt;
+        }
+
+        console.log('전송할 요청 본문:', requestBody);
+        
+        let aiMessageElement = null;
+        let aiMessageContentSpan = null;
+
+        // HTTP 요청 전송
+        const response = await fetch(`/api/chat/sessions/${currentSessionId}/messages`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody)
+        });
+
+        const apiResponse = document.getElementById('api-response');
+        apiResponse.textContent = '';
+        
+        if (streamMode && response.ok && response.headers.get('Content-Type')?.includes('text/event-stream')) {
+            // Server-Sent Events 스트리밍
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let eolIndex;
             
-            if (streamMode && response.ok && response.headers.get('Content-Type')?.includes('text/event-stream')) {
-                // Server-Sent Events 스트리밍
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let buffer = '';
-                let eolIndex;
-                
-                // AI 응답 메시지 요소 미리 생성
-                const aiMessageObj = addMessage('ai', '', null, 'ai_message');
-                aiMessageElement = aiMessageObj.messageElement;
-                aiMessageContentSpan = aiMessageObj.contentSpan;
+            // AI 응답 메시지 요소 미리 생성
+            const aiMessageObj = addMessage('ai', 'AI 응답 대기 중...', null, 'ai_message');
+            aiMessageElement = aiMessageObj.messageElement;
+            aiMessageContentSpan = aiMessageObj.contentSpan;
+            
+            console.log('[SSE 스트리밍] 스트리밍 시작');
+            updateApiResponse({ status: 'streaming_started', timestamp: new Date().toISOString() });
 
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    console.log('[SSE 스트리밍] 스트리밍 완료');
+                    break;
+                }
+                
+                buffer += decoder.decode(value, { stream: true });
+                
+                while ((eolIndex = buffer.indexOf('\n\n')) >= 0) {
+                    const chunk = buffer.slice(0, eolIndex);
+                    buffer = buffer.slice(eolIndex + 2);
                     
-                    buffer += decoder.decode(value, { stream: true });
+                    console.log('[SSE 스트리밍] 받은 청크:', chunk);
                     
-                    while ((eolIndex = buffer.indexOf('\n\n')) >= 0) {
-                        const chunk = buffer.slice(0, eolIndex);
-                        buffer = buffer.slice(eolIndex + 2);
-                          if (chunk.startsWith('data: ')) {
-                            const dataStr = chunk.slice(6);
-                            if (dataStr === '[DONE]') break;
-                              try {
-                                const chunkData = JSON.parse(dataStr);
-                                if (chunkData.delta) {
-                                    aiMessageContentSpan.textContent += chunkData.delta;
-                                    const chatBox = document.getElementById('chat-box');
-                                    chatBox.scrollTop = chatBox.scrollHeight;
-                                    appendToApiResponse(chunkData.delta);
-                                }
-                                // 사용자 메시지 ID 처리
-                                if (chunkData.userMessageId) {
-                                    console.log('사용자 메시지 ID 수신:', chunkData.userMessageId);
-                                }
-                                // AI 메시지 ID 처리
-                                if (chunkData.aiMessageId) {
-                                    console.log('AI 메시지 ID 수신:', chunkData.aiMessageId);
-                                    if (aiMessageElement) {
-                                        aiMessageElement.dataset.messageId = chunkData.aiMessageId;
-                                        addMessageActions(aiMessageElement, chunkData.aiMessageId, 'ai');
-                                    }
-                                }
-                            } catch (e) {
-                                console.error('청크 파싱 오류:', e, dataStr);                            }
-                        } else if (chunk.startsWith('event: ids')) {
-                            // ID 이벤트 처리
-                            const idsDataStr = chunk.slice(chunk.indexOf('data: ') + 6);
-                            try {
-                                const idsData = JSON.parse(idsDataStr);
-                                if (idsData.userMessageId) {
-                                    console.log('사용자 메시지 ID 수신:', idsData.userMessageId);
-                                }
-                            } catch (e) {
-                                console.error('ID 파싱 오류:', e, idsDataStr);
-                            }
-                        } else if (chunk.startsWith('event: ai_message_id')) {
-                            // AI 메시지 ID 이벤트 처리
-                            const aiIdDataStr = chunk.slice(chunk.indexOf('data: ') + 6);
-                            try {
-                                const aiIdData = JSON.parse(aiIdDataStr);
-                                if (aiIdData.aiMessageId && aiMessageElement) {
-                                    console.log('AI 메시지 ID 수신:', aiIdData.aiMessageId);
-                                    aiMessageElement.dataset.messageId = aiIdData.aiMessageId;
-                                    addMessageActions(aiMessageElement, aiIdData.aiMessageId, 'ai');
-                                }
-                            } catch (e) {
-                                console.error('AI ID 파싱 오류:', e, aiIdDataStr);
-                            }
+                    // SSE 이벤트 파싱
+                    const lines = chunk.split('\n');
+                    let eventType = null;
+                    let data = null;
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('event: ')) {
+                            eventType = line.slice(7);
+                        } else if (line.startsWith('data: ')) {
+                            data = line.slice(6);
                         }
                     }
+                    
+                    // 데이터가 없으면 건너뛰기
+                    if (!data) continue;
+                    
+                    // [DONE] 신호 처리
+                    if (data === '[DONE]') {
+                        console.log('[SSE 스트리밍] 완료 신호 수신');
+                        break;
+                    }
+                    
+                    try {
+                        const chunkData = JSON.parse(data);
+                        console.log('[SSE 스트리밍] 파싱된 데이터:', { eventType, data: chunkData });
+                        
+                        // 이벤트 타입별 처리
+                        if (eventType === 'ids' && chunkData.userMessageId) {
+                            console.log('[SSE 스트리밍] 사용자 메시지 ID 수신:', chunkData.userMessageId);
+                            // 사용자 메시지에 ID 설정 및 액션 버튼 추가
+                            if (userMessageElement) {
+                                userMessageElement.dataset.messageId = chunkData.userMessageId;
+                                addMessageActions(userMessageElement, chunkData.userMessageId, 'user');
+                            }
+                        } else if (eventType === 'ai_message_id' && chunkData.aiMessageId) {
+                            console.log('[SSE 스트리밍] AI 메시지 ID 수신:', chunkData.aiMessageId);
+                            if (aiMessageElement) {
+                                aiMessageElement.dataset.messageId = chunkData.aiMessageId;
+                                addMessageActions(aiMessageElement, chunkData.aiMessageId, 'ai');
+                            }
+                        } else if (eventType === 'end') {
+                            console.log('[SSE 스트리밍] 종료 이벤트 수신');
+                            break;
+                        } else if (!eventType && chunkData.delta) {
+                            // 일반 데이터 (delta) 처리
+                            // 첫 번째 청크인 경우 "AI 응답 대기 중..." 텍스트 제거
+                            if (aiMessageContentSpan.textContent === 'AI 응답 대기 중...') {
+                                aiMessageContentSpan.textContent = '';
+                            }
+                            
+                            aiMessageContentSpan.textContent += chunkData.delta;
+                            const chatBox = document.getElementById('chat-box');
+                            chatBox.scrollTop = chatBox.scrollHeight;
+                            appendToApiResponse(chunkData.delta);
+                        }
+                    } catch (e) {
+                        console.error('[SSE 스트리밍] 청크 파싱 오류:', e, data);
+                    }
+                }
+            }
+        } else {
+            // 일반 응답 처리
+            const data = await response.json();
+            updateApiResponse(data);
+            
+            if (response.ok && data.message) {
+                // 일반 API 응답 형식 처리
+                const aiMessageObj = addMessage('ai', data.message, data.ai_message_id, 'ai_message');
+                aiMessageElement = aiMessageObj.messageElement;
+                aiMessageContentSpan = aiMessageObj.contentSpan;
+                
+                // 사용자 메시지에도 ID 설정 및 액션 버튼 추가
+                if (data.user_message_id && userMessageElement) {
+                    userMessageElement.dataset.messageId = data.user_message_id;
+                    addMessageActions(userMessageElement, data.user_message_id, 'user');
                 }
             } else {
-                // 일반 응답 처리
-                const data = await response.json();
-                updateApiResponse(data);
-                
-                if (response.ok && data.message) {
-                    // 일반 API 응답 형식 처리
-                    const aiMessageObj = addMessage('ai', data.message, data.ai_message_id, 'ai_message');
-                    aiMessageElement = aiMessageObj.messageElement;
-                    aiMessageContentSpan = aiMessageObj.contentSpan;
-                } else {
-                    addMessage('시스템', `오류: ${data.error?.message || data.message || '알 수 없는 오류'}`, null, 'error-message');
-                }
+                addMessage('시스템', `오류: ${data.error?.message || data.message || '알 수 없는 오류'}`, null, 'error-message');
             }
         }
     } catch (error) {
@@ -298,8 +330,8 @@ export async function sendMessage() {
         updateApiResponse({ error: { message: error.message } });
         addMessage('시스템', `네트워크 오류: ${error.message}`, null, 'error-message');
     } finally {
-        isMessageSending = false;
-        sendButton.disabled = false;
+        isMessageSending = false;        sendButton.disabled = false;
+        sendButton.textContent = '전송';
     }
 }
 

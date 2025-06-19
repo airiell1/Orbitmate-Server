@@ -141,11 +141,11 @@ document.addEventListener('DOMContentLoaded', function() {
     if (searchWikipediaButton) searchWikipediaButton.addEventListener('click', searchWikipediaTest);
     if (searchNaverButton) searchNaverButton.addEventListener('click', searchNaverTest);
     if (searchKakaoButton) searchKakaoButton.addEventListener('click', searchKakaoTest);
-    if (searchWeatherButton) searchWeatherButton.addEventListener('click', searchWeatherTest);
-
-    // 채팅 UI 이벤트 연결
+    if (searchWeatherButton) searchWeatherButton.addEventListener('click', searchWeatherTest);    // 채팅 UI 이벤트 연결
     if (sendButton) sendButton.addEventListener('click', sendMessage);
     if (resetSessionButton) resetSessionButton.addEventListener('click', () => {
+        // 강제로 새 세션을 만들도록 플래그 설정
+        localStorage.setItem('forceNewTestSession', 'true');
         initializeSession();
     });
     if (refreshMessagesButton) refreshMessagesButton.addEventListener('click', refreshSessionMessages);

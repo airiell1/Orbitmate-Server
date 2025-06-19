@@ -175,17 +175,15 @@ async function sendMessageController(req, res) {
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('Connection', 'keep-alive');
         res.setHeader('Access-Control-Allow-Origin', '*');
-        res.flushHeaders();
-
-        // 스트리밍 콜백 함수
+        res.flushHeaders();        // 스트리밍 콜백 함수
         streamResponseCallback = (chunk) => {
           if (chunk && typeof chunk === 'string') {
-            res.write(`data: ${JSON.stringify({ delta: chunk })}\\n\\n`);
+            res.write(`data: ${JSON.stringify({ delta: chunk })}\n\n`);
           }
         };
         
         // 사용자 메시지 ID 먼저 전송
-        res.write(`event: ids\\ndata: ${JSON.stringify({ userMessageId: userMessageId.toString() })}\\n\\n`);
+        res.write(`event: ids\ndata: ${JSON.stringify({ userMessageId: userMessageId.toString() })}\n\n`);
       }
 
       // Updated AI call
@@ -223,12 +221,10 @@ async function sendMessageController(req, res) {
         throw err;
       }const aiMessageId = aiMessageResult.ai_message_id.toString();
       const aiCreatedAt = aiMessageResult.created_at;
-      const actualAiContentSaved = aiMessageResult.content;
-
-      // 스트리밍 모드에서 AI 메시지 ID 전송
+      const actualAiContentSaved = aiMessageResult.content;      // 스트리밍 모드에서 AI 메시지 ID 전송
       if (specialModeType === 'stream') {
-        res.write(`event: ai_message_id\\ndata: ${JSON.stringify({ aiMessageId: aiMessageId })}\\n\\n`);
-      }      return {
+        res.write(`event: ai_message_id\ndata: ${JSON.stringify({ aiMessageId: aiMessageId })}\n\n`);
+      }return {
         user_message_id: userMessageId.toString(),
         ai_message_id: aiMessageId,
         message: actualAiContentSaved,
@@ -243,7 +239,7 @@ async function sendMessageController(req, res) {
         ai_message_id: responseData.ai_message_id,
         session_id: session_id
       });
-      res.write(`event: end\\ndata: ${JSON.stringify({ message: 'Stream ended' })}\\n\\n`);
+      res.write(`event: end\ndata: ${JSON.stringify({ message: 'Stream ended' })}\n\n`);
       res.end();
       return;
     } else {

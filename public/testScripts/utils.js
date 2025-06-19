@@ -36,13 +36,43 @@ export function addMessageActions(messageElement, messageId, sender) {
         const editButton = document.createElement('button');
         editButton.textContent = '편집';
         editButton.classList.add('edit-btn');
-        editButton.onclick = () => {
-            const messageIdInput = document.getElementById('message-id-input');
-            const editMessageContentInput = document.getElementById('edit-message-content');
-            if (messageIdInput) messageIdInput.value = messageId;
-            if (editMessageContentInput) {
-                const contentSpan = messageElement.querySelector('.message-content');
-                editMessageContentInput.value = contentSpan ? contentSpan.textContent : '';
+        editButton.onclick = async () => {
+            const contentSpan = messageElement.querySelector('.message-content');
+            const currentText = contentSpan ? contentSpan.textContent : '';
+            // '나: ' 또는 'AI: ' 접두사 제거
+            const cleanText = currentText.replace(/^(나|AI): /, '');
+            
+            const newContent = prompt('메시지 편집:', cleanText);
+            if (newContent !== null && newContent.trim() !== '') {
+                try {
+                    // editMessageTest 함수를 직접 호출하는 대신 API 직접 호출
+                    const response = await fetch(`/api/chat/messages/${messageId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ content: newContent.trim() })
+                    });
+                    const data = await response.json();
+                    updateApiResponse(data);
+                    
+                    if (response.ok) {
+                        // 메시지 내용 업데이트
+                        contentSpan.textContent = `${sender === 'user' ? '나' : 'AI'}: ${newContent.trim()}`;
+                        
+                        // 편집됨 표시 추가 (이미 있으면 제거 후 추가)
+                        const existingBadge = messageElement.querySelector('.edited-badge');
+                        if (existingBadge) existingBadge.remove();
+                        
+                        const editedBadge = document.createElement('span');
+                        editedBadge.className = 'edited-badge';
+                        editedBadge.textContent = ' (편집됨)';
+                        editedBadge.style.fontSize = '0.8em';
+                        editedBadge.style.color = '#666';
+                        contentSpan.appendChild(editedBadge);
+                    }
+                } catch (error) {
+                    updateApiResponse({ error: { message: error.message } });
+                    alert(`편집 중 오류가 발생했습니다: ${error.message}`);
+                }
             }
         };
         actionsDiv.appendChild(editButton);
@@ -51,10 +81,65 @@ export function addMessageActions(messageElement, messageId, sender) {
     const deleteButton = document.createElement('button');
     deleteButton.textContent = '삭제';
     deleteButton.classList.add('delete-btn');
-    deleteButton.onclick = () => {
-        const deleteMessageIdInput = document.getElementById('delete-message-id');
-        if (deleteMessageIdInput) deleteMessageIdInput.value = messageId;
+    deleteButton.onclick = async () => {
+        if (confirm(`정말로 이 메시지를 삭제하시겠습니까? (ID: ${messageId})`)) {
+            try {
+                // deleteMessageTest 함수를 직접 호출하는 대신 API 직접 호출
+                const response = await fetch(`/api/chat/messages/${messageId}`, {
+                    method: 'DELETE'
+                });
+                const data = await response.json();
+                updateApiResponse(data);
+                
+                if (response.ok) {
+                    // UI에서 메시지 제거
+                    messageElement.remove();
+                } else {
+                    alert(`삭제 실패: ${data.error?.message || '알 수 없는 오류'}`);
+                }
+            } catch (error) {
+                updateApiResponse({ error: { message: error.message } });
+                alert(`삭제 중 오류가 발생했습니다: ${error.message}`);
+            }
+        }
     };
     actionsDiv.appendChild(deleteButton);
+    
+    // 리액션 버튼 추가
+    const reactionButton = document.createElement('button');
+    reactionButton.textContent = '👍';
+    reactionButton.classList.add('reaction-btn');
+    reactionButton.onclick = async () => {
+        const reaction = prompt('리액션을 입력하세요 (예: 👍, ❤️, 😊):', '👍');
+        if (reaction !== null && reaction.trim() !== '') {
+            try {
+                const response = await fetch(`/api/chat/messages/${messageId}/reaction`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reaction: reaction.trim() })
+                });
+                const data = await response.json();
+                updateApiResponse(data);
+                
+                if (response.ok) {
+                    // 리액션 표시 업데이트
+                    let reactionSpan = messageElement.querySelector('.message-reaction');
+                    if (!reactionSpan) {
+                        reactionSpan = document.createElement('span');
+                        reactionSpan.className = 'message-reaction';
+                        reactionSpan.style.marginLeft = '10px';
+                        reactionSpan.style.fontSize = '1.2em';
+                        messageElement.appendChild(reactionSpan);
+                    }
+                    reactionSpan.textContent = reaction.trim();
+                }
+            } catch (error) {
+                updateApiResponse({ error: { message: error.message } });
+                alert(`리액션 추가 중 오류가 발생했습니다: ${error.message}`);
+            }
+        }
+    };
+    actionsDiv.appendChild(reactionButton);
+    
     messageElement.appendChild(actionsDiv);
 }
