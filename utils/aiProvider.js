@@ -14,12 +14,12 @@ const { getGeminiApiResponse } = require('../config/geminiapi'); // 새로 추�
  * @param {Array} history - 대화 기록.
  * @param {string|null} systemMessageText - 시스템 프롬프트 텍스트.
  * @param {string|null} specialModeType - 특수 모드 타입 ('stream', 'canvas' 등).
- * @param {function|null} streamResponseCallback - 스트리밍 응답을 위한 콜백 함수.
- * @param {Object} options - AI 제공자를 위한 추가 옵션.
+ * @param {function|null} streamResponseCallback - 스트리밍 응답을 위한 콜백 함수. * @param {Object} options - AI 제공자를 위한 추가 옵션.
  * @param {string} [options.ollamaModel='gemma3:4b'] - 제공자가 'ollama'인 경우 사용할 모델 이름.
  * @param {string} [options.vertexModelId=undefined] - Vertex AI에 사용할 모델 ID (getVertexAiApiResponse의 기본값을 재정의).
  * @param {string} [options.geminiModel='gemini-2.0-flash-thinking-exp-01-21'] - Gemini API에 사용할 모델 ID.
  * @param {number} [options.maxOutputTokens=undefined] - 모델에서 요청할 최대 출력 토큰 수.
+ * @param {Object} context - 요청 컨텍스트 (clientIp 등).
  * @returns {Promise<Object|null>} AI 응답 객체, 또는 스트리밍인 경우 null.
  * @throws {Error} 지원되지 않는 AI 제공자가 지정된 경우.
  */
@@ -30,7 +30,8 @@ async function fetchChatCompletion(
   systemMessageText = null,
   specialModeType = null,
   streamResponseCallback = null,
-  options = {} // Added options parameter
+  options = {}, // Added options parameter
+  context = {} // Added context parameter
 ) {  // Consolidate model selection for logging
   let modelToLog;
   if (aiProvider === 'geminiapi') {
@@ -41,8 +42,7 @@ async function fetchChatCompletion(
     modelToLog = options.ollamaModel || 'gemma3:4b';
   }
   
-  console.log(`[aiProviderUtils] Requesting chat completion. Provider: ${aiProvider}, Model: ${modelToLog}`);
-  if (aiProvider === 'geminiapi') {
+  console.log(`[aiProviderUtils] Requesting chat completion. Provider: ${aiProvider}, Model: ${modelToLog}`);  if (aiProvider === 'geminiapi') {
     console.log(`[aiProviderUtils] Using Gemini API provider.`);
     return await getGeminiApiResponse(
       currentUserMessage,
@@ -50,7 +50,8 @@ async function fetchChatCompletion(
       systemMessageText,
       specialModeType,
       streamResponseCallback,
-      options // Pass all options to Gemini API
+      options, // Pass all options to Gemini API
+      context  // Pass context for tools
     );
   } else if (aiProvider === 'vertexai') {
     console.log(`[aiProviderUtils] Using Vertex AI provider.`);

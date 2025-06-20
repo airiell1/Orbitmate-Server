@@ -1,6 +1,6 @@
 // testScripts/chat.js - 채팅 관련 기능
 
-import { updateApiResponse, appendToApiResponse, addMessageActions } from './utils.js';
+import { updateApiResponse, appendToApiResponse, addMessageActions, renderMessageContent } from './utils.js';
 
 // 게스트 사용자 ID
 const GUEST_USER_ID = 'guest';
@@ -96,12 +96,17 @@ export function addMessage(sender, text, messageId = null, className = null) {
     const senderSpan = document.createElement('span');
     senderSpan.classList.add('sender');
     senderSpan.textContent = `${sender === 'user' ? '나' : (sender === 'ai' ? 'AI' : sender)}: `;
-    contentContainer.appendChild(senderSpan);
-
-    // 메시지 내용
+    contentContainer.appendChild(senderSpan);    // 메시지 내용
     const contentSpan = document.createElement('span');
     contentSpan.classList.add('message-content');
-    contentSpan.textContent = text || '';
+    
+    // AI 메시지인 경우 Markdown 렌더링, 사용자 메시지는 일반 텍스트
+    if (sender === 'ai') {
+        contentSpan.innerHTML = renderMessageContent(text || '', true);
+    } else {
+        contentSpan.textContent = text || '';
+    }
+    
     contentContainer.appendChild(contentSpan);
 
     messageElement.appendChild(contentContainer);
@@ -214,13 +219,11 @@ export async function sendMessage() {
 
         const apiResponse = document.getElementById('api-response');
         apiResponse.textContent = '';
-        
-        if (streamMode && response.ok && response.headers.get('Content-Type')?.includes('text/event-stream')) {
+          if (streamMode && response.ok && response.headers.get('Content-Type')?.includes('text/event-stream')) {
             // Server-Sent Events 스트리밍
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
-            let eolIndex;
             
             // AI 응답 메시지 요소 미리 생성
             const aiMessageObj = addMessage('ai', 'AI 응답 대기 중...', null, 'ai_message');
@@ -230,6 +233,8 @@ export async function sendMessage() {
             console.log('[SSE 스트리밍] 스트리밍 시작');
             updateApiResponse({ status: 'streaming_started', timestamp: new Date().toISOString() });
 
+            let isFirstChunk = true;
+
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) {
@@ -238,28 +243,36 @@ export async function sendMessage() {
                 }
                 
                 buffer += decoder.decode(value, { stream: true });
-                
-                while ((eolIndex = buffer.indexOf('\n\n')) >= 0) {
-                    const chunk = buffer.slice(0, eolIndex);
-                    buffer = buffer.slice(eolIndex + 2);
+                  // SSE 이벤트 구분자: \n\n
+                let boundaryIndex;
+                while ((boundaryIndex = buffer.indexOf('\n\n')) !== -1) {
+                    const chunk = buffer.slice(0, boundaryIndex);
+                    buffer = buffer.slice(boundaryIndex + 2);
                     
-                    console.log('[SSE 스트리밍] 받은 청크:', chunk);
+                    if (!chunk.trim()) continue; // 빈 청크 무시
+                    
+                    console.log('[SSE 스트리밍] 받은 원본 청크:', JSON.stringify(chunk));
                     
                     // SSE 이벤트 파싱
                     const lines = chunk.split('\n');
-                    let eventType = null;
-                    let data = null;
+                    let eventType = '';
+                    let data = '';
                     
                     for (const line of lines) {
                         if (line.startsWith('event: ')) {
-                            eventType = line.slice(7);
+                            eventType = line.slice(7).trim();
                         } else if (line.startsWith('data: ')) {
                             data = line.slice(6);
                         }
                     }
                     
+                    console.log('[SSE 스트리밍] 파싱 결과:', { eventType, data, dataType: typeof data });
+                    
                     // 데이터가 없으면 건너뛰기
-                    if (!data) continue;
+                    if (!data) {
+                        console.log('[SSE 스트리밍] 데이터가 없는 청크, 건너뛰기');
+                        continue;
+                    }
                     
                     // [DONE] 신호 처리
                     if (data === '[DONE]') {
@@ -284,24 +297,72 @@ export async function sendMessage() {
                             if (aiMessageElement) {
                                 aiMessageElement.dataset.messageId = chunkData.aiMessageId;
                                 addMessageActions(aiMessageElement, chunkData.aiMessageId, 'ai');
-                            }
-                        } else if (eventType === 'end') {
+                            }                        } else if (eventType === 'end') {
                             console.log('[SSE 스트리밍] 종료 이벤트 수신');
-                            break;
-                        } else if (!eventType && chunkData.delta) {
-                            // 일반 데이터 (delta) 처리
-                            // 첫 번째 청크인 경우 "AI 응답 대기 중..." 텍스트 제거
-                            if (aiMessageContentSpan.textContent === 'AI 응답 대기 중...') {
-                                aiMessageContentSpan.textContent = '';
+                            // 스트리밍 완료 후 Markdown 렌더링 적용
+                            if (aiMessageContentSpan) {
+                                const finalContent = aiMessageContentSpan.textContent;
+                                aiMessageContentSpan.innerHTML = renderMessageContent(finalContent, true);
+                                
+                                // 코드 하이라이팅 적용
+                                if (typeof hljs !== 'undefined') {
+                                    const codeBlocks = aiMessageContentSpan.querySelectorAll('pre code');
+                                    codeBlocks.forEach((block) => {
+                                        hljs.highlightElement(block);
+                                    });
+                                }
                             }
+                            break;
+                        } else if (eventType === 'message' || eventType === '' || !eventType) {
+                            // 메시지 데이터 처리 (delta 또는 직접 텍스트)
+                            const deltaText = chunkData.delta || chunkData.text || chunkData.content || '';
                             
-                            aiMessageContentSpan.textContent += chunkData.delta;
-                            const chatBox = document.getElementById('chat-box');
-                            chatBox.scrollTop = chatBox.scrollHeight;
-                            appendToApiResponse(chunkData.delta);
+                            console.log('[SSE 스트리밍] 메시지 처리:', { 
+                                eventType, 
+                                delta: deltaText ? deltaText.substring(0, 20) + '...' : 'null',
+                                chunkDataKeys: Object.keys(chunkData)
+                            });
+                            
+                            if (deltaText) {
+                                // 첫 번째 청크인 경우 "AI 응답 대기 중..." 텍스트 제거
+                                if (isFirstChunk) {
+                                    aiMessageContentSpan.textContent = '';
+                                    isFirstChunk = false;
+                                    console.log('[SSE 스트리밍] 첫 번째 컨텐츠 청크, 대기 메시지 제거');
+                                }
+                                
+                                console.log('[SSE 스트리밍] 텍스트 추가:', deltaText);
+                                aiMessageContentSpan.textContent += deltaText;
+                                
+                                // 스크롤 자동 이동
+                                const chatBox = document.getElementById('chat-box');
+                                if (chatBox) {
+                                    chatBox.scrollTop = chatBox.scrollHeight;
+                                }
+                                
+                                // API 응답 영역에도 표시
+                                appendToApiResponse(deltaText);
+                            } else {
+                                console.log('[SSE 스트리밍] delta 텍스트가 없음, 전체 chunkData:', chunkData);
+                            }
+                        } else {
+                            console.log('[SSE 스트리밍] 처리되지 않은 이벤트:', eventType, chunkData);
                         }
                     } catch (e) {
-                        console.error('[SSE 스트리밍] 청크 파싱 오류:', e, data);
+                        console.error('[SSE 스트리밍] 청크 파싱 오류:', e, '원본 데이터:', data);
+                        // 파싱 실패 시에도 텍스트로 표시
+                        if (data && typeof data === 'string' && data !== '[DONE]') {
+                            console.log('[SSE 스트리밍] 파싱 실패, 원본 텍스트로 표시:', data);
+                            if (isFirstChunk) {
+                                aiMessageContentSpan.textContent = '';
+                                isFirstChunk = false;
+                            }
+                            aiMessageContentSpan.textContent += data;
+                            const chatBox = document.getElementById('chat-box');
+                            if (chatBox) {
+                                chatBox.scrollTop = chatBox.scrollHeight;
+                            }
+                        }
                     }
                 }
             }

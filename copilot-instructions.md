@@ -1,4 +1,3 @@
-````instructions
 # Orbitmate Copilot Instructions
 
 이 문서는 Orbitmate 프로젝트 운영 가이드, 구조 요약, 버그 트래킹, 작업 목록을 포함합니다.
@@ -21,7 +20,8 @@
       - `initializeDbPool()`: 커넥션 풀 생성 및 초기화
       - `getConnection()`: 커넥션 획득 (풀에서)
       - `oracledb`: oracledb 인스턴스 전체 내보내기 (트랜잭션, CLOB 등 활용)
-    - 참고: 커넥션 풀은 app.js/server.js에서 최초 1회만 초기화 필요. 각 모델/컨트롤러에서는 getConnection()으로 커넥션 획득 후 사용/반납  - `config/vertexai.js`:
+    - 참고: 커넥션 풀은 app.js/server.js에서 최초 1회만 초기화 필요. 각 모델/컨트롤러에서는 getConnection()으로 커넥션 획득 후 사용/반납
+  - `config/vertexai.js`:
     - Vertex AI 연동, Google Cloud Gemini 2.5 pro 모델 사용
     - **리전 설정: `global` exp는 이 리전에서만 사용 가능
     - 안전성 필터(증오/성적/위험/학대), 스트림/캔버스/검색 등 특수 모드 지원
@@ -43,12 +43,12 @@
 - **AI 제공자 및 유틸리티 (utils/)**
   - `utils/aiProvider.js`: AI 제공자 추상화 레이어
     - **기본 provider: `'geminiapi'` (Google AI Studio)** - 2025년 6월 17일 vertexai에서 변경
-    - 주요 함수:      - `fetchChatCompletion(aiProvider, currentUserMessage, history, systemMessageText, specialModeType, streamResponseCallback, options)`: AI 제공자별 요청 라우팅
+    - 주요 함수:
+      - `fetchChatCompletion(aiProvider, currentUserMessage, history, systemMessageText, specialModeType, streamResponseCallback, options)`: AI 제공자별 요청 라우팅
     - Google AI Studio, Vertex AI, Ollama 간 통합 인터페이스 제공
     - 옵션을 통한 모델별 설정 지원 (ollamaModel, vertexModelId, geminiModel, max_output_tokens_override 등)
 
 - **컨트롤러**
-
   - `controllers/userController.js`: 사용자 회원가입, 로그인, 설정/프로필 조회·수정, 프로필 이미지 업로드, 회원 탈퇴 등 사용자 관련 API 처리
     - 주요 함수:
       - `registerUserController()`: 회원가입 (이미 등록된 이메일은 200으로 반환)
@@ -85,10 +85,7 @@
   - `controllers/searchController.js`: 검색 기능 관련 API 처리 (위키피디아 검색 등)
     - 주요 함수:
       - `searchWikipediaController()`: 위키피디아 검색 API 처리
-      - `getUserSessionsController()`: 사용자 세션 목록 조회
-      - `updateSessionController()`: 세션 정보 수정 (제목, 카테고리, 보관 여부)
-      - `getSessionMessagesController()`: 세션 메시지 목록 조회 (models/session.js의 getSessionMessages 호출)
-      - `deleteSessionController()`: 세션 삭제
+
 - **API 라우트**
   - `routes/users.js`, `routes/chat.js`, `routes/sessions.js`, `routes/aiInfo.js`, `routes/search.js`
 
@@ -126,30 +123,34 @@
 - **프론트엔드**
   - `public/script.js`: 메인 채팅 프론트엔드 스크립트 (index.html용)
     - **HTTP SSE 스트리밍**: WebSocket 제거, Server-Sent Events만 사용
+    - **Markdown 지원**: Marked.js와 Highlight.js를 활용한 AI 응답 Markdown 렌더링
     - 주요 함수 및 기능:
       - `initializeSession()`: 세션 초기화 및 자동 연결 (로컬 스토리지 기반 세션 복원)
-      - `addMessage(sender, text, messageId, isEdited)`: 채팅 메시지 UI 추가 (메시지 액션 버튼 포함)
-      - `sendMessage()`: 메시지 전송 및 AI 응답 처리 (HTTP SSE 스트리밍 지원)
-      - `startEditing()`, `saveEdit()`, `deleteMessage()`: 메시지 편집/삭제 기능
+      - `addMessage(sender, text, messageId, isEdited)`: 채팅 메시지 UI 추가 (AI 메시지는 Markdown 렌더링)
+      - `sendMessage()`: 메시지 전송 및 AI 응답 처리 (HTTP SSE 스트리밍 지원, 스트리밍 완료 후 Markdown 변환)
+      - `parseMarkdown(text)`: Markdown 텍스트를 HTML로 변환 (코드 하이라이팅 포함)
+      - `renderMessageContent(content, isMarkdown)`: 메시지 내용 렌더링 (Markdown/일반 텍스트 선택)
       - `refreshMessages()`: 서버에서 메시지 새로고침
-      - `fetchAiModelsAndPopulateSelector()`: AI 모델 목록 조회 및 드롭다운 생성
-      - `updateDisplayedModelInfo()`: 선택된 AI 모델 정보 UI 업데이트
     - 전역 변수: currentSessionId, selectedAiProvider, selectedModelId, currentMaxOutputTokens, currentContextLimit
 
   - `public/test.html`: API 테스트 페이지
     - **기본 AI Provider: Gemini(vertexai) 선택됨**
+    - **Markdown 지원**: Marked.js와 Highlight.js 라이브러리 추가
     - Gemini 선택 시 Ollama 모델 선택 및 양자화 옵션 자동 비활성화
   - `public/testScript.js`: API 테스트 및 디버깅용 프론트엔드 스크립트 (test.html용)
     - **HTTP SSE 스트리밍**: WebSocket 제거, Server-Sent Events만 사용
+    - **Markdown 지원**: 테스트 페이지의 AI 응답에 Markdown 렌더링 적용
     - 모듈화 구조: testScripts/ 디렉토리의 개별 모듈을 import
       - `testScripts/user.js`: 사용자 관련 API 테스트 (회원가입, 로그인, 프로필, 설정)
       - `testScripts/session.js`: 세션 관련 API 테스트 (생성, 조회, 수정, 삭제)
       - `testScripts/message.js`: 메시지 관련 API 테스트 (편집, 리액션, 삭제, 파일 업로드)
       - `testScripts/search.js`: 검색 기능 API 테스트 (위키피디아, 네이버, 카카오)
-      - `testScripts/chat.js`: 채팅 기능 (세션 초기화, 메시지 전송, 새로고침)
+      - `testScripts/chat.js`: 채팅 기능 (세션 초기화, 메시지 전송, 새로고침, Markdown 렌더링)
         - **기본 AI Provider: `'geminiapi'`로 설정됨**
         - Gemini UI 선택 시 `geminiapi` 사용 (`radio.value === 'gemini' ? 'geminiapi' : radio.value`)
-      - `testScripts/utils.js`: 공통 유틸리티 함수 (API 응답 표시, 에러 처리)
+      - `testScripts/utils.js`: 공통 유틸리티 함수 (API 응답 표시, 에러 처리, Markdown 파싱)
+        - `parseMarkdown(text)`: Markdown 파싱 함수
+        - `renderMessageContent(content, isMarkdown)`: 메시지 내용 렌더링 함수
     - 주요 역할: API 엔드포인트 테스트, 응답 데이터 검증, 서버 상태 점검
     - **UI 최적화**: `toggleOllamaOptions()` 함수로 AI Provider 변경 시 Ollama 옵션 자동 비활성화/활성화
 
@@ -159,6 +160,12 @@
       - 프롬프트 선택 시 입력창 dataset에 저장 (data-system-prompt 속성)
       - 다양한 역할 프롬프트 지원 (Orbitmate 2.5, mate-star, mate-search, 문학작가, 비즈니스 컨설턴트, 철학자 등)
       - 채팅 입력 UX 개선 (프롬프트 토글 버튼, 드롭다운 패널)
+
+- **CSS 스타일링**
+  - `public/style.css`: 메인 스타일시트
+    - **Markdown 렌더링 스타일**: 코드 블록, 헤딩, 리스트, 테이블, 인용구 등 완전한 Markdown 요소 지원
+    - 코드 하이라이팅 스타일 (Highlight.js 연동)
+    - 반응형 디자인 및 현대적 UI/UX
 
 ---
 
@@ -172,6 +179,7 @@
   - test.html, testScript.js, script.js에서 버튼/입력/이벤트 정상 동작 확인
   - DOM 요소와 JS 코드 연결, 이벤트 리스너 누락/중복 점검
   - API 호출 시 실제 네트워크 요청 및 UI 반영, 콘솔 에러/경고 없는지 확인
+  - Markdown 렌더링 및 코드 하이라이팅 정상 작동 확인
 
 - **API 설계 원칙**
   - 성공 시: 데이터를 직접 반환 (배열이면 배열, 객체면 객체)
@@ -208,6 +216,8 @@
 [2025-06-19] WebSocket 완전 제거: 모든 WebSocket 관련 코드 제거, HTTP SSE 스트리밍만 사용하도록 단순화 → 팀원 사용 편의성 대폭 향상 (해결)
 [2025-06-19] 사용자 ID 통일: 모든 시스템에서 'guest' 사용, 일관성 확보 (해결)
 [2025-06-19] DB 저장 디버깅 강화: 스트리밍 모드에서도 DB 저장 상태 실시간 로그 확인 가능 (해결)
+[2025-06-20] Markdown 렌더링 구현: 메인/테스트 페이지에 Marked.js + Highlight.js 통합, AI 응답 Markdown 자동 렌더링, 코드 하이라이팅, 완전한 CSS 스타일링 적용 (해결)
+
 ---
 
 ## 4. 작업 목록 (진행상황 체크)
@@ -220,6 +230,7 @@
 - [x] 파일 업로드/다운로드/권한 관리 (인증 최소화)
 - [x] JWT 인증/인가 (학습용 최소 구현)
 - [x] HTTP SSE 스트리밍 (WebSocket 제거 완료)
+- [x] Markdown 렌더링 지원 (Marked.js + Highlight.js 통합)
 
 ### 기존 개선 사항
 - [ ] API 오류 처리 표준화 및 상세화
@@ -227,6 +238,7 @@
 - [ ] DB 커넥션 풀 최적화
 - [x] API 응답 케이싱 통일 (standardizeApiResponse 유틸리티 추가 및 적용)
 - [x] WebSocket 완전 제거 및 HTTP SSE 스트리밍으로 단순화
+- [x] Markdown 렌더링 및 코드 하이라이팅 구현
 
 ### 신규 백엔드 기능 (우선순위별)
 
@@ -521,7 +533,7 @@
 
 ---
 
-## 최신 시스템 상태 (2025-06-17 기준)
+## 최신 시스템 상태 (2025-06-20 기준)
 
 ### 🔧 현재 기본 설정
 - **기본 AI Provider**: `geminiapi` (Google AI Studio)
@@ -537,25 +549,56 @@
 3. **UI/UX 개선**: Gemini 선택 시 Ollama 옵션 자동 비활성화
 4. **자동 매핑**: 테스트 페이지에서 `gemini` → `geminiapi` 자동 변환
 5. **기본값 통일**: 전체 시스템에서 Google AI Studio 우선 사용, 'guest' 사용자 ID 통일
+6. **Markdown 렌더링**: AI 응답의 완전한 Markdown 지원 및 코드 하이라이팅
 
 ### 🚀 성능 향상
 - Gemini 2.0 Flash Thinking Exp의 고품질 응답 제공
 - 스트림/캔버스 모드 완벽 지원
 - 검색 기능과 AI 응답 통합
 - DB 저장 보장 (스트리밍 모드에서도 메시지 정상 저장)
+- Markdown 렌더링을 통한 가독성 향상
 
-### 📋 주요 변경 사항 요약 (2025-06-19)
-1. **WebSocket 완전 제거**: 프론트엔드/백엔드 모든 WebSocket 관련 코드 제거
-2. **HTTP SSE 스트리밍 전용**: 표준 HTTP 기반 Server-Sent Events만 사용
-3. **사용자 ID 통일**: 모든 시스템에서 `'guest'` 사용
-4. **팀원 사용성 개선**: 복잡한 WebSocket 설정 없이 바로 사용 가능
-5. **네트워크 디버깅**: 브라우저 개발자 도구에서 스트리밍 요청 확인 가능
+### 📋 주요 변경 사항 요약 (2025-06-20)
+1. **Markdown 렌더링 구현**: Marked.js + Highlight.js 통합
+   - 메인/테스트 페이지 모두 지원
+   - AI 응답 자동 Markdown 렌더링
+   - 코드 하이라이팅 지원
+   - 완전한 CSS 스타일링 적용
+2. **스트리밍 완료 후 처리**: 스트리밍이 끝난 후 Markdown 변환
+3. **사용자 메시지**: 일반 텍스트로 처리 (보안상 이유)
+4. **테스트 환경**: 동일한 Markdown 렌더링 기능 적용
 
 ### 🔍 디버깅 로그 개선
 - chatController에 AI provider 결정 로그 추가
 - 요청 파라미터 디버깅 로그 활성화
 - AI provider 매핑 상태 실시간 확인 가능
 - 스트리밍 모드에서 DB 저장 성공/실패 로그 추가
+- Markdown 렌더링 성공/실패 로그 추가
 
 ---
-````
+
+## 수정 기록 (2025-06-20)
+
+### Markdown 렌더링 시스템 구현
+- **변경된 파일**:
+  - `public/index.html`: Marked.js, Highlight.js 라이브러리 추가
+  - `public/test.html`: Marked.js, Highlight.js 라이브러리 추가
+  - `public/script.js`: Markdown 파싱 함수 및 렌더링 로직 추가
+  - `testScripts/utils.js`: Markdown 처리 유틸리티 함수 추가
+  - `testScripts/chat.js`: 테스트 페이지 Markdown 렌더링 적용
+  - `public/style.css`: 완전한 Markdown 요소 CSS 스타일링 추가
+
+### 주요 기능
+1. **AI 응답 Markdown 자동 렌더링**: 코드 블록, 헤딩, 리스트, 테이블, 인용구 등
+2. **코드 하이라이팅**: Highlight.js를 통한 syntax highlighting
+3. **스트리밍 지원**: 스트리밍 완료 후 Markdown 변환 적용
+4. **보안 고려**: 사용자 메시지는 일반 텍스트로 처리 (XSS 방지)
+5. **반응형 디자인**: 모든 Markdown 요소의 완전한 CSS 스타일링
+
+### 기술적 세부사항
+- **라이브러리**: Marked.js (Markdown 파싱), Highlight.js (코드 하이라이팅)
+- **렌더링 시점**: AI 메시지 추가 시 및 스트리밍 완료 후
+- **CSS 스타일**: 헤딩, 코드 블록, 테이블, 인용구, 리스트 등 완전 지원
+- **에러 처리**: 라이브러리 로드 실패 시 일반 텍스트로 대체
+
+---

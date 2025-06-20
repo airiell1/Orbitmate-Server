@@ -4,6 +4,46 @@ const GUEST_USER_ID = 'guest';
 // 전역 변수
 let currentSessionId = null;
 
+// Markdown 처리 함수
+function parseMarkdown(text) {
+    if (typeof marked === 'undefined') {
+        console.warn('Marked.js 라이브러리가 로드되지 않았습니다. 일반 텍스트로 표시합니다.');
+        return text.replace(/\n/g, '<br>');
+    }
+    
+    try {
+        // Marked.js 설정
+        marked.setOptions({
+            highlight: function(code, lang) {
+                if (typeof hljs !== 'undefined' && lang && hljs.getLanguage(lang)) {
+                    try {
+                        return hljs.highlight(code, { language: lang }).value;
+                    } catch (err) {
+                        console.warn('Syntax highlighting 오류:', err);
+                    }
+                }
+                return code;
+            },
+            breaks: true,
+            gfm: true
+        });
+        
+        return marked.parse(text);
+    } catch (e) {
+        console.error('Markdown 파싱 오류:', e);
+        return text.replace(/\n/g, '<br>');
+    }
+}
+
+// 메시지 내용을 Markdown으로 렌더링하는 함수
+function renderMessageContent(content, isMarkdown = true) {
+    if (!isMarkdown) {
+        return content.replace(/\n/g, '<br>');
+    }
+    
+    return parseMarkdown(content);
+}
+
 // 메시지 액션 버튼 추가 기능 (편집, 삭제 버튼)
 function addMessageActions(messageElement, messageId, sender) {
     const existingActions = messageElement.querySelector('.message-actions');
@@ -139,31 +179,50 @@ function addMessage(sender, text, messageId = null, isEdited = false, isRealtime
     
     if (messageId) {
         messageElement.dataset.messageId = messageId; // 메시지 ID를 data 속성으로 저장
-    }
-
-    const contentSpan = document.createElement('span');
+    }    const contentSpan = document.createElement('span');
     contentSpan.classList.add('message-content');
     
-    // HTML 삽입 전에 특수문자 이스케이프 (XSS 방지) 후, \n을 <br>로 변경
-    const escapedText = text ? String(text).replace(/[&<>"']/g, function (match) {
-        return {
-            '&': '&amp;',
-            '<': '&lt;',
-            '>': '&gt;',
-            '"': '&quot;',
-            "'": '&#39;'
-        }[match];
-    }) : '';
-    const formattedText = escapedText.replace(/\\n/g, '<br>');
-
     if (sender === 'user') {
         messageElement.classList.add('user-message');
+        // 사용자 메시지는 일반 텍스트로 처리
+        const escapedText = text ? String(text).replace(/[&<>"']/g, function (match) {
+            return {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[match];
+        }) : '';
+        const formattedText = escapedText.replace(/\\n/g, '<br>');
         contentSpan.innerHTML = `나: ${formattedText}`;
     } else if (sender === 'ai') {
         messageElement.classList.add('ai-message');
-        contentSpan.innerHTML = `AI: ${formattedText}`;
+        // AI 메시지는 Markdown으로 렌더링
+        const renderedContent = renderMessageContent(text || '', true);
+        contentSpan.innerHTML = `AI: ${renderedContent}`;
+        
+        // 코드 하이라이팅 적용
+        if (typeof hljs !== 'undefined') {
+            setTimeout(() => {
+                const codeBlocks = contentSpan.querySelectorAll('pre code');
+                codeBlocks.forEach((block) => {
+                    hljs.highlightElement(block);
+                });
+            }, 0);
+        }
     } else { // 시스템 메시지 등
         messageElement.classList.add('system-message');
+        const escapedText = text ? String(text).replace(/[&<>"']/g, function (match) {
+            return {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            }[match];
+        }) : '';
+        const formattedText = escapedText.replace(/\\n/g, '<br>');
         contentSpan.innerHTML = `[${sender}] ${formattedText}`;
     }
     messageElement.appendChild(contentSpan);
@@ -350,9 +409,8 @@ async function sendMessage() {
             if(userMessageElement) userMessageElement.classList.add('message-error');
             return;
         }
-        
-        // 스트리밍 응답 처리 (기본 채팅 페이지에서는 현재 비활성화)
-        if (useStream && response.body) {
+          // 스트리밍 응답 처리
+        if (useStream && response.body && response.headers.get('Content-Type')?.includes('text/event-stream')) {
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
@@ -362,82 +420,157 @@ async function sendMessage() {
             
             const aiMessageElement = addMessage('ai', 'AI 응답 대기 중...');
             const aiContentSpan = aiMessageElement.querySelector('.message-content');
+            let isFirstChunk = true;
+
+            console.log('[메인 페이지 SSE] 스트리밍 시작');
 
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) {
+                    console.log('[메인 페이지 SSE] 스트리밍 완료');
+                    // 최종 ID 설정 및 액션 버튼 추가
                     if (aiMessageElement && aiMessageId) {
                         aiMessageElement.dataset.messageId = aiMessageId;
-                        addMessageActions(aiMessageElement, aiMessageId, 'ai', fullAiResponse);
+                        if (!aiMessageElement.querySelector('.message-actions')) {
+                            addMessageActions(aiMessageElement, aiMessageId, 'ai');
+                        }
                     }
                     if (userMessageElement && userMessageIdForStream) {
-                         userMessageElement.dataset.messageId = userMessageIdForStream;
-                         addMessageActions(userMessageElement, userMessageIdForStream, 'user', originalMessageText);
+                        userMessageElement.dataset.messageId = userMessageIdForStream;
+                        if (!userMessageElement.querySelector('.message-actions')) {
+                            addMessageActions(userMessageElement, userMessageIdForStream, 'user');
+                        }
                     }
-                    console.log('Stream ended.');
                     break;
                 }
+                
                 buffer += decoder.decode(value, { stream: true });
-                let eventEndIndex;
-                while ((eventEndIndex = buffer.indexOf('\\n\\n')) !== -1) {
-                    const eventDataString = buffer.substring(0, eventEndIndex);
-                    buffer = buffer.substring(eventEndIndex + 2);
+                
+                // SSE 이벤트 구분자: \n\n
+                let boundaryIndex;
+                while ((boundaryIndex = buffer.indexOf('\n\n')) !== -1) {
+                    const chunk = buffer.slice(0, boundaryIndex);
+                    buffer = buffer.slice(boundaryIndex + 2);
 
-                    if (eventDataString.startsWith('event: error')) {
-                        // 오류 처리
-                        const errorJsonString = eventDataString.substring(eventDataString.indexOf('data:') + 5);
-                        const errorData = JSON.parse(errorJsonString);
-                        if (aiContentSpan) aiContentSpan.innerHTML = `AI: 스트리밍 오류 - ${errorData.message || JSON.stringify(errorData)}`;
-                        aiMessageElement.classList.add('message-error');
-                        break; // while 루프 종료
-                    } else if (eventDataString.startsWith('event: end')) {
-                        // 종료 이벤트 처리
-                        const endJsonString = eventDataString.substring(eventDataString.indexOf('data:') + 5);
-                        const endData = JSON.parse(endJsonString);
-                        if (endData.ai_message_id) aiMessageId = endData.ai_message_id;
-                        // 스트림 종료 시 최종 ID로 버튼 다시 추가 (중복 방지 필요)
-                        if (userMessageElement && userMessageIdForStream && !userMessageElement.querySelector('.message-actions')) {
-                            addMessageActions(userMessageElement, userMessageIdForStream, 'user', originalMessageText);
+                    if (!chunk.trim()) continue; // 빈 청크 무시
+                    
+                    console.log('[메인 페이지 SSE] 받은 청크:', chunk);
+
+                    // SSE 이벤트 파싱
+                    const lines = chunk.split('\n');
+                    let eventType = '';
+                    let data = '';
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('event: ')) {
+                            eventType = line.slice(7).trim();
+                        } else if (line.startsWith('data: ')) {
+                            data = line.slice(6);
                         }
-                        if (aiMessageElement && aiMessageId && !aiMessageElement.querySelector('.message-actions')) {
-                            addMessageActions(aiMessageElement, aiMessageId, 'ai', fullAiResponse);
-                        }
-                        break; 
-                    } else if (eventDataString.startsWith('data:')) {
-                        const jsonString = eventDataString.substring(5);
-                        const data = JSON.parse(jsonString);
-                        if (data.user_message_id && !userMessageIdForStream) {
-                            userMessageIdForStream = data.user_message_id;
+                    }
+
+                    // 데이터가 없으면 건너뛰기
+                    if (!data) {
+                        console.log('[메인 페이지 SSE] 데이터가 없는 청크, 건너뛰기');
+                        continue;
+                    }
+
+                    // [DONE] 신호 처리
+                    if (data === '[DONE]') {
+                        console.log('[메인 페이지 SSE] 완료 신호 수신');
+                        break;
+                    }
+
+                    try {
+                        const chunkData = JSON.parse(data);
+                        console.log('[메인 페이지 SSE] 파싱된 데이터:', { eventType, data: chunkData });
+
+                        // 이벤트 타입별 처리
+                        if (eventType === 'ids' && chunkData.userMessageId) {
+                            console.log('[메인 페이지 SSE] 사용자 메시지 ID 수신:', chunkData.userMessageId);
+                            userMessageIdForStream = chunkData.userMessageId;
                             if (userMessageElement) {
                                 userMessageElement.dataset.messageId = userMessageIdForStream;
-                                // 스트리밍 시작 시 사용자 메시지에 대한 버튼 추가 (중복 방지 필요)
                                 if (!userMessageElement.querySelector('.message-actions')) {
-                                   addMessageActions(userMessageElement, userMessageIdForStream, 'user', originalMessageText);
+                                    addMessageActions(userMessageElement, userMessageIdForStream, 'user');
                                 }
                             }
-                        }
-                        if (data.chunk) {
-                            // Escape HTML characters in the chunk before adding to innerHTML
-                            const escapedChunk = data.chunk.replace(/[&<>"']/g, function (match) {
-                                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[match];
-                            }).replace(/\n/g, '<br>'); // Also handle explicit newlines if they come in chunks
+                        } else if (eventType === 'ai_message_id' && chunkData.aiMessageId) {
+                            console.log('[메인 페이지 SSE] AI 메시지 ID 수신:', chunkData.aiMessageId);
+                            aiMessageId = chunkData.aiMessageId;
+                            if (aiMessageElement) {
+                                aiMessageElement.dataset.messageId = aiMessageId;
+                            }                        } else if (eventType === 'end') {
+                            console.log('[메인 페이지 SSE] 종료 이벤트 수신');
+                            // 스트리밍 완료 후 Markdown 렌더링 적용
+                            if (aiContentSpan) {
+                                const aiPrefix = 'AI: ';
+                                const currentContent = aiContentSpan.textContent;
+                                
+                                if (currentContent.startsWith(aiPrefix)) {
+                                    const actualContent = currentContent.substring(aiPrefix.length);
+                                    const renderedContent = renderMessageContent(actualContent, true);
+                                    aiContentSpan.innerHTML = aiPrefix + renderedContent;
+                                    
+                                    // 코드 하이라이팅 적용
+                                    if (typeof hljs !== 'undefined') {
+                                        const codeBlocks = aiContentSpan.querySelectorAll('pre code');
+                                        codeBlocks.forEach((block) => {
+                                            hljs.highlightElement(block);
+                                        });
+                                    }
+                                }
+                            }
+                            break;
+                        } else if (eventType === 'message' || (!eventType && chunkData.delta)) {
+                            // 메시지 데이터 처리 (delta 또는 직접 텍스트)
+                            const deltaText = chunkData.delta || chunkData.text || chunkData.content || chunkData.chunk || '';
+                            
 
-                            if (fullAiResponse === '') { // First chunk
-                                fullAiResponse = data.chunk; // Keep raw for logic
-                                if (aiContentSpan) aiContentSpan.innerHTML = 'AI: ' + escapedChunk;
-                            } else {
-                                fullAiResponse += data.chunk; // Keep raw for logic
-                                if (aiContentSpan) aiContentSpan.innerHTML += escapedChunk; // Append new chunk
+                            if (deltaText) {
+                                console.log('[메인 페이지 SSE] 텍스트 추가:', deltaText.substring(0, 50) + '...');
+                                
+                                // HTML 이스케이프 처리
+                                const escapedChunk = deltaText.replace(/[&<>"']/g, function (match) {
+                                    return { 
+                                        '&': '&amp;', 
+                                        '<': '&lt;', 
+                                        '>': '&gt;', 
+                                        '"': '&quot;', 
+                                        "'": '&#39;' 
+                                    }[match];
+                                }).replace(/\n/g, '<br>');
+
+                                // 첫 번째 청크인 경우 "AI 응답 대기 중..." 텍스트 제거
+                                if (isFirstChunk && aiContentSpan) {
+                                    aiContentSpan.innerHTML = 'AI: ' + escapedChunk;
+                                    fullAiResponse = deltaText;
+                                    isFirstChunk = false;
+                                } else if (aiContentSpan) {
+                                    aiContentSpan.innerHTML += escapedChunk;
+                                    fullAiResponse += deltaText;
+                                }
+                                
+                                // 스크롤 자동 이동
+                                chatBox.scrollTop = chatBox.scrollHeight;
+                            }
+                        } else {
+                            console.log('[메인 페이지 SSE] 처리되지 않은 이벤트:', eventType, chunkData);
+                        }
+                    } catch (e) {
+                        console.error('[메인 페이지 SSE] 청크 파싱 오류:', e, '원본 데이터:', data);
+                        // 파싱 실패 시에도 텍스트로 표시
+                        if (data && typeof data === 'string' && data !== '[DONE]') {
+                            if (isFirstChunk && aiContentSpan) {
+                                aiContentSpan.innerHTML = 'AI: ' + data;
+                                isFirstChunk = false;
+                            } else if (aiContentSpan) {
+                                aiContentSpan.innerHTML += data;
                             }
                             chatBox.scrollTop = chatBox.scrollHeight;
                         }
-                         if (data.ai_message_id && !aiMessageId) { // Set AI message ID if not already set
-                            aiMessageId = data.ai_message_id; 
-                            if(aiMessageElement) aiMessageElement.dataset.messageId = aiMessageId;
-                         }
                     }
                 }
-                if (eventDataString && (eventDataString.startsWith('event: error') || eventDataString.startsWith('event: end'))) break; // while 루프 종료 조건
             }
 
         } else {

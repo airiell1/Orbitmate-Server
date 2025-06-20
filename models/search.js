@@ -603,6 +603,44 @@ function clearCache() {
     };
 }
 
+/**
+ * 도시명으로 날씨 조회 함수 (AI 도구용)
+ * @param {Object} params - 검색 매개변수
+ * @param {string} params.city - 도시명
+ * @param {string} params.units - 온도 단위 (metric, imperial, kelvin)
+ * @param {string} params.lang - 언어 코드
+ * @returns {Promise<Object>} 날씨 정보 객체
+ */
+async function getWeatherByLocation(params) {
+    const { city, units = 'metric', lang = 'ko' } = params;
+    
+    try {
+        console.log(`[searchModel] Getting weather for city: ${city}`);
+        
+        // 도시명으로 좌표 조회
+        const coords = await geocodeCity(city);
+        if (!coords) {
+            throw new Error(`도시를 찾을 수 없습니다: ${city}`);
+        }
+        
+        // 좌표로 날씨 조회
+        const weatherData = await getWeatherByCoordinates(coords.lat, coords.lon, units, lang);
+        
+        return {
+            ...weatherData,
+            location: {
+                ...weatherData.location,
+                name: coords.name || city,
+                country: coords.country
+            }
+        };
+        
+    } catch (error) {
+        console.error(`[searchModel] Error getting weather for ${city}:`, error);
+        throw error;
+    }
+}
+
 module.exports = {
     searchWikipedia,
     getWeatherByIP,
@@ -610,5 +648,6 @@ module.exports = {
     getWeatherByCoordinates,
     geocodeCity,
     getCacheStats,
-    clearCache
+    clearCache,
+    getWeatherByLocation
 };

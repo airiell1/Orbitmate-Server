@@ -658,3 +658,118 @@ h1 {
     font-style: italic;
     margin-left: 5px;
 }
+
+/* Markdown 렌더링 스타일 */
+.message-content h1, .message-content h2, .message-content h3,
+.message-content h4, .message-content h5, .message-content h6 {
+    margin: 0.5em 0;
+    color: #2c3e50;
+}
+
+.message-content h1 { font-size: 1.5em; border-bottom: 2px solid #3498db; padding-bottom: 0.3em; }
+.message-content h2 { font-size: 1.3em; border-bottom: 1px solid #bdc3c7; padding-bottom: 0.2em; }
+.message-content h3 { font-size: 1.1em; color: #34495e; }
+
+.message-content p {
+    margin: 0.5em 0;
+    line-height: 1.6;
+}
+
+.message-content ul, .message-content ol {
+    margin: 0.5em 0;
+    padding-left: 1.5em;
+}
+
+.message-content li {
+    margin: 0.3em 0;
+}
+
+.message-content blockquote {
+    border-left: 4px solid #3498db;
+    margin: 1em 0;
+    padding: 0.5em 1em;
+    background-color: #f8f9fa;
+    font-style: italic;
+    color: #555;
+}
+
+.message-content table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1em 0;
+}
+
+.message-content th, .message-content td {
+    border: 1px solid #ddd;
+    padding: 0.5em;
+    text-align: left;
+}
+
+.message-content th {
+    background-color: #f2f2f2;
+    font-weight: bold;
+}
+
+/* 코드 블록 스타일 */
+.message-content code {
+    background-color: #f4f4f4;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    padding: 0.2em 0.4em;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.9em;
+    color: #d14;
+}
+
+.message-content pre {
+    background-color: #f8f8f8;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    padding: 1em;
+    overflow-x: auto;
+    margin: 1em 0;
+    position: relative;
+}
+
+.message-content pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    color: inherit;
+    font-size: 0.9em;
+    line-height: 1.4;
+}
+
+/* 코드 하이라이팅 개선 */
+.message-content pre code.hljs {
+    background: #f8f8f8;
+    color: #333;
+}
+
+/* 인라인 링크 스타일 */
+.message-content a {
+    color: #3498db;
+    text-decoration: none;
+}
+
+.message-content a:hover {
+    text-decoration: underline;
+}
+
+/* 강조 텍스트 스타일 */
+.message-content strong {
+    font-weight: bold;
+    color: #2c3e50;
+}
+
+.message-content em {
+    font-style: italic;
+    color: #7f8c8d;
+}
+
+/* 수평선 스타일 */
+.message-content hr {
+    border: none;
+    border-top: 2px solid #ecf0f1;
+    margin: 1.5em 0;
+}

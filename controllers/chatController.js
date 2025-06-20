@@ -184,9 +184,11 @@ async function sendMessageController(req, res) {
         
         // 사용자 메시지 ID 먼저 전송
         res.write(`event: ids\ndata: ${JSON.stringify({ userMessageId: userMessageId.toString() })}\n\n`);
-      }
-
-      // Updated AI call
+      }      // Updated AI call with context
+      const requestContext = {
+        clientIp: req.ip || req.connection.remoteAddress || '127.0.0.1'
+      };
+      
       const aiResponseFull = await fetchChatCompletion(
           actualAiProvider,           // Provider to use
           message,                    // Current user message
@@ -194,7 +196,8 @@ async function sendMessageController(req, res) {
           effectiveSystemPrompt,      // System prompt
           specialModeType,            // e.g., 'canvas', 'stream'
           streamResponseCallback,     // 실제 스트리밍 콜백 전달
-          callOptions                 // Options object
+          callOptions,                // Options object
+          requestContext              // Context for tools (IP address, etc.)
       );
 
       if (!aiResponseFull || typeof aiResponseFull.content !== 'string' || aiResponseFull.content.trim() === '') {

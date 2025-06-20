@@ -143,3 +143,43 @@ export function addMessageActions(messageElement, messageId, sender) {
     
     messageElement.appendChild(actionsDiv);
 }
+
+// Markdown 처리 함수
+export function parseMarkdown(text) {
+    if (typeof marked === 'undefined') {
+        console.warn('Marked.js 라이브러리가 로드되지 않았습니다. 일반 텍스트로 표시합니다.');
+        return text.replace(/\n/g, '<br>');
+    }
+    
+    try {
+        // Marked.js 설정
+        marked.setOptions({
+            highlight: function(code, lang) {
+                if (typeof hljs !== 'undefined' && lang && hljs.getLanguage(lang)) {
+                    try {
+                        return hljs.highlight(code, { language: lang }).value;
+                    } catch (err) {
+                        console.warn('Syntax highlighting 오류:', err);
+                    }
+                }
+                return code;
+            },
+            breaks: true,
+            gfm: true
+        });
+        
+        return marked.parse(text);
+    } catch (e) {
+        console.error('Markdown 파싱 오류:', e);
+        return text.replace(/\n/g, '<br>');
+    }
+}
+
+// 메시지 내용을 Markdown으로 렌더링하는 함수
+export function renderMessageContent(content, isMarkdown = true) {
+    if (!isMarkdown) {
+        return content.replace(/\n/g, '<br>');
+    }
+    
+    return parseMarkdown(content);
+}
