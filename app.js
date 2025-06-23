@@ -14,6 +14,7 @@ let chatRouter;
 let sessionsRouter;
 let aiInfoRouter; // Declare aiInfoRouter
 let searchRouter;
+let subscriptionsRouter;
 
 
 // 미들웨어 설정
@@ -59,22 +60,26 @@ const upload = multer({ storage: storage });
 
 
 // ** Oracle 초기화 및 서버 시작 함수 (async) **
-async function startServer() {
-  try {    // ** DB 초기화를 먼저 완료 **
+async function startServer() {  try {
+    // ** DB 초기화를 먼저 완료 **
     await initOracleClient(); // Oracle Thick 모드 활성화 완료 대기
     await initializeDbPool(); // DB 풀 초기화 완료 대기
-
+    
+    // ** 라우터 로드 **
     usersRouter = require('./routes/users');
     chatRouter = require('./routes/chat');
+    
     sessionsRouter = require('./routes/sessions');
     aiInfoRouter = require('./routes/aiInfo'); // Require aiInfoRouter
     searchRouter = require('./routes/search'); // Require searchRouter
+    subscriptionsRouter = require('./routes/subscriptions'); // Require subscriptionsRouter
 
     app.use('/api/users', usersRouter);
     app.use('/api/chat', chatRouter);
     app.use('/api/sessions', sessionsRouter);
     app.use('/api/ai', aiInfoRouter); // Mount aiInfoRouter
     app.use('/api/search', searchRouter); // Mount searchRouter
+    app.use('/api/subscriptions', subscriptionsRouter); // Mount subscriptionsRouter
 
     // 서버 상태 확인용 엔드포인트
     app.get('/api/health', (req, res) => {

@@ -1,7 +1,24 @@
 const bcrypt = require('bcrypt');
 const { getConnection, oracledb } = require('../config/database');
 const { generateToken } = require('../middleware/auth');
-const { registerUser, loginUser, getUserSettings, updateUserSettings, updateUserProfileImage, deleteUser, getUserProfile, updateUserProfile } = require('../models/user');
+const { 
+  registerUser, 
+  loginUser, 
+  getUserSettings, 
+  updateUserSettings, 
+  updateUserProfileImage, 
+  deleteUser, 
+  getUserProfile, 
+  updateUserProfile,
+  getUserCustomization,
+  updateUserCustomization,
+  getUserLevel,
+  addUserExperience,
+  getUserBadges,
+  toggleUserBadge,
+  getTranslationResources,
+  updateUserLanguage
+} = require('../models/user');
 const fs = require('fs');
 const path = require('path');
 const userModel = require('../models/user');
@@ -401,6 +418,210 @@ async function checkEmailExists(req, res) {
   }
 }
 
+// =========================
+// 7. 프로필 꾸미기 API
+// =========================
+
+/**
+ * 사용자 프로필 꾸미기 설정 조회
+ */
+async function getUserCustomizationController(req, res) {
+  try {
+    const { user_id } = req.params;
+    
+    if (!user_id) {
+      const errorPayload = createErrorResponse('INVALID_INPUT', '사용자 ID가 필요합니다.');
+      return res.status(400).json(standardizeApiResponse(errorPayload));
+    }
+
+    const customization = await getUserCustomization(user_id);
+    return res.status(200).json(standardizeApiResponse(customization));
+    
+  } catch (error) {
+    logError('getUserCustomizationController', error);
+    const errorPayload = handleOracleError(error);
+    return res.status(getHttpStatusByErrorCode(errorPayload.code)).json(standardizeApiResponse(errorPayload));
+  }
+}
+
+/**
+ * 사용자 프로필 꾸미기 설정 업데이트
+ */
+async function updateUserCustomizationController(req, res) {
+  try {
+    const { user_id } = req.params;
+    const customizationData = req.body;
+    
+    if (!user_id) {
+      const errorPayload = createErrorResponse('INVALID_INPUT', '사용자 ID가 필요합니다.');
+      return res.status(400).json(standardizeApiResponse(errorPayload));
+    }
+
+    const result = await updateUserCustomization(user_id, customizationData);
+    return res.status(200).json(standardizeApiResponse(result));
+    
+  } catch (error) {
+    logError('updateUserCustomizationController', error);
+    const errorPayload = handleOracleError(error);
+    return res.status(getHttpStatusByErrorCode(errorPayload.code)).json(standardizeApiResponse(errorPayload));
+  }
+}
+
+// =========================
+// 8. 레벨 및 경험치 API
+// =========================
+
+/**
+ * 사용자 레벨 정보 조회
+ */
+async function getUserLevelController(req, res) {
+  try {
+    const { user_id } = req.params;
+    
+    if (!user_id) {
+      const errorPayload = createErrorResponse('INVALID_INPUT', '사용자 ID가 필요합니다.');
+      return res.status(400).json(standardizeApiResponse(errorPayload));
+    }
+
+    const levelInfo = await getUserLevel(user_id);
+    return res.status(200).json(standardizeApiResponse(levelInfo));
+    
+  } catch (error) {
+    logError('getUserLevelController', error);
+    const errorPayload = handleOracleError(error);
+    return res.status(getHttpStatusByErrorCode(errorPayload.code)).json(standardizeApiResponse(errorPayload));
+  }
+}
+
+/**
+ * 사용자 경험치 추가 (관리자용 또는 시스템 내부 호출)
+ */
+async function addUserExperienceController(req, res) {
+  try {
+    const { user_id } = req.params;
+    const { points, exp_type = 'manual', reason } = req.body;
+    
+    if (!user_id || typeof points !== 'number' || points <= 0) {
+      const errorPayload = createErrorResponse('INVALID_INPUT', '사용자 ID와 유효한 경험치 포인트가 필요합니다.');
+      return res.status(400).json(standardizeApiResponse(errorPayload));
+    }
+
+    const result = await addUserExperience(user_id, points, exp_type, reason);
+    return res.status(200).json(standardizeApiResponse(result));
+    
+  } catch (error) {
+    logError('addUserExperienceController', error);
+    const errorPayload = handleOracleError(error);
+    return res.status(getHttpStatusByErrorCode(errorPayload.code)).json(standardizeApiResponse(errorPayload));
+  }
+}
+
+// =========================
+// 뱃지 시스템 API
+// =========================
+
+/**
+ * 사용자 뱃지 목록 조회
+ */
+async function getUserBadgesController(req, res) {
+  try {
+    const { user_id } = req.params;
+    
+    if (!user_id) {
+      const errorPayload = createErrorResponse('INVALID_INPUT', '사용자 ID가 필요합니다.');
+      return res.status(400).json(standardizeApiResponse(errorPayload));
+    }
+
+    const badges = await getUserBadges(user_id);
+    return res.status(200).json(standardizeApiResponse(badges));
+    
+  } catch (error) {
+    logError('getUserBadgesController', error);
+    const errorPayload = handleOracleError(error);
+    return res.status(getHttpStatusByErrorCode(errorPayload.code)).json(standardizeApiResponse(errorPayload));
+  }
+}
+
+/**
+ * 뱃지 착용/해제
+ */
+async function toggleUserBadgeController(req, res) {
+  try {
+    const { user_id, badge_id } = req.params;
+    const { is_equipped } = req.body;
+    
+    if (!user_id || !badge_id) {
+      const errorPayload = createErrorResponse('INVALID_INPUT', '사용자 ID와 뱃지 ID가 필요합니다.');
+      return res.status(400).json(standardizeApiResponse(errorPayload));
+    }
+
+    const result = await toggleUserBadge(user_id, badge_id, is_equipped);
+    return res.status(200).json(standardizeApiResponse(result));
+    
+  } catch (error) {
+    logError('toggleUserBadgeController', error);
+    const errorPayload = handleOracleError(error);
+    return res.status(getHttpStatusByErrorCode(errorPayload.code)).json(standardizeApiResponse(errorPayload));
+  }
+}
+
+// =========================
+// 10. 다국어 지원 API
+// =========================
+
+/**
+ * 번역 리소스 조회
+ */
+async function getTranslationResourcesController(req, res) {
+  try {
+    const { lang } = req.params;
+    const { category } = req.query;
+    
+    if (!lang) {
+      const errorPayload = createErrorResponse('INVALID_INPUT', '언어 코드가 필요합니다.');
+      return res.status(400).json(standardizeApiResponse(errorPayload));
+    }
+
+    const translations = await getTranslationResources(lang, category);
+    return res.status(200).json(standardizeApiResponse(translations));
+    
+  } catch (error) {
+    logError('getTranslationResourcesController', error);
+    const errorPayload = handleOracleError(error);
+    return res.status(getHttpStatusByErrorCode(errorPayload.code)).json(standardizeApiResponse(errorPayload));
+  }
+}
+
+/**
+ * 사용자 언어 설정 업데이트
+ */
+async function updateUserLanguageController(req, res) {
+  try {
+    const { user_id } = req.params;
+    const { language } = req.body;
+    
+    if (!user_id || !language) {
+      const errorPayload = createErrorResponse('INVALID_INPUT', '사용자 ID와 언어 코드가 필요합니다.');
+      return res.status(400).json(standardizeApiResponse(errorPayload));
+    }
+
+    // 지원하는 언어 체크
+    const supportedLanguages = ['ko', 'en', 'ja', 'zh'];
+    if (!supportedLanguages.includes(language)) {
+      const errorPayload = createErrorResponse('INVALID_INPUT', `지원하지 않는 언어입니다. 지원 언어: ${supportedLanguages.join(', ')}`);
+      return res.status(400).json(standardizeApiResponse(errorPayload));
+    }
+
+    const result = await updateUserLanguage(user_id, language);
+    return res.status(200).json(standardizeApiResponse(result));
+    
+  } catch (error) {
+    logError('updateUserLanguageController', error);
+    const errorPayload = handleOracleError(error);
+    return res.status(getHttpStatusByErrorCode(errorPayload.code)).json(standardizeApiResponse(errorPayload));
+  }
+}
+
 module.exports = {
   registerUserController,
   loginUserController,
@@ -410,5 +631,13 @@ module.exports = {
   deleteUserController,
   getUserProfileController,
   updateUserProfileController,
-  checkEmailExists
+  checkEmailExists,
+  getUserCustomizationController,
+  updateUserCustomizationController,
+  getUserLevelController,
+  addUserExperienceController,
+  getUserBadgesController,
+  toggleUserBadgeController,
+  getTranslationResourcesController,
+  updateUserLanguageController
 };

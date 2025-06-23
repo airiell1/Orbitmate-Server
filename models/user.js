@@ -540,6 +540,521 @@ async function checkEmailExists(email) {
   }
 }
 
+// =========================
+// 7. 프로필 꾸미기 기능
+// =========================
+
+/**
+ * 사용자 프로필 꾸미기 설정 조회
+ */
+async function getUserCustomization(user_id) {
+  let connection;
+  try {
+    connection = await getConnection();
+    
+    const result = await connection.execute(
+      `SELECT profile_theme, profile_border, profile_background, status_message, 
+              nickname, introduction, is_premium, premium_until
+       FROM user_profiles 
+       WHERE user_id = :user_id`,
+      { user_id },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    if (result.rows.length === 0) {
+      // 기본 프로필이 없으면 생성
+      await createDefaultUserProfile(user_id);
+      return {
+        profile_theme: 'default',
+        profile_border: 'none',
+        profile_background: null,
+        status_message: null,
+        nickname: null,
+        introduction: null,
+        is_premium: 0,
+        premium_until: null
+      };
+    }
+
+    return convertClobFields(result.rows[0]);
+  } catch (error) {
+    console.error('[userModel] 프로필 꾸미기 조회 오류:', error);
+    throw error;
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (err) {
+        console.error("DB 연결 해제 실패:", err);
+      }
+    }
+  }
+}
+
+/**
+ * 사용자 프로필 꾸미기 설정 업데이트
+ */
+async function updateUserCustomization(user_id, customizationData) {
+  let connection;
+  try {
+    connection = await getConnection();
+    
+    const { 
+      profile_theme, 
+      profile_border, 
+      profile_background, 
+      status_message,
+      nickname,
+      introduction 
+    } = customizationData;
+
+    const result = await connection.execute(
+      `UPDATE user_profiles 
+       SET profile_theme = NVL(:profile_theme, profile_theme),
+           profile_border = NVL(:profile_border, profile_border),
+           profile_background = NVL(:profile_background, profile_background),
+           status_message = :status_message,
+           nickname = :nickname,
+           introduction = :introduction,
+           updated_at = SYSTIMESTAMP
+       WHERE user_id = :user_id`,
+      {
+        user_id,
+        profile_theme,
+        profile_border,
+        profile_background,
+        status_message,
+        nickname,
+        introduction
+      },
+      { autoCommit: true }
+    );
+
+    if (result.rowsAffected === 0) {
+      throw new Error('프로필을 찾을 수 없거나 업데이트할 수 없습니다.');
+    }
+
+    return { success: true, message: '프로필 꾸미기 설정이 업데이트되었습니다.' };
+  } catch (error) {
+    console.error('[userModel] 프로필 꾸미기 업데이트 오류:', error);
+    throw error;
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (err) {
+        console.error("DB 연결 해제 실패:", err);
+      }
+    }
+  }
+}
+
+// =========================
+// 8. 계정 레벨 및 경험치 시스템
+// =========================
+
+/**
+ * 사용자 레벨 및 경험치 정보 조회
+ */
+async function getUserLevel(user_id) {
+  let connection;
+  try {
+    connection = await getConnection();
+    
+    const result = await connection.execute(
+      `SELECT up.experience, up."level", up.experience_multiplier,
+              lr.level_name, lr.level_description, lr.required_exp, lr.unlock_features,
+              (SELECT required_exp FROM level_requirements WHERE level_num = up."level" + 1) as next_level_exp
+       FROM user_profiles up
+       LEFT JOIN level_requirements lr ON up."level" = lr.level_num
+       WHERE up.user_id = :user_id`,
+      { user_id },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    if (result.rows.length === 0) {
+      return {
+        experience: 0,
+        level: 1,
+        level_name: '새싹 오비터',
+        level_description: 'Orbitmate를 시작한 신규 사용자',
+        required_exp: 0,
+        next_level_exp: 100,
+        progress: 0,
+        experience_multiplier: 1.0,
+        unlock_features: ['basic_chat', 'profile_edit']
+      };
+    }
+
+    const data = convertClobFields(result.rows[0]);
+    const currentExp = data.EXPERIENCE || 0;
+    const requiredExp = data.REQUIRED_EXP || 0;
+    const nextLevelExp = data.NEXT_LEVEL_EXP || null;
+    
+    let progress = 0;
+    if (nextLevelExp && nextLevelExp > requiredExp) {
+      progress = Math.round(((currentExp - requiredExp) / (nextLevelExp - requiredExp)) * 100);
+    }
+
+    return {
+      experience: currentExp,
+      level: data.LEVEL || data.level,
+      level_name: data.LEVEL_NAME || data.level_name,
+      level_description: data.LEVEL_DESCRIPTION || data.level_description,
+      required_exp: requiredExp,
+      next_level_exp: nextLevelExp,
+      progress: Math.max(0, Math.min(100, progress)),
+      experience_multiplier: data.EXPERIENCE_MULTIPLIER || 1.0,
+      unlock_features: data.UNLOCK_FEATURES ? JSON.parse(data.UNLOCK_FEATURES) : []
+    };
+  } catch (error) {
+    console.error('[userModel] 사용자 레벨 조회 오류:', error);
+    throw error;
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (err) {
+        console.error("DB 연결 해제 실패:", err);
+      }
+    }
+  }
+}
+
+/**
+ * 사용자 경험치 추가 및 레벨업 처리 (개선된 버전)
+ */
+async function addUserExperience(user_id, points, exp_type = 'chat', reason = null) {
+  let connection;
+  try {
+    connection = await getConnection();
+    await connection.execute('BEGIN'); // 트랜잭션 시작
+
+    // 현재 사용자 정보 조회
+    const userResult = await connection.execute(
+      `SELECT experience, "level", experience_multiplier FROM user_profiles WHERE user_id = :user_id`,
+      { user_id },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    if (userResult.rows.length === 0) {
+      // 프로필이 없으면 생성
+      await createDefaultUserProfile(user_id);
+      return await addUserExperience(user_id, points, exp_type, reason);
+    }
+
+    const currentData = userResult.rows[0];
+    const oldExp = currentData.EXPERIENCE || 0;
+    const oldLevel = currentData.LEVEL || currentData.level || 1;
+    const multiplier = currentData.EXPERIENCE_MULTIPLIER || 1.0;
+
+    // 배수 적용
+    const actualPoints = Math.round(points * multiplier);
+    const newExp = oldExp + actualPoints;
+
+    // 새 레벨 계산
+    const levelResult = await connection.execute(
+      `SELECT level_num FROM level_requirements 
+       WHERE required_exp <= :newExp 
+       ORDER BY level_num DESC 
+       FETCH FIRST 1 ROWS ONLY`,
+      { newExp },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    const newLevel = levelResult.rows.length > 0 ? levelResult.rows[0].LEVEL_NUM : oldLevel;
+
+    // 경험치 로그 기록
+    await connection.execute(
+      `INSERT INTO user_experience_log 
+       (user_id, exp_type, exp_amount, exp_reason, old_total_exp, new_total_exp, 
+        old_level, new_level, multiplier_applied) 
+       VALUES (:user_id, :exp_type, :exp_amount, :exp_reason, :old_total_exp, 
+               :new_total_exp, :old_level, :new_level, :multiplier_applied)`,
+      {
+        user_id,
+        exp_type,
+        exp_amount: actualPoints,
+        exp_reason: reason,
+        old_total_exp: oldExp,
+        new_total_exp: newExp,
+        old_level: oldLevel,
+        new_level: newLevel,
+        multiplier_applied: multiplier
+      },
+      { autoCommit: false }
+    );
+
+    // 사용자 프로필 업데이트
+    await connection.execute(
+      `UPDATE user_profiles 
+       SET experience = :newExp, "level" = :newLevel, updated_at = SYSTIMESTAMP 
+       WHERE user_id = :user_id`,
+      { newExp, newLevel, user_id },
+      { autoCommit: false }
+    );
+
+    // 레벨업 시 뱃지 지급
+    let levelUpBadge = null;
+    if (newLevel > oldLevel) {
+      const badgeResult = await connection.execute(
+        `SELECT level_badge FROM level_requirements WHERE level_num = :newLevel`,
+        { newLevel },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
+      );
+
+      if (badgeResult.rows.length > 0 && badgeResult.rows[0].LEVEL_BADGE) {
+        levelUpBadge = await grantUserBadge(connection, user_id, 'achievement', badgeResult.rows[0].LEVEL_BADGE, `레벨 ${newLevel} 달성`);
+      }
+    }
+
+    await connection.commit();
+
+    return {
+      success: true,
+      old_experience: oldExp,
+      new_experience: newExp,
+      points_added: actualPoints,
+      multiplier_applied: multiplier,
+      old_level: oldLevel,
+      new_level: newLevel,
+      level_up: newLevel > oldLevel,
+      badge_earned: levelUpBadge
+    };
+
+  } catch (error) {
+    if (connection) {
+      await connection.rollback();
+    }
+    console.error('[userModel] 경험치 추가 오류:', error);
+    throw error;
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (err) {
+        console.error("DB 연결 해제 실패:", err);
+      }
+    }
+  }
+}
+
+// =========================
+// 뱃지 시스템
+// =========================
+
+/**
+ * 사용자 뱃지 목록 조회
+ */
+async function getUserBadges(user_id) {
+  let connection;
+  try {
+    connection = await getConnection();
+    
+    const result = await connection.execute(
+      `SELECT badge_id, badge_type, badge_name, badge_description, badge_icon, 
+              badge_color, is_equipped, earned_at
+       FROM user_badges 
+       WHERE user_id = :user_id 
+       ORDER BY earned_at DESC`,
+      { user_id },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    return result.rows.map(row => convertClobFields(row));
+  } catch (error) {
+    console.error('[userModel] 사용자 뱃지 조회 오류:', error);
+    throw error;
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (err) {
+        console.error("DB 연결 해제 실패:", err);
+      }
+    }
+  }
+}
+
+/**
+ * 사용자에게 뱃지 지급 (트랜잭션 내에서 사용)
+ */
+async function grantUserBadge(connection, user_id, badge_type, badge_name, badge_description, badge_icon = '🏆', badge_color = '#FFD700') {
+  try {
+    // 중복 뱃지 체크
+    const existingBadge = await connection.execute(
+      `SELECT badge_id FROM user_badges 
+       WHERE user_id = :user_id AND badge_name = :badge_name`,
+      { user_id, badge_name },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    if (existingBadge.rows.length > 0) {
+      return null; // 이미 보유한 뱃지
+    }
+
+    const result = await connection.execute(
+      `INSERT INTO user_badges 
+       (user_id, badge_type, badge_name, badge_description, badge_icon, badge_color) 
+       VALUES (:user_id, :badge_type, :badge_name, :badge_description, :badge_icon, :badge_color)
+       RETURNING badge_id INTO :badge_id`,
+      {
+        user_id,
+        badge_type,
+        badge_name,
+        badge_description,
+        badge_icon,
+        badge_color,
+        badge_id: { type: oracledb.STRING, dir: oracledb.BIND_OUT }
+      },
+      { autoCommit: false }
+    );
+
+    return {
+      badge_id: result.outBinds.badge_id[0],
+      badge_name,
+      badge_description,
+      badge_icon,
+      badge_color
+    };
+  } catch (error) {
+    console.error('[userModel] 뱃지 지급 오류:', error);
+    throw error;
+  }
+}
+
+/**
+ * 뱃지 착용/해제
+ */
+async function toggleUserBadge(user_id, badge_id, is_equipped) {
+  let connection;
+  try {
+    connection = await getConnection();
+    
+    // 다른 뱃지들 해제 (하나만 착용 가능)
+    if (is_equipped) {
+      await connection.execute(
+        `UPDATE user_badges SET is_equipped = 0 WHERE user_id = :user_id`,
+        { user_id },
+        { autoCommit: false }
+      );
+    }
+
+    // 선택한 뱃지 착용/해제
+    const result = await connection.execute(
+      `UPDATE user_badges 
+       SET is_equipped = :is_equipped 
+       WHERE user_id = :user_id AND badge_id = :badge_id`,
+      { user_id, badge_id, is_equipped: is_equipped ? 1 : 0 },
+      { autoCommit: true }
+    );
+
+    if (result.rowsAffected === 0) {
+      throw new Error('뱃지를 찾을 수 없습니다.');
+    }
+
+    return { success: true, message: is_equipped ? '뱃지를 착용했습니다.' : '뱃지를 해제했습니다.' };
+  } catch (error) {
+    console.error('[userModel] 뱃지 토글 오류:', error);
+    throw error;
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (err) {
+        console.error("DB 연결 해제 실패:", err);
+      }
+    }
+  }
+}
+
+// =========================
+// 10. 다국어 지원 시스템
+// =========================
+
+/**
+ * 번역 리소스 조회
+ */
+async function getTranslationResources(lang_code = 'ko', category = null) {
+  let connection;
+  try {
+    connection = await getConnection();
+    
+    let query = `SELECT resource_key, resource_value, category 
+                 FROM translation_resources 
+                 WHERE lang_code = :lang_code`;
+    const params = { lang_code };
+
+    if (category) {
+      query += ` AND category = :category`;
+      params.category = category;
+    }
+
+    query += ` ORDER BY category, resource_key`;
+
+    const result = await connection.execute(query, params, { outFormat: oracledb.OUT_FORMAT_OBJECT });
+
+    const translations = {};
+    for (const row of result.rows) {
+      const data = convertClobFields(row);
+      translations[data.RESOURCE_KEY || data.resource_key] = data.RESOURCE_VALUE || data.resource_value;
+    }
+
+    return translations;
+  } catch (error) {
+    console.error('[userModel] 번역 리소스 조회 오류:', error);
+    throw error;
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (err) {
+        console.error("DB 연결 해제 실패:", err);
+      }
+    }
+  }
+}
+
+/**
+ * 사용자 언어 설정 업데이트
+ */
+async function updateUserLanguage(user_id, language) {
+  let connection;
+  try {
+    connection = await getConnection();
+    
+    const result = await connection.execute(
+      `UPDATE user_settings 
+       SET language = :language, updated_at = SYSTIMESTAMP 
+       WHERE user_id = :user_id`,
+      { user_id, language },
+      { autoCommit: true }
+    );
+
+    if (result.rowsAffected === 0) {
+      // 설정이 없으면 생성
+      await connection.execute(
+        `INSERT INTO user_settings (user_id, language) VALUES (:user_id, :language)`,
+        { user_id, language },
+        { autoCommit: true }
+      );
+    }
+
+    return { success: true, message: '언어 설정이 업데이트되었습니다.' };
+  } catch (error) {
+    console.error('[userModel] 언어 설정 업데이트 오류:', error);
+    throw error;
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (err) {
+        console.error("DB 연결 해제 실패:", err);
+      }
+    }
+  }
+}
+
 module.exports = {
   registerUser,
   loginUser,
@@ -550,5 +1065,13 @@ module.exports = {
   updateUserProfile,
   addUserExperience,
   deleteUser,
-  checkEmailExists
+  checkEmailExists,
+  getUserCustomization,
+  updateUserCustomization,
+  getUserLevel,
+  addUserExperience,
+  getUserBadges,
+  toggleUserBadge,
+  getTranslationResources,
+  updateUserLanguage
 };

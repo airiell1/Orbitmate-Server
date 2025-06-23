@@ -21,15 +21,14 @@
       - `getConnection()`: 커넥션 획득 (풀에서)
       - `oracledb`: oracledb 인스턴스 전체 내보내기 (트랜잭션, CLOB 등 활용)
     - 참고: 커넥션 풀은 app.js/server.js에서 최초 1회만 초기화 필요. 각 모델/컨트롤러에서는 getConnection()으로 커넥션 획득 후 사용/반납
-  - `config/vertexai.js`:
-    - Vertex AI 연동, Google Cloud Gemini 2.5 pro 모델 사용
-    - **리전 설정: `global` exp는 이 리전에서만 사용 가능
-    - 안전성 필터(증오/성적/위험/학대), 스트림/캔버스/검색 등 특수 모드 지원
-    - 주요 함수 및 내보내기:
-      - `getVertexAiApiResponse(currentUserMessage, history, systemMessageText, specialModeType, streamResponseCallback, options)`: Vertex AI에 대화 요청, 스트림/캔버스/검색 등 특수 모드 지원 (systemPrompt, specialModeType, stream 콜백, options 객체로 model_id_override, max_output_tokens_override 등 다양한 옵션 지원)
-      - `vertex_ai`: VertexAI 인스턴스 (직접 모델 생성/설정 가능)
-      - `generativeModel`: Gemini 2.5 pro 모델 인스턴스 (기본 설정)
-    - 참고: specialModeType에 따라 systemPrompt가 자동 강화(캔버스/검색 등), streamResponseCallback으로 스트리밍 응답 처리 가능
+- **데이터베이스 스키마**
+  - `sqldb.sql`: **통합 DB 초기화 스크립트** ✅ **2025-01-27 업데이트**
+    - 기본 스키마 + 구독 관리 + 레벨 시스템 + 다국어 지원 + 프로필 꾸미기 등 모든 기능 포함
+    - 한 번의 실행으로 완전한 DB 초기화 가능
+    - 포함된 테이블: users, chat_sessions, chat_messages, user_settings, user_profiles, attachments, subscription_tiers, user_subscriptions, user_badges, level_requirements, user_experience_log, user_items, message_edit_history, translation_resources
+    - 기본 데이터: 구독 등급 4단계, 레벨 시스템, 뱃지, 번역 리소스, guest 사용자 설정 포함
+  - `db_enhancement_backup.sql`: 백업 파일 (더 이상 사용하지 않음)
+
   - `config/geminiapi.js`:
     - Google AI Studio 연동, Gemini 2.0 Flash Exp 모델 사용
     - **API 키 설정: `GEMINI_API_KEY` 환경변수 필요**
@@ -39,6 +38,16 @@
       - `genAI`: GoogleGenerativeAI 인스턴스 (직접 모델 생성/설정 가능)
       - `defaultModel`: 기본 모델 이름 ('gemini-2.0-flash-thinking-exp-01-21')
     - 참고: specialModeType에 따라 systemPrompt가 자동 강화(캔버스/검색 등), 토큰 사용량 추적 기능 제공
+
+  - `config/vertexai.js`:
+    - Vertex AI 연동, Google Cloud Gemini 2.5 pro 모델 사용
+    - **리전 설정: `global` exp는 이 리전에서만 사용 가능
+    - 안전성 필터(증오/성적/위험/학대), 스트림/캔버스/검색 등 특수 모드 지원
+    - 주요 함수 및 내보내기:
+      - `getVertexAiApiResponse(currentUserMessage, history, systemMessageText, specialModeType, streamResponseCallback, options)`: Vertex AI에 대화 요청, 스트림/캔버스/검색 등 특수 모드 지원 (systemPrompt, specialModeType, stream 콜백, options 객체로 model_id_override, max_output_tokens_override 등 다양한 옵션 지원)
+      - `vertex_ai`: VertexAI 인스턴스 (직접 모델 생성/설정 가능)
+      - `generativeModel`: Gemini 2.5 pro 모델 인스턴스 (기본 설정)
+    - 참고: specialModeType에 따라 systemPrompt가 자동 강화(캔버스/검색 등), streamResponseCallback으로 스트리밍 응답 처리 가능
 
 - **AI 제공자 및 유틸리티 (utils/)**
   - `utils/aiProvider.js`: AI 제공자 추상화 레이어
@@ -81,13 +90,36 @@
     - **기본 provider: `'vertexai'`로 설정됨**
     - 주요 함수:
       - `getModelsInfoController()`: 사용 가능한 AI 모델 목록 조회 (기본값으로 Vertex AI 설정)
-
   - `controllers/searchController.js`: 검색 기능 관련 API 처리 (위키피디아 검색 등)
     - 주요 함수:
       - `searchWikipediaController()`: 위키피디아 검색 API 처리
 
+  - `controllers/subscriptionController.js`: 구독 관리 시스템 API 처리 **✅ 새로 추가됨**
+    - ** 시뮬레이션**: 실제 결제 없이 구독 상태 관리 시스템 구현
+    - 주요 함수:
+      - `getSubscriptionTiersController()`: 구독 등급 목록 조회
+      - `getUserSubscriptionController()`: 사용자 구독 정보 조회
+      - `updateUserSubscriptionController()`: 구독 업그레이드/다운그레이드
+      - `cancelUserSubscriptionController()`: 구독 취소
+      - `getUserSubscriptionHistoryController()`: 구독 이력 조회
+      - `checkFeatureAccessController()`: 기능 접근 권한 확인
+      - `checkDailyUsageController()`: 일일 사용량 확인
+      - `simulateSubscriptionUpgradeController()`: 구독 업그레이드 시뮬레이션
+      - `simulateSubscriptionRenewalController()`: 구독 갱신 시뮬레이션
+
 - **API 라우트**
-  - `routes/users.js`, `routes/chat.js`, `routes/sessions.js`, `routes/aiInfo.js`, `routes/search.js`
+  - `routes/users.js`, `routes/chat.js`, `routes/sessions.js`, `routes/aiInfo.js`, `routes/search.js`, `routes/subscriptions.js` **✅ 구독 관리 라우트 추가됨**
+
+- **미들웨어**
+  - `middleware/auth.js`: JWT 인증 미들웨어 (학습용 최소 구현)
+  - `middleware/subscription.js`: 구독 관리 미들웨어 **✅ 새로 추가됨**
+    - ** 권한 체크**: 실제 결제 없이 구독 기반 기능 제한 시스템
+    - 주요 함수:
+      - `requireFeature(featureName)`: 특정 기능 접근 권한 체크 미들웨어
+      - `checkDailyLimit()`: 일일 AI 요청 사용량 제한 체크 미들웨어
+      - `requireTierLevel(minLevel)`: 최소 구독 등급 레벨 체크 미들웨어
+      - `checkFileUploadLimit(fileSize)`: 파일 업로드 크기 제한 체크 미들웨어
+    - 참고: 권한 부족 시 HTTP 403, 사용량 초과 시 HTTP 429 반환, 구독 업그레이드 안내 포함
 
 - **모델**
   - `models/user.js`: 사용자 관련 DB 접근 함수 (회원가입, 로그인, 설정/프로필 조회·수정, 프로필 이미지, 경험치/레벨, 회원 탈퇴)
@@ -120,6 +152,18 @@
       - `getSessionMessages(sessionId)`: 세션 메시지 목록 조회 (시간순 정렬, CLOB 변환)
       - `getUserIdBySessionId(sessionId)`: 세션 ID로 사용자 ID 조회 (권한 체크용)
 
+  - `models/subscription.js`: 구독 관리 관련 DB 접근 함수 **✅ 새로 추가됨**
+    - ** 구독 시스템**: 실제 결제 검증 없이 구독 상태 관리에 집중
+    - 주요 함수:
+      - `getSubscriptionTiers()`: 구독 등급 목록 조회 (☄️ 코멧, 🪐 플래닛, ☀️ 스타, 🌌 갤럭시)
+      - `getUserSubscription(user_id)`: 사용자 구독 정보 조회 (없으면 무료 등급 자동 생성)
+      - `updateUserSubscription(user_id, tier_name, options)`: 구독 업그레이드/다운그레이드
+      - `cancelUserSubscription(user_id)`: 구독 취소 (무료 등급으로 다운그레이드)
+      - `getUserSubscriptionHistory(user_id)`: 구독 변경 이력 조회
+      - `checkUserFeatureAccess(user_id, feature_name)`: 기능 접근 권한 확인
+      - `checkDailyUsage(user_id)`: 일일 AI 요청 사용량 확인 및 제한 체크
+    - 참고: 구독 등급별 기능 제한 (AI 요청 횟수, 파일 업로드 크기, 사용 가능 기능) 자동 적용
+
 - **프론트엔드**
   - `public/script.js`: 메인 채팅 프론트엔드 스크립트 (index.html용)
     - **HTTP SSE 스트리밍**: WebSocket 제거, Server-Sent Events만 사용
@@ -143,8 +187,8 @@
     - 모듈화 구조: testScripts/ 디렉토리의 개별 모듈을 import
       - `testScripts/user.js`: 사용자 관련 API 테스트 (회원가입, 로그인, 프로필, 설정)
       - `testScripts/session.js`: 세션 관련 API 테스트 (생성, 조회, 수정, 삭제)
-      - `testScripts/message.js`: 메시지 관련 API 테스트 (편집, 리액션, 삭제, 파일 업로드)
-      - `testScripts/search.js`: 검색 기능 API 테스트 (위키피디아, 네이버, 카카오)
+      - `testScripts/message.js`: 메시지 관련 API 테스트 (편집, 리액션, 삭제, 파일 업로드)      - `testScripts/search.js`: 검색 기능 API 테스트 (위키피디아, 네이버, 카카오)
+      - `testScripts/subscription.js`: 구독 관리 API 테스트 **✅ 새로 추가됨** (구독 등급, 업그레이드, 취소, 이력, 권한 확인, 시뮬레이션)
       - `testScripts/chat.js`: 채팅 기능 (세션 초기화, 메시지 전송, 새로고침, Markdown 렌더링)
         - **기본 AI Provider: `'geminiapi'`로 설정됨**
         - Gemini UI 선택 시 `geminiapi` 사용 (`radio.value === 'gemini' ? 'geminiapi' : radio.value`)
@@ -215,8 +259,15 @@
 [2025-06-17] API 명세 업데이트: geminiapi provider 추가, 기본값 변경 반영 완료 (해결)
 [2025-06-19] WebSocket 완전 제거: 모든 WebSocket 관련 코드 제거, HTTP SSE 스트리밍만 사용하도록 단순화 → 팀원 사용 편의성 대폭 향상 (해결)
 [2025-06-19] 사용자 ID 통일: 모든 시스템에서 'guest' 사용, 일관성 확보 (해결)
-[2025-06-19] DB 저장 디버깅 강화: 스트리밍 모드에서도 DB 저장 상태 실시간 로그 확인 가능 (해결)
+[2025-06-23] 구독 등급 체계 업데이트: 새로운 구독 등급으로 변경 완료 (☄️ 코멧-무료, 🪐 플래닛-월1.5만원, ☀️ 스타-월15만원, 🌌 갤럭시-기업용월300만원), 갤럭시는 기업용으로 프로필 뱃지 제공하지 않음, DB 스키마 확장 완료 (해결)
 [2025-06-20] Markdown 렌더링 구현: 메인/테스트 페이지에 Marked.js + Highlight.js 통합, AI 응답 Markdown 자동 렌더링, 코드 하이라이팅, 완전한 CSS 스타일링 적용 (해결)
+[2025-06-23] 7~10번 기능 구현 완료: 프로필 꾸미기, 레벨 시스템, 메시지 편집, 다국어 지원 백엔드 구현 (해결)
+  - DB 스키마 확장: user_badges, level_requirements, user_experience_log, user_items, message_edit_history, translation_resources 테이블 추가
+  - 프로필 꾸미기 API: 테마, 테두리, 배경, 상태 메시지 커스터마이징 지원
+  - 레벨 시스템: 경험치 자동 계산, 레벨업 처리, 뱃지 자동 지급, 경험치 배수 아이템 지원
+  - 메시지 편집: 편집 기록 저장, AI 재응답 요청, 권한 체크 강화
+  - 다국어 지원: 번역 리소스 관리, 사용자별 언어 설정
+  - 테스트 UI 추가: test.html에 모든 신규 기능 테스트 인터페이스 구현
 
 ---
 
@@ -282,26 +333,34 @@
   - 사용자 위치 기반 자동 날씨 조회
 
 #### 쉬움 (Easy) - 기본적인 CRUD 및 데이터 관리
-- [ ] **프로필 꾸미기 (백엔드)**: 테마, 뱃지 등 사용자 프로필 커스터마이징 데이터 저장/조회 API
-  - 프로필 테마 설정 API (`PUT /api/users/profile/theme`)
-  - 뱃지 목록 조회/설정 API (`GET|PUT /api/users/profile/badges`)
-  - 커스터마이징 옵션 메타데이터 API (`GET /api/profile/customization-options`)
+- [x] **프로필 꾸미기 (백엔드)**: 테마, 뱃지 등 사용자 프로필 커스터마이징 데이터 저장/조회 API **완료**
+  - 프로필 테마 설정 API (`GET|PUT /api/users/:user_id/customization`)
+  - 뱃지 목록 조회/설정 API (`GET /api/users/:user_id/badges`, `PUT /api/users/:user_id/badges/:badge_id`)
+  - 커스터마이징 옵션 메타데이터 (프로필 테마, 테두리, 배경, 상태 메시지)
 
-- [ ] **계정 레벨 기능 (백엔드)**: 사용자 레벨 관리 및 해금 시스템
-  - 레벨/경험치 조회 API (`GET /api/users/level`)
+- [x] **구독 등급 시스템 (백엔드)**: 4단계 구독 등급 관리 시스템 **완료**
+  - 구독 등급: ☄️ 코멧(무료), 🪐 플래닛(월1.5만원), ☀️ 스타(월15만원), 🌌 갤럭시(기업용월300만원)
+  - 구독 등급별 기능 제한 및 뱃지 시스템 (갤럭시는 기업용으로 프로필 뱃지 제공하지 않음)
+  - 결제 및 자동 갱신 관리, 사용자별 구독 정보 추적
+  - DB 테이블: `subscription_tiers`, `user_subscriptions` 추가
+
+- [x] **계정 레벨 기능 (백엔드)**: 사용자 레벨 관리 및 해금 시스템 **완료**
+  - 레벨/경험치 조회 API (`GET /api/users/:user_id/level`)
+  - 경험치 추가 API (`POST /api/users/:user_id/experience`)
   - 레벨업 처리 로직 (경험치 증가 시 자동 레벨업)
-  - 레벨별 해금 기능 조회 API (`GET /api/users/unlocked-features`)
+  - 레벨별 해금 기능 시스템 (level_requirements 테이블)
 
-- [ ] **채팅 메시지 수정 기능 (백엔드)**: 메시지 편집 및 AI 재호출
+- [x] **채팅 메시지 수정 기능 (백엔드)**: 메시지 편집 및 AI 재호출 **완료**
   - 메시지 편집 API (`PUT /api/chat/messages/:message_id`)
-  - 편집된 메시지에 대한 AI 재응답 로직
-  - 메시지 수정 이력 관리 (선택사항)
+  - 메시지 편집 기록 조회 API (`GET /api/chat/messages/:message_id/history`)
+  - 편집된 메시지에 대한 AI 재응답 로직 (`POST /api/chat/sessions/:session_id/messages/:message_id/reresponse`)
+  - 메시지 수정 이력 관리 (message_edit_history 테이블)
 
-- [ ] **언어 선택 기능 (백엔드)**: 다국어 지원 시스템
-  - 사용자 언어 설정 저장/조회 API (`GET|PUT /api/users/language`)
-  - 번역 리소스 관리 시스템
-  - i18n 번역 키 관리 API (`GET /api/translations/:lang`)
-  - 지원 언어: 한국어(ko), 영어(en), 일본어(ja)
+- [x] **언어 선택 기능 (백엔드)**: 다국어 지원 시스템 **완료**
+  - 사용자 언어 설정 저장/조회 API (`PUT /api/users/:user_id/language`)
+  - 번역 리소스 관리 시스템 (`GET /api/users/translations/:lang`)
+  - i18n 번역 키 관리 (translation_resources 테이블)
+  - 지원 언어: 한국어(ko), 영어(en), 일본어(ja), 중국어(zh)
 
 - [ ] **드래그 기능 데이터 저장 (백엔드)**: 스티커/위젯 위치 정보 관리
   - 사용자별 UI 레이아웃 저장 API (`PUT /api/users/ui-layout`)
@@ -539,6 +598,7 @@
 - **기본 AI Provider**: `geminiapi` (Google AI Studio)
 - **기본 모델**: `gemini-2.0-flash-thinking-exp-01-21`
 - **테스트 사용자 ID**: `guest`
+- **기본 구독 등급**: 코멧 (무료) - 일일 30회 AI 요청, 10MB 파일 업로드 **✅ 구독 시스템 추가됨**
 - **Vertex AI 모델**: `gemini-2.5-pro-exp-03-25` (대체 옵션)
 - **Ollama 모델**: `gemma3:4b` (대체 옵션)
 - **스트리밍 방식**: HTTP SSE (Server-Sent Events) 전용
@@ -550,6 +610,7 @@
 4. **자동 매핑**: 테스트 페이지에서 `gemini` → `geminiapi` 자동 변환
 5. **기본값 통일**: 전체 시스템에서 Google AI Studio 우선 사용, 'guest' 사용자 ID 통일
 6. **Markdown 렌더링**: AI 응답의 완전한 Markdown 지원 및 코드 하이라이팅
+7. **구독 관리 시스템**:  4단계 구독 등급 및 기능 제한 시스템 **✅ 새로 추가됨**
 
 ### 🚀 성능 향상
 - Gemini 2.0 Flash Thinking Exp의 고품질 응답 제공
@@ -557,6 +618,7 @@
 - 검색 기능과 AI 응답 통합
 - DB 저장 보장 (스트리밍 모드에서도 메시지 정상 저장)
 - Markdown 렌더링을 통한 가독성 향상
+- 구독 등급별 일일 사용량 제한 및 권한 관리 **✅  구독 시스템 추가**
 
 ### 📋 주요 변경 사항 요약 (2025-06-20)
 1. **Markdown 렌더링 구현**: Marked.js + Highlight.js 통합
@@ -574,6 +636,39 @@
 - AI provider 매핑 상태 실시간 확인 가능
 - 스트리밍 모드에서 DB 저장 성공/실패 로그 추가
 - Markdown 렌더링 성공/실패 로그 추가
+
+---
+
+## 수정 기록 (2025-01-27)
+
+### 구독 관리 시스템 구현 ()
+- **새로운 파일**:
+  - `models/subscription.js`: 구독 등급/정보/업데이트/취소/이력/권한/사용량 모델 함수
+  - `controllers/subscriptionController.js`: 구독 관리 API 컨트롤러 (8개 주요 엔드포인트)
+  - `routes/subscriptions.js`: 구독 관리 REST API 라우트
+  - `middleware/subscription.js`: 기능별 구독 권한/사용량 제한 미들웨어
+  - `testScripts/subscription.js`: 프론트엔드 구독 관리 테스트 함수
+
+- **수정된 파일**:
+  - `app.js`: 구독 라우트 (`/api/subscriptions`) 추가
+  - `controllers/chatController.js`: 일일 AI 요청 제한 체크 추가
+  - `routes/chat.js`: 파일 업로드에 구독 기능 제한 미들웨어 적용
+  - `public/test.html`: 구독 관리 UI 섹션 (8개 테스트 버튼) 추가
+  - `public/testScript.js`: 구독 관리 모듈 import 및 이벤트 연결
+  - `copilot-instructions.md`: 구독 시스템 구조/API/모델/미들웨어 문서화
+
+### 주요 기능
+1. **4단계 구독 등급**: 코멧(무료), 플래닛(월1.5만원), 스타(월15만원), 갤럭시(기업용월300만원)
+2. **기능별 제한**: AI 요청 횟수, 파일 업로드 크기, 고급 기능 접근 권한
+3. **일일 사용량 추적**: Redis 없이 DB 기반 일일 사용량 관리 (매일 자동 초기화)
+4. **구독 시뮬레이션**: 결제 연동 없이 구독 변경/취소 테스트 가능
+5. **미들웨어 통합**: 채팅/파일 업로드 등 기존 기능에 구독 제한 자동 적용
+
+### 기술적 세부사항
+- **포트폴리오 목적**: 실제 결제 없이 구독 비즈니스 로직 및 권한 관리 시스템 시연
+- **확장 가능**: 실제 결제 게이트웨이 (토스페이, 아임포트 등) 연동 준비 완료
+- **권한 체크**: HTTP 403 (권한 부족), HTTP 429 (사용량 초과) 표준 응답
+- **데이터 무결성**: 트랜잭션 처리로 구독 변경 시 데이터 일관성 보장
 
 ---
 

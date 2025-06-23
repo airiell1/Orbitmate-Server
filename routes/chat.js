@@ -2,14 +2,25 @@ const express = require('express');
 const multer = require('multer'); // multer 추가
 const path = require('path'); // path 추가
 const fs = require('fs'); // fs 추가
-const chatController = require('../controllers/chatController'); // chatController 경로 수정 및 확인
-const { sendMessageController, editMessageController, addReactionController, deleteMessageController, removeReactionController } = require('../controllers/chatController');
+const { 
+  sendMessageController, 
+  editMessageController, 
+  addReactionController, 
+  deleteMessageController, 
+  removeReactionController,
+  getMessageEditHistoryController,
+  requestAiReresponseController,
+  uploadFile
+} = require('../controllers/chatController');
 const { 
   createSessionController, 
   updateSessionController, 
   getSessionMessagesController,
   deleteSessionController // 추가
 } = require('../controllers/sessionController');
+
+// 구독 관리 미들웨어 import
+const { requireFeature } = require('../middleware/subscription');
 
 const router = express.Router();
 
@@ -60,8 +71,15 @@ router.delete('/messages/:message_id', deleteMessageController);
 // 메시지 리액션 제거
 router.delete('/messages/:message_id/reaction', removeReactionController);
 
-// 파일 업로드 라우트 추가
+// 메시지 편집 기록 조회
+router.get('/messages/:message_id/history', getMessageEditHistoryController);
+
+// 편집된 메시지에 대한 AI 재응답 요청
+router.post('/sessions/:session_id/messages/:message_id/reresponse', requestAiReresponseController);
+
+// 파일 업로드 라우트 추가 (구독 제한 적용)
 // upload.single('file') 미들웨어는 'file'이라는 이름의 필드에서 단일 파일을 처리합니다.
-router.post('/sessions/:session_id/files', upload.single('file'), chatController.uploadFile);
+router.post('/sessions/:session_id/upload', requireFeature('file_upload'), upload.single('file'), uploadFile);
+router.post('/sessions/:session_id/files', upload.single('file'), uploadFile);
 
 module.exports = router;

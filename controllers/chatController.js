@@ -1,5 +1,15 @@
 const { getConnection, oracledb } = require('../config/database'); // Removed getConnection
-const { saveUserMessageToDB, saveAiMessageToDB, deleteUserMessageFromDB, getSessionMessagesForClient, getChatHistoryFromDB, saveAttachmentToDB } = require('../models/chat'); // getChatHistoryFromDB 추가, saveAttachmentToDB 추가
+const { 
+  saveUserMessageToDB, 
+  saveAiMessageToDB, 
+  deleteUserMessageFromDB, 
+  getSessionMessagesForClient, 
+  getChatHistoryFromDB, 
+  saveAttachmentToDB,
+  editUserMessage,
+  getMessageEditHistory,
+  requestAiReresponse
+} = require('../models/chat'); // getChatHistoryFromDB 추가, saveAttachmentToDB 추가
 const { getUserSettings } = require('../models/user'); // getUserSettings 추가
 const { fetchChatCompletion } = require('../utils/aiProvider'); // Updated import
 const { convertClobFields, withTransaction } = require('../utils/dbUtils'); // convertClobFields import 추가, withTransaction 추가
@@ -8,6 +18,9 @@ const path = require('path');
 const fs = require('fs');
 
 const { createErrorResponse, getHttpStatusByErrorCode, handleOracleError, logError } = require('../utils/errorHandler');
+
+// 구독 관리 함수 import
+const { checkDailyUsage, getUserSubscription } = require('../models/subscription');
 
 // 채팅 메시지 전송 및 AI 응답 받기 컨트롤러
 async function sendMessageController(req, res) {
@@ -61,9 +74,33 @@ async function sendMessageController(req, res) {
   const allowedSpecialModeTypes = ['stream', 'canvas'];
   if (specialModeType && !allowedSpecialModeTypes.includes(specialModeType)) {
     const errorPayload = createErrorResponse('INVALID_INPUT', `잘못된 specialModeType 값입니다. 허용되는 값: ${allowedSpecialModeTypes.join(', ')}.`);
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
-  }
+    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));  }
   const user_id = req.user ? req.user.user_id : 'guest';
+
+  // 구독 일일 사용량 제한 체크
+  try {
+    console.log(`[chatController] Checking daily usage limit for user: ${user_id}`);
+    const usage = await checkDailyUsage(user_id);
+    
+    if (!usage.data.can_make_request) {
+      console.log(`[chatController] Daily limit exceeded for user: ${user_id}`, usage.data);
+      return res.status(429).json({
+        error: 'Daily limit exceeded',
+        message: '일일 AI 요청 한도를 초과했습니다. 구독을 업그레이드하거나 내일 다시 시도해주세요.',
+        usage_info: usage.data,
+        upgrade_url: '/api/subscriptions/tiers'
+      });
+    }
+    
+    console.log(`[chatController] Usage check passed for user: ${user_id}`, {
+      today_requests: usage.data.today_requests,
+      max_requests: usage.data.max_requests_per_day,
+      remaining: usage.data.requests_remaining
+    });
+  } catch (error) {
+    console.error('[chatController] Error checking daily usage:', error);
+    // 사용량 체크 실패 시에도 요청을 계속 진행 (가용성 우선)
+  }
 
   // Additional validation for new optional parameters
   if (max_output_tokens_override !== undefined && (typeof max_output_tokens_override !== 'number' || !Number.isInteger(max_output_tokens_override) || max_output_tokens_override <= 0)) {
@@ -291,74 +328,90 @@ async function sendMessageController(req, res) {
   }
 }
 
-// 메시지 편집 컨트롤러
+// =========================
+// 9. 메시지 편집 기능 API
+// =========================
+
+/**
+ * 메시지 편집 컨트롤러
+ */
 async function editMessageController(req, res) {
-  const messageId = req.params.message_id;
-  const { content } = req.body;
-
-  // Validation for messageId
-  if (!messageId || typeof messageId !== 'string' || messageId.trim() === '') {
-    const errorPayload = createErrorResponse('INVALID_INPUT', '메시지 ID는 필수이며 빈 문자열이 아니어야 합니다.');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
-  }
-  if (messageId.length > 36) {
-    const errorPayload = createErrorResponse('INVALID_INPUT', '메시지 ID가 너무 깁니다 (최대 36자).');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
-  }
-
-  // Validation for content
-  if (!content || typeof content !== 'string' || content.trim() === '') {
-    const errorPayload = createErrorResponse('INVALID_INPUT', '메시지 내용은 필수이며 빈 문자열이 아니어야 합니다.');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
-  }
-  if (content.length > 4000) {
-    const errorPayload = createErrorResponse('INVALID_INPUT', '메시지 내용이 너무 깁니다 (최대 4000자).');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
-  }
-  
   try {
-    const updatedMessageData = await withTransaction(async (connection) => {
-      const result = await connection.execute(
-        `UPDATE chat_messages SET message_content = :content, edited_at = SYSTIMESTAMP, is_edited = 1 WHERE message_id = :messageId`,
-        { content, messageId },
-        { autoCommit: false } // withTransaction handles commit
-      );
-
-      if (result.rowsAffected === 0) {
-        // console.warn(`Warning in editMessageController: Message with ID ${messageId} not found or not updated.`); // Kept for now
-        const errorPayload = createErrorResponse('MESSAGE_NOT_FOUND', '메시지를 찾을 수 없거나 업데이트되지 않았습니다.');
-        const err = new Error(errorPayload.error.message);
-        err.code = 'MESSAGE_NOT_FOUND';
-        throw err;
-      }
-      
-      const editedMessageResult = await connection.execute(
-          `SELECT message_id, session_id, user_id, message_type, message_content, created_at, edited_at, is_edited 
-           FROM chat_messages 
-           WHERE message_id = :messageId`,
-          { messageId },
-          { outFormat: oracledb.OUT_FORMAT_OBJECT }
-      );
-
-      if (editedMessageResult.rows.length === 0) {
-          // console.error(`Error in editMessageController: Edited message with ID ${messageId} not found after update.`); // Kept for now
-          const errorPayload = createErrorResponse('MESSAGE_NOT_FOUND', '편집된 메시지를 찾을 수 없습니다.');
-          const err = new Error(errorPayload.error.message);
-          err.code = 'MESSAGE_NOT_FOUND';
-          throw err;
-      }
-      return await convertClobFields(editedMessageResult.rows[0]);
-    });
-
-    res.status(200).json(standardizeApiResponse({ message: '메시지가 성공적으로 수정되었습니다.', updated_message: updatedMessageData }));
-  } catch (err) {
-    logError('chatControllerEditMessage', err);
-    if (err.code === 'MESSAGE_NOT_FOUND') {
-        const errorPayload = createErrorResponse(err.code, err.message);
-        return res.status(getHttpStatusByErrorCode(err.code)).json(standardizeApiResponse(errorPayload));
+    const { message_id } = req.params;
+    const { new_content, edit_reason } = req.body;
+    const user_id = req.body.user_id || 'guest'; // 테스트용 기본값
+    
+    if (!message_id || !new_content) {
+      const errorPayload = createErrorResponse('INVALID_INPUT', '메시지 ID와 새로운 내용이 필요합니다.');
+      return res.status(400).json(standardizeApiResponse(errorPayload));
     }
-    const errorPayload = createErrorResponse('SERVER_ERROR', `메시지 수정 중 오류 발생: ${err.message}`);
-    res.status(getHttpStatusByErrorCode('SERVER_ERROR')).json(standardizeApiResponse(errorPayload));
+
+    if (typeof new_content !== 'string' || new_content.trim().length === 0) {
+      const errorPayload = createErrorResponse('INVALID_INPUT', '유효한 메시지 내용을 입력해주세요.');
+      return res.status(400).json(standardizeApiResponse(errorPayload));
+    }
+
+    const result = await editUserMessage(message_id, user_id, new_content.trim(), edit_reason);
+    
+    // 사용자에게 경험치 지급 (메시지 편집 시)
+    try {
+      const { addUserExperience } = require('../models/user');
+      await addUserExperience(user_id, 5, 'message_edit', '메시지 편집');
+    } catch (expError) {
+      console.warn('[chatController] 경험치 지급 실패:', expError.message);
+    }
+
+    return res.status(200).json(standardizeApiResponse(result));
+    
+  } catch (error) {
+    logError('editMessageController', error);
+    const errorPayload = handleOracleError(error);
+    return res.status(getHttpStatusByErrorCode(errorPayload.code)).json(standardizeApiResponse(errorPayload));
+  }
+}
+
+/**
+ * 메시지 편집 기록 조회
+ */
+async function getMessageEditHistoryController(req, res) {
+  try {
+    const { message_id } = req.params;
+    
+    if (!message_id) {
+      const errorPayload = createErrorResponse('INVALID_INPUT', '메시지 ID가 필요합니다.');
+      return res.status(400).json(standardizeApiResponse(errorPayload));
+    }
+
+    const editHistory = await getMessageEditHistory(message_id);
+    return res.status(200).json(standardizeApiResponse(editHistory));
+    
+  } catch (error) {
+    logError('getMessageEditHistoryController', error);
+    const errorPayload = handleOracleError(error);
+    return res.status(getHttpStatusByErrorCode(errorPayload.code)).json(standardizeApiResponse(errorPayload));
+  }
+}
+
+/**
+ * 편집된 메시지에 대한 AI 재응답 요청
+ */
+async function requestAiReresponseController(req, res) {
+  try {
+    const { session_id, message_id } = req.params;
+    const user_id = req.body.user_id || 'guest';
+    
+    if (!session_id || !message_id) {
+      const errorPayload = createErrorResponse('INVALID_INPUT', '세션 ID와 메시지 ID가 필요합니다.');
+      return res.status(400).json(standardizeApiResponse(errorPayload));
+    }
+
+    const result = await requestAiReresponse(session_id, message_id, user_id);
+    return res.status(200).json(standardizeApiResponse(result));
+    
+  } catch (error) {
+    logError('requestAiReresponseController', error);
+    const errorPayload = handleOracleError(error);
+    return res.status(getHttpStatusByErrorCode(errorPayload.code)).json(standardizeApiResponse(errorPayload));
   }
 }
 
@@ -665,6 +718,8 @@ async function getSessionMessagesController(req, res) {
 module.exports = {
   sendMessageController,
   editMessageController,
+  getMessageEditHistoryController,
+  requestAiReresponseController,
   addReactionController,
   deleteMessageController,
   removeReactionController,

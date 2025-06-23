@@ -4,15 +4,14 @@ import { updateApiResponse } from './utils.js';
 import { addMessage, setCurrentSessionId } from './chat.js';
 
 const GUEST_USER_ID = 'guest';
-const API_TEST_USER_ID = 'API_TEST_USER_ID';
 
 // *** 채팅 세션 관리 테스트 함수들 ***
 export async function createChatSessionTest() {
     const createSessionUserIdInput = document.getElementById('create-session-user-id');
     const createSessionTitleInput = document.getElementById('create-session-title');
     const createSessionCategoryInput = document.getElementById('create-session-category');
-    
-    const user_id = createSessionUserIdInput.value || API_TEST_USER_ID;
+
+    const user_id = createSessionUserIdInput.value || GUEST_USER_ID;
     const title = createSessionTitleInput.value || '새 테스트 세션';
     const category = createSessionCategoryInput.value || '일반';
 
@@ -46,7 +45,7 @@ export async function createChatSessionTest() {
 
 export async function getUserSessionsTest() {
     const getSessionsUserIdInput = document.getElementById('get-sessions-user-id');
-    const user_id = getSessionsUserIdInput.value || API_TEST_USER_ID;
+    const user_id = getSessionsUserIdInput.value || GUEST_USER_ID;
     
     if (!user_id) {
         alert('사용자 ID를 입력해주세요.');
@@ -128,7 +127,7 @@ export async function deleteChatSessionTest() {
     try {        const response = await fetch(`/api/chat/sessions/${sessId}`, {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: API_TEST_USER_ID })
+            body: JSON.stringify({ user_id: GUEST_USER_ID })
         });
         const data = await response.json();
         updateApiResponse(data);
@@ -169,3 +168,8 @@ window.selectSession = function(sessionId) {
     setCurrentSessionId(sessionId);
     addMessage('시스템', `세션 ${sessionId}를 선택했습니다.`, null, 'system-message');
 }
+
+// testScript.js import 호환성을 위한 별칭 함수들
+export const createSessionTest = createChatSessionTest;
+export const updateSessionTest = updateChatSessionTest;  
+export const deleteSessionTest = deleteChatSessionTest;

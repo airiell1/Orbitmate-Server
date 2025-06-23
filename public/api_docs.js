@@ -412,100 +412,280 @@ const apis = [
     "detected_country": "South Korea",
     "is_local_ip": false,
     "used_fallback": false
-  }
+    }
 }`
   },
   
-  /* 7. WebSocket 실시간 메시지 API */
+  /* 구독 관리 시스템 */
   {
     method: 'GET',
-    path: '/api/websocket/status',
-    title: 'WebSocket 연결 상태 조회',
-    desc: 'WebSocket 서버의 현재 연결 상태와 활성 연결 정보를 조회합니다.',
+    path: '/api/subscriptions/tiers',
+    title: '구독 등급 목록 조회',
+    desc: '사용 가능한 모든 구독 등급 목록을 반환합니다. 각 등급의 이름, 가격, 제한사항, 기능 등을 포함합니다.',
     params: [],
-    exampleReq: '',    exampleRes: `{
-  "websocket_status": "active",
-  "server_info": {
-    "total_connections": 5,
-    "active_users": 3,
-    "active_sessions": 2,
-    "timestamp": "2025-06-17T10:30:00.000Z"
+    exampleReq: '',
+    exampleRes: `[
+  {
+    "tier_id": 1,
+    "tier_name": "코멧",
+    "tier_emoji": "☄️",
+    "price_monthly": 0,
+    "price_yearly": 0,
+    "max_sessions_per_day": 10,
+    "max_messages_per_session": 50,
+    "max_file_upload_mb": 5,
+    "ai_model_access": ["geminiapi"],
+    "features": ["basic_chat", "file_upload"],
+    "is_active": true,
+    "created_at": "2025-01-27T00:00:00.000Z"
   },
-  "connection_details": {
-    "activeConnections": {...},
-    "sessionRooms": {...},
-    "socketUsers": {...}
+  {
+    "tier_id": 2,
+    "tier_name": "플래닛",
+    "tier_emoji": "🪐",
+    "price_monthly": 15000,
+    "price_yearly": 150000,
+    "max_sessions_per_day": 100,
+    "max_messages_per_session": 200,
+    "max_file_upload_mb": 20,
+    "ai_model_access": ["geminiapi", "vertexai"],
+    "features": ["basic_chat", "file_upload", "priority_support"],
+    "is_active": true,
+    "created_at": "2025-01-27T00:00:00.000Z"
   }
+]`
+  },
+  {
+    method: 'GET',
+    path: '/api/subscriptions/users/:user_id/subscription',    title: '사용자 구독 정보 조회',
+    desc: '특정 사용자의 현재 구독 정보를 조회합니다. 구독 등급, 만료일, 상태 등을 포함합니다.',
+    params: [
+      { name: 'user_id', type: 'text', label: '사용자 ID', required: true, inPath: true }
+    ],
+    exampleReq: '',
+    exampleRes: `{
+  "subscription_id": "SUB123456789",
+  "user_id": "guest",
+  "tier_id": 1,
+  "tier_name": "코멧",
+  "tier_emoji": "☄️",
+  "subscription_status": "active",
+  "start_date": "2025-01-27T00:00:00.000Z",
+  "end_date": null,
+  "auto_renewal": true,
+  "payment_method": null,
+  "last_payment_date": null,
+  "next_payment_date": null,
+  "created_at": "2025-01-27T00:00:00.000Z",
+  "updated_at": "2025-01-27T00:00:00.000Z"
 }`
   },
   {
-    method: 'POST',
-    path: '/api/websocket/broadcast/session/:session_id',
-    title: '세션에 메시지 브로드캐스트',
-    desc: '특정 세션의 모든 사용자에게 실시간 메시지를 브로드캐스트합니다.',
-    params: [
-      { name: 'session_id', type: 'text', label: '세션 ID', required: true, inPath: true },
-      { name: 'event', type: 'text', label: '이벤트명', required: true },
-      { name: 'data', type: 'textarea', label: '전송할 데이터 (JSON)', required: true }
+    method: 'PUT',
+    path: '/api/subscriptions/users/:user_id/subscription',
+    title: '구독 업그레이드/다운그레이드',
+    desc: '사용자의 구독 등급을 변경합니다. 업그레이드 또는 다운그레이드가 가능합니다.',    params: [
+      { name: 'user_id', type: 'text', label: '사용자 ID', required: true, inPath: true },
+      { name: 'tier_name', type: 'text', label: '새로운 구독 등급명 (한국어: 코멧/플래닛/스타/갤럭시 또는 영어: free/planet/star/galaxy)', required: true },
+      { name: 'payment_method', type: 'text', label: '결제 방법 (optional)', required: false },
+      { name: 'billing_cycle', type: 'text', label: '결제 주기 (monthly/yearly)', required: false },
+      { name: 'auto_renewal', type: 'checkbox', label: '자동 갱신 여부', required: false }
     ],
     exampleReq: `{
-  "event": "custom_notification",
-  "data": {
-    "message": "시스템 공지사항",
-    "type": "announcement"
-  }
-}`,    exampleRes: `{
-  "message": "메시지가 성공적으로 브로드캐스트되었습니다.",
-  "session_id": "session_123",
-  "event": "custom_notification",
-  "timestamp": "2025-06-17T10:30:00.000Z"
+  "tier_name": "플래닛",
+  "payment_method": "credit_card",
+  "billing_cycle": "monthly",
+  "auto_renewal": true
+}`,
+    exampleRes: `{
+  "subscription_id": "SUB123456789",
+  "user_id": "guest",
+  "tier_id": 2,
+  "tier_name": "플래닛",
+  "tier_emoji": "🪐",
+  "subscription_status": "active",
+  "start_date": "2025-01-27T00:00:00.000Z",
+  "end_date": "2025-02-27T00:00:00.000Z",
+  "auto_renewal": true,
+  "payment_method": "credit_card",
+  "last_payment_date": "2025-01-27T00:00:00.000Z",
+  "next_payment_date": "2025-02-27T00:00:00.000Z",
+  "updated_at": "2025-01-27T10:30:00.000Z"
 }`
   },
   {
-    method: 'POST',
-    path: '/api/websocket/send/user/:user_id',
-    title: '사용자에게 메시지 전송',
-    desc: '특정 사용자에게 실시간 메시지를 전송합니다.',
+    method: 'DELETE',
+    path: '/api/subscriptions/users/:user_id/subscription',
+    title: '구독 취소',    desc: '사용자의 현재 구독을 취소합니다. 즉시 취소되거나 현재 기간 종료 후 취소됩니다.',
     params: [
       { name: 'user_id', type: 'text', label: '사용자 ID', required: true, inPath: true },
-      { name: 'event', type: 'text', label: '이벤트명', required: true },
-      { name: 'data', type: 'textarea', label: '전송할 데이터 (JSON)', required: true }
+      { name: 'immediate', type: 'checkbox', label: '즉시 취소 여부', required: false },
+      { name: 'reason', type: 'text', label: '취소 사유 (optional)', required: false }
     ],
     exampleReq: `{
-  "event": "private_message",
-  "data": {
-    "message": "개인 메시지입니다",
-    "from": "system"
+  "immediate": false,
+  "reason": "서비스 불만족"
+}`,
+    exampleRes: `{
+  "message": "구독이 성공적으로 취소되었습니다.",
+  "subscription_id": "SUB123456789",
+  "cancellation_date": "2025-01-27T10:30:00.000Z",
+  "service_end_date": "2025-02-27T00:00:00.000Z",
+  "immediate_cancellation": false
+}`
+  },
+  {
+    method: 'GET',
+    path: '/api/subscriptions/users/:user_id/subscription/history',
+    title: '구독 이력 조회',
+    desc: '사용자의 구독 변경 이력을 조회합니다. 업그레이드, 다운그레이드, 결제 이력 등을 포함합니다.',
+    params: [
+      { name: 'user_id', type: 'text', label: '사용자 ID', required: true, inPath: true },
+      { name: 'limit', type: 'number', label: '조회 개수 제한 (optional)', required: false },
+      { name: 'offset', type: 'number', label: '조회 시작 위치 (optional)', required: false }
+    ],
+    exampleReq: '',
+    exampleRes: `[
+  {
+    "history_id": "HIST123456789",
+    "subscription_id": "SUB123456789",
+    "user_id": "guest",
+    "action_type": "upgrade",
+    "old_tier_id": 1,
+    "old_tier_name": "코멧",
+    "new_tier_id": 2,
+    "new_tier_name": "플래닛",
+    "amount_paid": 15000,
+    "payment_method": "credit_card",
+    "created_at": "2025-01-27T10:30:00.000Z"
   }
-}`,    exampleRes: `{
-  "message": "메시지가 성공적으로 전송되었습니다.",
+]`
+  },
+  {
+    method: 'GET',
+    path: '/api/subscriptions/users/:user_id/subscription/features/:feature_name',
+    title: '기능 접근 권한 확인',
+    desc: '사용자의 현재 구독 등급으로 특정 기능에 접근할 수 있는지 확인합니다.',
+    params: [
+      { name: 'user_id', type: 'text', label: '사용자 ID', required: true, inPath: true },
+      { name: 'feature_name', type: 'text', label: '기능 이름 (예: premium_ai, priority_support)', required: true, inPath: true }
+    ],
+    exampleReq: '',
+    exampleRes: `{
+  "feature_name": "premium_ai",
+  "has_access": true,
+  "tier_name": "플래닛",
+  "tier_emoji": "🪐",
+  "reason": "현재 구독 등급에서 지원하는 기능입니다."
+}`
+  },
+  {
+    method: 'GET',
+    path: '/api/subscriptions/users/:user_id/subscription/usage',
+    title: '일일 사용량 확인',
+    desc: '사용자의 오늘 사용량과 구독 등급별 제한을 확인합니다.',
+    params: [
+      { name: 'user_id', type: 'text', label: '사용자 ID', required: true, inPath: true }
+    ],
+    exampleReq: '',
+    exampleRes: `{
   "user_id": "guest",
-  "event": "private_message",
-  "timestamp": "2025-06-17T10:30:00.000Z"
+  "tier_name": "플래닛",
+  "tier_emoji": "🪐",
+  "usage_date": "2025-01-27",
+  "sessions_today": 5,
+  "max_sessions_per_day": 100,
+  "messages_today": 45,
+  "max_messages_per_session": 200,
+  "file_uploads_today": 2,
+  "max_file_upload_mb": 20,
+  "remaining_sessions": 95,
+  "usage_percentage": 5.0
 }`
   },
   {
     method: 'POST',
-    path: '/api/websocket/test/event',
-    title: 'WebSocket 이벤트 테스트',
-    desc: 'WebSocket 연결 및 메시지 전송을 테스트합니다.',
-    params: [
-      { name: 'session_id', type: 'text', label: '세션 ID (선택)', required: false },
-      { name: 'user_id', type: 'text', label: '사용자 ID (선택)', required: false },
-      { name: 'event_type', type: 'text', label: '이벤트 타입 (기본: test_message)', required: false }
+    path: '/api/subscriptions/users/:user_id/subscription/upgrade',
+    title: '구독 업그레이드 시뮬레이션',
+    desc: '실제 결제 없이 구독 업그레이드를 시뮬레이션합니다. 테스트용 API입니다.',    params: [
+      { name: 'user_id', type: 'text', label: '사용자 ID', required: true, inPath: true },
+      { name: 'tier_name', type: 'text', label: '목표 구독 등급명 (한국어: 코멧/플래닛/스타/갤럭시 또는 영어: free/planet/star/galaxy)', required: true },
+      { name: 'simulation_type', type: 'text', label: '시뮬레이션 타입 (upgrade/downgrade)', required: false }
     ],
     exampleReq: `{
-  "session_id": "session_123",
-  "event_type": "test_message"
+  "tier_name": "planet",
+  "simulation_type": "upgrade"
+}`,exampleRes: `{
+  "message": "Subscription upgrade simulation completed",
+  "simulation": {
+    "user_id": "API_TEST_USER_ID",
+    "current_tier": {
+      "tier_id": 1,
+      "tier_name": "free",
+      "tier_display_name": "☄️ 코멧",
+      "tier_emoji": "☄️",
+      "monthly_price": 0,
+      "yearly_price": 0,
+      "tier_level": 1
+    },
+    "target_tier": {
+      "tier_id": 3,
+      "tier_name": "star",
+      "tier_display_name": "☀️ 스타",
+      "tier_emoji": "☀️",
+      "monthly_price": 150000,
+      "yearly_price": 1500000,
+      "tier_level": 3
+    },
+    "upgrade_type": "upgrade",
+    "estimated_monthly_cost": 150000,
+    "estimated_yearly_cost": 1500000,
+    "new_features": ["premium_ai", "priority_support", "advanced_analytics"],
+    "payment_simulation": true,
+    "can_proceed": true,
+    "simulation_timestamp": "2025-01-27T10:30:00.000Z"
+  }
+}`
+  },
+  {
+    method: 'POST',
+    path: '/api/subscriptions/users/:user_id/subscription/renewal',
+    title: '구독 갱신 시뮬레이션',
+    desc: '실제 결제 없이 구독 갱신을 시뮬레이션합니다. 테스트용 API입니다.',
+    params: [
+      { name: 'user_id', type: 'text', label: '사용자 ID', required: true, inPath: true },
+      { name: 'renewal_period', type: 'text', label: '갱신 기간 (monthly/yearly)', required: false },
+      { name: 'apply_discount', type: 'checkbox', label: '할인 적용 여부', required: false }
+    ],
+    exampleReq: `{
+  "renewal_period": "monthly",
+  "apply_discount": true
 }`,    exampleRes: `{
-  "message": "세션 테스트 메시지가 전송되었습니다.",
-  "target": {"session_id": "API_TEST_SESSION_ID"},
-  "event_type": "test_message",
-  "test_data": {
-    "message": "WebSocket 테스트 메시지입니다.",
-    "test_timestamp": "2025-06-17T10:30:00.000Z",
-    "from_api": true,
-    "test_id": "test_1734422400000"
+  "message": "Subscription renewal simulation completed",
+  "simulation": {
+    "user_id": "API_TEST_USER_ID",
+    "current_subscription": {
+      "subscription_id": 123,
+      "tier": {
+        "tier_id": 2,
+        "tier_name": "planet",
+        "tier_display_name": "🪐 플래닛",
+        "tier_emoji": "🪐",
+        "monthly_price": 15000,
+        "yearly_price": 150000,
+        "tier_level": 2
+      },
+      "auto_renewal": true
+    },
+    "renewal_period": "monthly",
+    "renewal_date": "2025-02-27T10:30:00.000Z",
+    "base_price": 15000,
+    "discount_applied": true,
+    "discount_amount": 1500,
+    "final_price": 13500,
+    "auto_renewal": true,
+    "payment_simulation": true,
+    "simulation_timestamp": "2025-01-27T10:30:00.000Z"
   }
 }`
   }

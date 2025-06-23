@@ -268,6 +268,196 @@ async function getSessionMessagesForClient(connection, sessionId) { // Added con
   // Removed finally block for connection closing
 }
 
+// =========================
+// 9. 메시지 편집 기능
+// =========================
+
+/**
+ * 메시지 편집 (편집 기록 저장 포함)
+ */
+async function editUserMessage(message_id, user_id, new_content, edit_reason = null) {
+  let connection;
+  try {
+    connection = await getConnection();
+    await connection.execute('BEGIN'); // 트랜잭션 시작
+
+    // 기존 메시지 조회 및 권한 확인
+    const messageResult = await connection.execute(
+      `SELECT message_content, user_id, message_type, session_id 
+       FROM chat_messages 
+       WHERE message_id = :message_id AND is_deleted = 0`,
+      { message_id },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    if (messageResult.rows.length === 0) {
+      throw new Error('메시지를 찾을 수 없습니다.');
+    }
+
+    const message = messageResult.rows[0];
+    const oldContent = await clobToString(message.MESSAGE_CONTENT);
+
+    // 권한 확인 (메시지 작성자만 편집 가능)
+    if (message.USER_ID !== user_id) {
+      throw new Error('메시지를 편집할 권한이 없습니다.');
+    }
+
+    // AI 메시지는 편집 불가
+    if (message.MESSAGE_TYPE === 'ai') {
+      throw new Error('AI 메시지는 편집할 수 없습니다.');
+    }
+
+    // 편집 기록 저장
+    await connection.execute(
+      `INSERT INTO message_edit_history 
+       (message_id, old_content, new_content, edit_reason, edited_by) 
+       VALUES (:message_id, :old_content, :new_content, :edit_reason, :edited_by)`,
+      {
+        message_id,
+        old_content: oldContent,
+        new_content,
+        edit_reason,
+        edited_by: user_id
+      },
+      { autoCommit: false }
+    );
+
+    // 메시지 업데이트
+    await connection.execute(
+      `UPDATE chat_messages 
+       SET message_content = :new_content, 
+           is_edited = 1, 
+           edited_at = SYSTIMESTAMP 
+       WHERE message_id = :message_id`,
+      { message_id, new_content },
+      { autoCommit: false }
+    );
+
+    await connection.commit();
+
+    return {
+      success: true,
+      message_id,
+      old_content: oldContent,
+      new_content,
+      session_id: message.SESSION_ID,
+      edited_at: new Date().toISOString()
+    };
+
+  } catch (error) {
+    if (connection) {
+      await connection.rollback();
+    }
+    console.error('[chatModel] 메시지 편집 오류:', error);
+    throw error;
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (err) {
+        console.error("DB 연결 해제 실패:", err);
+      }
+    }
+  }
+}
+
+/**
+ * 메시지 편집 기록 조회
+ */
+async function getMessageEditHistory(message_id) {
+  let connection;
+  try {
+    connection = await getConnection();
+    
+    const result = await connection.execute(
+      `SELECT edit_id, old_content, new_content, edit_reason, edited_by, edited_at
+       FROM message_edit_history 
+       WHERE message_id = :message_id 
+       ORDER BY edited_at DESC`,
+      { message_id },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    const editHistory = [];
+    for (const row of result.rows) {
+      editHistory.push({
+        edit_id: row.EDIT_ID,
+        old_content: await clobToString(row.OLD_CONTENT),
+        new_content: await clobToString(row.NEW_CONTENT),
+        edit_reason: row.EDIT_REASON,
+        edited_by: row.EDITED_BY,
+        edited_at: row.EDITED_AT
+      });
+    }
+
+    return editHistory;
+  } catch (error) {
+    console.error('[chatModel] 메시지 편집 기록 조회 오류:', error);
+    throw error;
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (err) {
+        console.error("DB 연결 해제 실패:", err);
+      }
+    }
+  }
+}
+
+/**
+ * 편집된 메시지에 대한 AI 재응답 생성 요청
+ */
+async function requestAiReresponse(session_id, edited_message_id, user_id) {
+  let connection;
+  try {
+    connection = await getConnection();
+    
+    // 편집된 메시지 이후의 모든 메시지 조회
+    const subsequentMessages = await connection.execute(
+      `SELECT message_id, message_type 
+       FROM chat_messages 
+       WHERE session_id = :session_id 
+         AND created_at > (SELECT created_at FROM chat_messages WHERE message_id = :edited_message_id)
+         AND is_deleted = 0
+       ORDER BY created_at`,
+      { session_id, edited_message_id },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    // 편집된 메시지 이후의 AI 응답들을 삭제 처리 (soft delete)
+    if (subsequentMessages.rows.length > 0) {
+      const messageIds = subsequentMessages.rows.map(row => row.MESSAGE_ID);
+      
+      await connection.execute(
+        `UPDATE chat_messages 
+         SET is_deleted = 1, updated_at = SYSTIMESTAMP 
+         WHERE message_id IN (${messageIds.map(() => '?').join(',')})`,
+        messageIds,
+        { autoCommit: true }
+      );
+    }
+
+    return {
+      success: true,
+      message: '편집된 메시지 이후의 대화가 초기화되었습니다. 새로운 AI 응답을 요청하세요.',
+      deleted_messages: subsequentMessages.rows.length
+    };
+
+  } catch (error) {
+    console.error('[chatModel] AI 재응답 요청 오류:', error);
+    throw error;
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (err) {
+        console.error("DB 연결 해제 실패:", err);
+      }
+    }
+  }
+}
+
 module.exports = {
   getChatHistoryFromDB,
   saveUserMessageToDB,
@@ -275,5 +465,8 @@ module.exports = {
   saveAttachmentToDB,
   deleteUserMessageFromDB,
   getSessionMessagesForClient, // 기존 export
-  clobToString // clobToString export 추가
+  clobToString, // clobToString export 추가
+  editUserMessage,
+  getMessageEditHistory,
+  requestAiReresponse
 };

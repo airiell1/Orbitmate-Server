@@ -248,3 +248,86 @@ export async function searchKakaoTest() {
     // TODO: 카카오 검색 API 구현 후 추가
     alert('카카오 검색 기능은 아직 구현되지 않았습니다.');
 }
+
+// 캐시 삭제 테스트 함수
+export async function clearCacheTest() {
+    try {
+        const response = await fetch('/api/search/cache/clear', {
+            method: 'DELETE'
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`캐시 삭제 실패: ${errorData.message || response.statusText}`);
+        }
+        
+        const data = await response.json();
+        updateApiResponse(data);
+        alert('캐시가 성공적으로 삭제되었습니다.');
+        
+    } catch (error) {
+        console.error('캐시 삭제 오류:', error);
+        updateApiResponse({ error: { message: error.message } });
+    }
+}
+
+// 캐시 통계 조회 테스트 함수
+export async function getCacheStatsTest() {
+    try {
+        const response = await fetch('/api/search/cache/stats');
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`캐시 통계 조회 실패: ${errorData.message || response.statusText}`);
+        }
+        
+        const data = await response.json();
+        updateApiResponse(data);
+        
+    } catch (error) {
+        console.error('캐시 통계 조회 오류:', error);
+        updateApiResponse({ error: { message: error.message } });
+    }
+}
+
+// IP 기반 날씨 조회 테스트 함수 (getWeatherByIpTest 별칭)
+export async function getWeatherByIpTest() {
+    try {
+        const response = await fetch('/api/search/weather/ip');
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`IP 기반 날씨 조회 실패: ${errorData.message || response.statusText}`);
+        }
+        
+        const data = await response.json();
+        updateApiResponse(data);
+        
+    } catch (error) {
+        console.error('IP 기반 날씨 조회 오류:', error);
+        updateApiResponse({ error: { message: error.message } });
+    }
+}
+
+// 도시명 기반 날씨 조회 테스트 함수 (getWeatherByCityTest 별칭)
+export async function getWeatherByCityTest() {
+    const cityInput = document.getElementById('weather-city-input');
+    const city = cityInput?.value?.trim() || 'Seoul';
+    
+    try {
+        const searchParams = new URLSearchParams({ city });
+        const response = await fetch(`/api/search/weather/city?${searchParams}`);
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`도시 날씨 조회 실패: ${errorData.message || response.statusText}`);
+        }
+        
+        const data = await response.json();
+        updateApiResponse(data);
+        
+    } catch (error) {
+        console.error('도시 날씨 조회 오류:', error);
+        updateApiResponse({ error: { message: error.message } });
+    }
+}
