@@ -328,7 +328,7 @@
     - 환경변수: `KAKAO_API_KEY`
   - 검색 결과 통합 및 중복 제거
 
-- [ ] **OpenWeatherMap API 연동 (백엔드)**: 날씨 정보 위젯
+- [X] **OpenWeatherMap API 연동 (백엔드)**: 날씨 정보 위젯
   - 현재 날씨 조회 API (`GET /api/widgets/weather/current`)
     - 무료 60회/분, 1000회/일 (충분한 용량)
     - 위치별 현재 날씨, 온도, 습도, 바람
