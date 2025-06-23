@@ -113,12 +113,14 @@
 </head>
 <body>
     <div class="header">
-        <img src="assets/Orbitmate.png" alt="Orbitmate Logo" class="logo" width="100" height="100">
-        <div class="header-text-content">  <h1>Orbitmate API</h1>
+        <img src="assets/Orbitmate.png" alt="Orbitmate Logo" class="logo" width="100" height="100">        <div class="header-text-content">  <h1>Orbitmate API</h1>
             <p>AI 대화 서비스</p>
         </div>
-        <a href="/test" class="test-button">API 테스트 페이지</a>
-        <button id="toggle-sidebar-button">⚙️ 설정</button>
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <button id="dark-mode-toggle" style="background: #6c757d; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer;">🌓 다크모드</button>
+            <a href="/test" class="test-button">API 테스트 페이지</a>
+            <button id="toggle-sidebar-button">⚙️ 설정</button>
+        </div>
     </div>
     <div id="main-content-wrapper">
         <div id="chat-container">
@@ -171,10 +173,35 @@
     
     <div class="footer">
         <p>© 2025 Orbitmate - AI 채팅 서비스 (HTTP 스트리밍)</p>
-    </div>
-
-    <!-- 기존 스크립트들 -->
+    </div>    <!-- 기존 스크립트들 -->
     <script src="script.js"></script>
     <script src="promptFeature.js"></script>
+    <script>
+      // 다크모드 토글 기능
+      function toggleDarkMode() {
+        document.body.classList.toggle('dark-mode');
+        const isDarkMode = document.body.classList.contains('dark-mode');
+        localStorage.setItem('mainPageDarkMode', isDarkMode);
+        
+        const toggleButton = document.getElementById('dark-mode-toggle');
+        if (toggleButton) {
+          toggleButton.textContent = isDarkMode ? '☀️ 라이트모드' : '🌓 다크모드';
+        }
+      }
+      
+      // 페이지 로드 시 다크모드 상태 복원
+      document.addEventListener('DOMContentLoaded', function() {
+        const savedDarkMode = localStorage.getItem('mainPageDarkMode') === 'true';
+        if (savedDarkMode) {
+          document.body.classList.add('dark-mode');
+        }
+        
+        const darkModeToggle = document.getElementById('dark-mode-toggle');
+        if (darkModeToggle) {
+          darkModeToggle.textContent = savedDarkMode ? '☀️ 라이트모드' : '🌓 다크모드';
+          darkModeToggle.addEventListener('click', toggleDarkMode);
+        }
+      });
+    </script>
 </body>
 </html>

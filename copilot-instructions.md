@@ -269,6 +269,11 @@
   - 다국어 지원: 번역 리소스 관리, 사용자별 언어 설정
   - 테스트 UI 추가: test.html에 모든 신규 기능 테스트 인터페이스 구현
 
+[2025-01-27] 뱃지 시스템 코드 간소화: handleBugReport, handleFeedbackSubmission, handleTestParticipation 3개 함수의 중복 로직을 handleUserActivity 통합 함수로 리팩토링 → 150줄 코드를 60줄로 축소, 유지보수성 크게 향상 (해결)
+  - models/user.js: handleUserActivity 통합 함수 추가, 기존 3개 함수는 래퍼로 하위 호환성 유지
+  - controllers/userController.js: handleUserActivityController 통합 컨트롤러 추가, 기존 3개 컨트롤러는 래퍼로 변경
+  - 동일한 기능(경험치 지급, 활동 로그, 뱃지 처리)을 하나의 함수에서 activity_type으로 분기 처리하여 코드 중복 제거
+
 ---
 
 ## 4. 작업 목록 (진행상황 체크)

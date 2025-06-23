@@ -255,7 +255,7 @@ const apis = [
       { name: 'max_output_tokens_override', type: 'number', label: '최대 출력 토큰 재정의 (선택, 양의 정수 > 0)', required: false },
       { name: 'context_message_limit', type: 'number', label: '컨텍스트 메시지 제한 (선택, 0 이상 정수)', required: false }
     ],
-    exampleReq:  `{\n  "message": "안녕하세요! 오늘 날씨에 대해 알려주세요.",\n  "system_prompt": "AI는 친절하게 답변합니다.",\n  "special_mode_type": "stream",\n  "ai_provider_override": "vertexai",\n  "model_id_override": "gemini-2.0-flash-thinking-exp-01-21",\n  "user_message_token_count": 15,\n  "max_output_tokens_override": 500,\n  "context_message_limit": 10\n}`,
+    exampleReq:  `{\n  "message": "안녕하세요! 오늘 날씨에 대해 알려주세요.",\n  "system_prompt": "AI는 친절하게 답변합니다.",\n  "special_mode_type": "stream",\n  "ai_provider_override": "geminiapi",\n  "model_id_override": "gemini-2.0-flash-thinking-exp-01-21",\n  "user_message_token_count": 15,\n  "max_output_tokens_override": 500,\n  "context_message_limit": 10\n}`,
     exampleRes:  `{\n  "user_message_id": "API_TEST_USER_MESSAGE_ID",\n  "ai_message_id": "API_TEST_AI_MESSAGE_ID",\n  "message": "안녕하세요! 오늘 날씨는 맑고 화창합니다.",\n  "created_at": "YYYY-MM-DDTHH:mm:ss.sssZ",\n  "ai_message_token_count": 25,\n  "ai_provider": "vertexai",\n  "model_id": "gemini-2.0-flash-thinking-exp-01-21"\n}`
   },
   {
@@ -314,8 +314,209 @@ const apis = [
       { name: 'session_id', type: 'text', label: '세션 ID (최대 36자)', required: true, inPath: true },
       { name: 'file', type: 'file', label: '업로드 파일 (다양한 타입 허용, max 5MB)', required: true },
       { name: 'user_id', type: 'text', label: '사용자 ID (최대 36자)', required: false }
+    ],    exampleReq: '(multipart/form-data: file=파일 선택, user_id=USER123)',    exampleRes:  ` {\n  "message": "파일이 성공적으로 업로드되었습니다.",\n  "fileMessage": { ... }\n}`  },
+  
+  /* 뱃지 레벨 시스템 */
+  {
+    method: 'GET',
+    path: '/api/users/:user_id/badge-details',
+    title: '사용자 뱃지 상세 조회',
+    desc: '사용자의 모든 뱃지와 레벨 정보를 상세히 조회합니다. 뱃지는 타입별로 분류되며, 각 뱃지의 레벨과 업데이트 기록을 포함합니다.',
+    params: [
+      { name: 'user_id', type: 'text', label: '사용자 ID', required: true, inPath: true },
+      { name: 'badge_name', type: 'text', label: '특정 뱃지 이름 (선택)', required: false }
     ],
-    exampleReq: '(multipart/form-data: file=파일 선택, user_id=USER123)',    exampleRes:  ` {\n  "message": "파일이 성공적으로 업로드되었습니다.",\n  "fileMessage": { ... }\n}`  },
+    exampleReq: '',
+    exampleRes: `{
+  "total_badges": 3,
+  "badges_by_type": {
+    "special": [
+      {
+        "badge_id": "badge123",
+        "badge_name": "버그 헌터",
+        "badge_description": "세 번째 버그 제보! 진정한 버그 헌터로 성장하고 있습니다",
+        "badge_icon": "🛠️",
+        "badge_color": "#795548",
+        "badge_level": 3,
+        "is_equipped": 1,
+        "earned_at": "2025-01-27T10:00:00.000Z",
+        "updated_at": "2025-01-27T15:30:00.000Z"
+      }
+    ],
+    "achievement": [],
+    "premium": [],
+    "activity": []
+  },
+  "all_badges": [...]
+}`
+  },  {
+    method: 'POST',
+    path: '/api/users/:user_id/bug-report',
+    title: '버그 제보 (승인 대기 방식)',
+    desc: '버그를 제보하면 개발팀 검토 대기 상태가 됩니다. 개발자가 승인하면 "버그 헌터" 뱃지 레벨이 증가합니다.',
+    params: [
+      { name: 'user_id', type: 'text', label: '사용자 ID', required: true, inPath: true },
+      { name: 'bug_description', type: 'text', label: '버그 설명 (최소 10자)', required: true },
+      { name: 'severity', type: 'select', label: '심각도', required: false, options: ['low', 'medium', 'high', 'critical'], default: 'medium' },
+      { name: 'steps_to_reproduce', type: 'text', label: '재현 단계', required: false },
+      { name: 'expected_behavior', type: 'text', label: '예상 동작', required: false },
+      { name: 'actual_behavior', type: 'text', label: '실제 동작', required: false }
+    ],
+    exampleReq: `{
+  "bug_description": "메시지 전송 시 가끔 중복으로 전송되는 문제가 있습니다",
+  "severity": "medium",
+  "steps_to_reproduce": "1. 채팅창에 메시지 입력 2. 빠르게 Enter 키를 여러 번 누름",
+  "expected_behavior": "메시지가 한 번만 전송되어야 함",
+  "actual_behavior": "동일한 메시지가 2-3번 중복 전송됨"
+}`,
+    exampleRes: `{
+  "success": true,
+  "message": "버그 제보가 접수되었습니다. 개발팀 검토 후 뱃지가 지급됩니다.",
+  "status": "pending_review",
+  "exp_reward": 5,
+  "note": "개발자 승인 후 버그 헌터 뱃지 레벨이 증가합니다."
+}`
+  },
+  {
+    method: 'POST',
+    path: '/api/users/:user_id/feedback',
+    title: '피드백 제출 (승인 대기 방식)',
+    desc: '피드백을 제출하면 개발팀 검토 대기 상태가 됩니다. 개발자가 승인하면 "피드백 전문가" 뱃지 레벨이 증가합니다.',
+    params: [
+      { name: 'user_id', type: 'text', label: '사용자 ID', required: true, inPath: true },
+      { name: 'feedback_content', type: 'text', label: '피드백 내용 (최소 5자)', required: true },
+      { name: 'feedback_type', type: 'select', label: '피드백 타입', required: false, options: ['general', 'ui_ux', 'feature_request', 'performance'], default: 'general' },
+      { name: 'rating', type: 'number', label: '평점 (1-5)', required: false },
+      { name: 'suggestion', type: 'text', label: '개선 제안', required: false }
+    ],
+    exampleReq: `{
+  "feedback_content": "채팅 인터페이스가 매우 직관적이고 사용하기 쉽습니다",
+  "feedback_type": "ui_ux",
+  "rating": 5,
+  "suggestion": "다크 모드 옵션이 있으면 더 좋을 것 같습니다"
+}`,
+    exampleRes: `{
+  "success": true,
+  "message": "피드백이 제출되었습니다. 개발팀 검토 후 뱃지가 지급됩니다.",
+  "status": "pending_review",
+  "exp_reward": 3,
+  "note": "개발자 승인 후 피드백 전문가 뱃지 레벨이 증가합니다."
+}`
+  },
+  {
+    method: 'POST',
+    path: '/api/users/:user_id/subscription-badge',
+    title: '구독 기간 뱃지 업그레이드',
+    desc: '플래닛/스타 구독자의 구독 기간에 따라 뱃지 레벨을 업그레이드합니다. 1→2→3→6→12→24→36개월 단계별 레벨 시스템.',
+    params: [
+      { name: 'user_id', type: 'text', label: '사용자 ID', required: true, inPath: true },
+      { name: 'tier_name', type: 'select', label: '구독 등급', required: true, options: ['planet', 'star'] },
+      { name: 'months_count', type: 'number', label: '구독 개월 수 (1-60)', required: true }
+    ],
+    exampleReq: `{
+  "tier_name": "planet",
+  "months_count": 6
+}`,
+    exampleRes: `{
+  "success": true,
+  "message": "플래닛 구독자 뱃지가 레벨 4로 업그레이드되었습니다!",
+  "badge_upgrade": {
+    "badge_name": "플래닛 구독자",
+    "old_level": 3,
+    "new_level": 4,
+    "description": "플래닛 6개월 구독! 오랜 기간 함께해주셔서 감사합니다",
+    "icon": "🏡",
+    "exp_reward": 40
+  },
+  "months_count": 6,
+  "tier_name": "planet"
+}`
+  },
+  {
+    method: 'POST',
+    path: '/api/users/:user_id/approve-badge',
+    title: '개발자 뱃지 승인 (관리자용)',
+    desc: '개발자가 버그 제보나 피드백을 검토한 후 수동으로 뱃지 레벨을 승인합니다. 승인 시 추가 보너스 경험치가 지급됩니다.',
+    params: [
+      { name: 'user_id', type: 'text', label: '사용자 ID', required: true, inPath: true },
+      { name: 'badge_name', type: 'select', label: '승인할 뱃지', required: true, options: ['버그 헌터', '피드백 전문가'] },
+      { name: 'reason', type: 'text', label: '승인 사유', required: false }
+    ],
+    exampleReq: `{
+  "badge_name": "버그 헌터",
+  "reason": "중요한 버그 발견으로 서비스 안정성 크게 향상"
+}`,
+    exampleRes: `{
+  "success": true,
+  "message": "버그 헌터 뱃지 레벨이 승인되었습니다!",
+  "badge_upgrade": {
+    "badge_name": "버그 헌터",
+    "old_level": 2,
+    "new_level": 3,
+    "description": "세 번째 버그 제보! 진정한 버그 헌터로 성장하고 있습니다",
+    "icon": "�️",
+    "exp_reward": 30
+  },
+  "bonus_exp": 25,
+  "approved_by": "developer"
+}`
+  },
+  {
+    method: 'POST',
+    path: '/api/users/:user_id/test-participation',
+    title: '테스트 참여 (뱃지 레벨 자동 증가)',
+    desc: '알파/베타 테스트에 참여하면 해당 테스터 뱃지의 레벨이 증가하고 경험치를 획득합니다.',
+    params: [
+      { name: 'user_id', type: 'text', label: '사용자 ID', required: true, inPath: true },
+      { name: 'test_type', type: 'select', label: '테스트 타입', required: true, options: ['alpha', 'beta'] },
+      { name: 'test_details', type: 'text', label: '테스트 세부사항', required: false },
+      { name: 'completion_status', type: 'text', label: '완료 상태', required: false }
+    ],
+    exampleReq: `{
+  "test_type": "beta",
+  "test_details": "새로운 채팅 기능 베타 테스트 참여",
+  "completion_status": "완료"
+}`,
+    exampleRes: `{
+  "success": true,
+  "message": "beta 테스트 참여가 기록되었습니다. 감사합니다!",
+  "badge_upgrade": {
+    "success": true,
+    "badge_name": "베타 테스터",
+    "old_level": 1,
+    "new_level": 2,
+    "description": "베타 테스트 2단계! 사용자 관점에서 소중한 피드백을 제공하고 있습니다",
+    "icon": "🎯",
+    "exp_reward": 20
+  },
+  "exp_reward": 20
+}`
+  },
+  {
+    method: 'POST',
+    path: '/api/users/:user_id/badges/upgrade',
+    title: '뱃지 레벨 직접 업그레이드 (개발/테스트용)',
+    desc: '관리자나 개발자가 특정 뱃지의 레벨을 직접 업그레이드할 수 있습니다. 주로 테스트나 특별한 상황에서 사용됩니다.',
+    params: [
+      { name: 'user_id', type: 'text', label: '사용자 ID', required: true, inPath: true },
+      { name: 'badge_name', type: 'text', label: '뱃지 이름', required: true },
+      { name: 'action_reason', type: 'text', label: '업그레이드 사유', required: false }
+    ],
+    exampleReq: `{
+  "badge_name": "버그 헌터",
+  "action_reason": "특별 기여 인정"
+}`,
+    exampleRes: `{
+  "success": true,
+  "badge_name": "버그 헌터",
+  "old_level": 3,
+  "new_level": 4,
+  "description": "네 번째 버그 제보! 전문적인 테스터의 면모를 보이고 있습니다",
+  "icon": "🎯",
+  "exp_reward": 40,
+  "action_reason": "특별 기여 인정"
+}`
+  },
   
   /* 6. 검색 기능 */
   {

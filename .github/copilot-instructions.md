@@ -8,20 +8,7 @@
 ## 1. 프로젝트 구조 및 주요 진입점
 
 - **서버 진입점**
-  - `server.js`: 단순한 모듈 진입점, app.js를 require하여 모듈로 내[2025-01-27] Oracle SQL 문법 오류 수정: sqldb.sql에서 멀티라인 INSERT, 중복 인덱스, 특수문자 문제 등 Oracle 호환성 문제 해결 → 개별 INSERT 문 분리, MERGE 문 사용, 문법 정리로 완전 해결 (해결)
-[2025-01-27] app.js 구문 오류: await initializeDbPool() 뒤 줄바꿈 누락으로 라우터 require와 한 줄로 붙어서 구문 오류 발생 → 적절한 줄바꿈 추가로 해결 (해결)
-[2025-01-27] 테스트 페이지 보안 강화: 환경변수에 TEST_PAGE_PASSWORD 추가, 세션 스토리지 기반 로그인/로그아웃 시스템 구현 → 개발자 전용 접근 제어 완료 (해결)
-[2025-01-27] 테스트 페이지 최적화: 모듈화 구조 유지,  시뮬레이션 섹션 제거로 UI 간소화, subscription.js 모듈 위치 수정 → 클린한 테스트 인터페이스 완성 (해결)
-[2025-01-27] editMessageTest 함수 중복 선언 오류: message.js에서 동일한 함수가 7행과 160행에 중복 정의되어 SyntaxError 발생 → 첫 번째 중복 함수 제거로 해결 (해결)
-[2025-01-27] search.js export 누락 오류: testScript.js에서 import하는 clearCacheTest, getCacheStatsTest, getWeatherByIpTest, getWeatherByCityTest 함수가 search.js에 정의되지 않아 모듈 로드 실패 → 누락된 4개 함수를 search.js에 추가하여 export 완성 (해결)
-[2025-01-27] session.js 함수명 불일치 오류: testScript.js에서 import하는 createSessionTest, updateSessionTest, deleteSessionTest 함수명이 실제 함수명과 달라 모듈 로드 실패 → 별칭 export 함수로 호환성 확보 (해결)
-[2025-01-27] API 명세 업데이트: 구독 관리 시스템 전체 API를 api_docs.js에 추가, 구독 등급 조회/변경/취소/이력/기능 권한/사용량/시뮬레이션 등 9개 엔드포인트 문서화 완료 (해결)
-[2025-01-27] session.js 문법 오류: API_TEST_USER_ID 상수에서 닫는 따옴표 누락으로 JavaScript 구문 오류 발생 → 문자열 인용부호 추가로 해결 (해결)
-[2025-01-27] subscription.js Oracle SQL 오류: getUserSubscription 함수에서 존재하지 않는 컬럼 참조 및 Oracle 비호환 SQL 함수 사용 → 정확한 컬럼명으로 수정, DATE() → TRUNC(), sender → message_type으로 변경하여 Oracle 호환성 확보 (해결)
-[2025-01-27] subscription.js Oracle SQL 구조 오류: getUserSubscription 함수에서 ORDER BY와 ROWNUM 혼용으로 ORA-00933 에러 발생 → 서브쿼리 제거하고 단일 쿼리로 변경, ROWNUM = 1로 최적화하여 Oracle 호환성 완전 확보 (해결)
-[2025-01-27] 구독 시뮬레이션 API 개선: simulateSubscriptionUpgradeController에서 tier_name 대신 target_tier_id 사용, simulateSubscriptionRenewalController에서 renewal_period와 apply_discount 파라미터 추가하여 API 명세와 일치 → 구독 업그레이드/갱신 시뮬레이션 정상 작동 (해결)
-[2025-01-27] 구독 시뮬레이션 API 데이터 구조 오류: getSubscriptionTiers와 getUserSubscription이 standardizeApiResponse를 통해 직접 데이터 반환하는데 컨트롤러에서 .data 접근 시도로 undefined 에러 발생 → 직접 데이터 접근으로 수정, 무료 구독 갱신 시뮬레이션 로직 개선하여 완전 해결 (해결)
-[2025-01-27] 구독 업그레이드 시뮬레이션 API 일관성 개선: target_tier_id 대신 tier_name 사용으로 기존 구독 업그레이드/다운그레이드 API와 동일한 방식 적용, 한국어 등급명 매핑 지원 → API 일관성 확보 및 사용 편의성 향상 (해결)
+  - `server.js`: 단순한 모듈 진입점, app.js를 require하여 모듈로 내보냄
   - `app.js`: 실제 서버 로직 - Express 앱 설정, 미들웨어 구성, 라우트 연결, DB 초기화 및 서버 시작
 
 - **DB/외부 연동 (config/)**
@@ -34,23 +21,14 @@
       - `getConnection()`: 커넥션 획득 (풀에서)
       - `oracledb`: oracledb 인스턴스 전체 내보내기 (트랜잭션, CLOB 등 활용)
     - 참고: 커넥션 풀은 app.js/server.js에서 최초 1회만 초기화 필요. 각 모델/컨트롤러에서는 getConnection()으로 커넥션 획득 후 사용/반납
-
 - **데이터베이스 스키마**
-  - `sqldb.sql`: **통합 DB 초기화 스크립트** ✅ **2025-06-23 업데이트**
+  - `sqldb.sql`: **통합 DB 초기화 스크립트** ✅ **2025-01-27 업데이트**
     - 기본 스키마 + 구독 관리 + 레벨 시스템 + 다국어 지원 + 프로필 꾸미기 등 모든 기능 포함
     - 한 번의 실행으로 완전한 DB 초기화 가능
     - 포함된 테이블: users, chat_sessions, chat_messages, user_settings, user_profiles, attachments, subscription_tiers, user_subscriptions, user_badges, level_requirements, user_experience_log, user_items, message_edit_history, translation_resources
     - 기본 데이터: 구독 등급 4단계, 레벨 시스템, 뱃지, 번역 리소스, guest 사용자 설정 포함
   - `db_enhancement_backup.sql`: 백업 파일 (더 이상 사용하지 않음)
-  - `config/vertexai.js`:
-    - Vertex AI 연동, Google Cloud Gemini 2.5 pro 모델 사용
-    - **리전 설정: `global` exp는 이 리전에서만 사용 가능
-    - 안전성 필터(증오/성적/위험/학대), 스트림/캔버스/검색 등 특수 모드 지원
-    - 주요 함수 및 내보내기:
-      - `getVertexAiApiResponse(currentUserMessage, history, systemMessageText, specialModeType, streamResponseCallback, options)`: Vertex AI에 대화 요청, 스트림/캔버스/검색 등 특수 모드 지원 (systemPrompt, specialModeType, stream 콜백, options 객체로 model_id_override, max_output_tokens_override 등 다양한 옵션 지원)
-      - `vertex_ai`: VertexAI 인스턴스 (직접 모델 생성/설정 가능)
-      - `generativeModel`: Gemini 2.5 pro 모델 인스턴스 (기본 설정)
-    - 참고: specialModeType에 따라 systemPrompt가 자동 강화(캔버스/검색 등), streamResponseCallback으로 스트리밍 응답 처리 가능
+
   - `config/geminiapi.js`:
     - Google AI Studio 연동, Gemini 2.0 Flash Exp 모델 사용
     - **API 키 설정: `GEMINI_API_KEY` 환경변수 필요**
@@ -60,6 +38,16 @@
       - `genAI`: GoogleGenerativeAI 인스턴스 (직접 모델 생성/설정 가능)
       - `defaultModel`: 기본 모델 이름 ('gemini-2.0-flash-thinking-exp-01-21')
     - 참고: specialModeType에 따라 systemPrompt가 자동 강화(캔버스/검색 등), 토큰 사용량 추적 기능 제공
+
+  - `config/vertexai.js`:
+    - Vertex AI 연동, Google Cloud Gemini 2.5 pro 모델 사용
+    - **리전 설정: `global` exp는 이 리전에서만 사용 가능
+    - 안전성 필터(증오/성적/위험/학대), 스트림/캔버스/검색 등 특수 모드 지원
+    - 주요 함수 및 내보내기:
+      - `getVertexAiApiResponse(currentUserMessage, history, systemMessageText, specialModeType, streamResponseCallback, options)`: Vertex AI에 대화 요청, 스트림/캔버스/검색 등 특수 모드 지원 (systemPrompt, specialModeType, stream 콜백, options 객체로 model_id_override, max_output_tokens_override 등 다양한 옵션 지원)
+      - `vertex_ai`: VertexAI 인스턴스 (직접 모델 생성/설정 가능)
+      - `generativeModel`: Gemini 2.5 pro 모델 인스턴스 (기본 설정)
+    - 참고: specialModeType에 따라 systemPrompt가 자동 강화(캔버스/검색 등), streamResponseCallback으로 스트리밍 응답 처리 가능
 
 - **AI 제공자 및 유틸리티 (utils/)**
   - `utils/aiProvider.js`: AI 제공자 추상화 레이어
@@ -102,13 +90,36 @@
     - **기본 provider: `'vertexai'`로 설정됨**
     - 주요 함수:
       - `getModelsInfoController()`: 사용 가능한 AI 모델 목록 조회 (기본값으로 Vertex AI 설정)
-
   - `controllers/searchController.js`: 검색 기능 관련 API 처리 (위키피디아 검색 등)
     - 주요 함수:
       - `searchWikipediaController()`: 위키피디아 검색 API 처리
 
+  - `controllers/subscriptionController.js`: 구독 관리 시스템 API 처리 **✅ 새로 추가됨**
+    - ** 시뮬레이션**: 실제 결제 없이 구독 상태 관리 시스템 구현
+    - 주요 함수:
+      - `getSubscriptionTiersController()`: 구독 등급 목록 조회
+      - `getUserSubscriptionController()`: 사용자 구독 정보 조회
+      - `updateUserSubscriptionController()`: 구독 업그레이드/다운그레이드
+      - `cancelUserSubscriptionController()`: 구독 취소
+      - `getUserSubscriptionHistoryController()`: 구독 이력 조회
+      - `checkFeatureAccessController()`: 기능 접근 권한 확인
+      - `checkDailyUsageController()`: 일일 사용량 확인
+      - `simulateSubscriptionUpgradeController()`: 구독 업그레이드 시뮬레이션
+      - `simulateSubscriptionRenewalController()`: 구독 갱신 시뮬레이션
+
 - **API 라우트**
-  - `routes/users.js`, `routes/chat.js`, `routes/sessions.js`, `routes/aiInfo.js`, `routes/search.js`
+  - `routes/users.js`, `routes/chat.js`, `routes/sessions.js`, `routes/aiInfo.js`, `routes/search.js`, `routes/subscriptions.js` **✅ 구독 관리 라우트 추가됨**
+
+- **미들웨어**
+  - `middleware/auth.js`: JWT 인증 미들웨어 (학습용 최소 구현)
+  - `middleware/subscription.js`: 구독 관리 미들웨어 **✅ 새로 추가됨**
+    - ** 권한 체크**: 실제 결제 없이 구독 기반 기능 제한 시스템
+    - 주요 함수:
+      - `requireFeature(featureName)`: 특정 기능 접근 권한 체크 미들웨어
+      - `checkDailyLimit()`: 일일 AI 요청 사용량 제한 체크 미들웨어
+      - `requireTierLevel(minLevel)`: 최소 구독 등급 레벨 체크 미들웨어
+      - `checkFileUploadLimit(fileSize)`: 파일 업로드 크기 제한 체크 미들웨어
+    - 참고: 권한 부족 시 HTTP 403, 사용량 초과 시 HTTP 429 반환, 구독 업그레이드 안내 포함
 
 - **모델**
   - `models/user.js`: 사용자 관련 DB 접근 함수 (회원가입, 로그인, 설정/프로필 조회·수정, 프로필 이미지, 경험치/레벨, 회원 탈퇴)
@@ -141,6 +152,18 @@
       - `getSessionMessages(sessionId)`: 세션 메시지 목록 조회 (시간순 정렬, CLOB 변환)
       - `getUserIdBySessionId(sessionId)`: 세션 ID로 사용자 ID 조회 (권한 체크용)
 
+  - `models/subscription.js`: 구독 관리 관련 DB 접근 함수 **✅ 새로 추가됨**
+    - ** 구독 시스템**: 실제 결제 검증 없이 구독 상태 관리에 집중
+    - 주요 함수:
+      - `getSubscriptionTiers()`: 구독 등급 목록 조회 (☄️ 코멧, 🪐 플래닛, ☀️ 스타, 🌌 갤럭시)
+      - `getUserSubscription(user_id)`: 사용자 구독 정보 조회 (없으면 무료 등급 자동 생성)
+      - `updateUserSubscription(user_id, tier_name, options)`: 구독 업그레이드/다운그레이드
+      - `cancelUserSubscription(user_id)`: 구독 취소 (무료 등급으로 다운그레이드)
+      - `getUserSubscriptionHistory(user_id)`: 구독 변경 이력 조회
+      - `checkUserFeatureAccess(user_id, feature_name)`: 기능 접근 권한 확인
+      - `checkDailyUsage(user_id)`: 일일 AI 요청 사용량 확인 및 제한 체크
+    - 참고: 구독 등급별 기능 제한 (AI 요청 횟수, 파일 업로드 크기, 사용 가능 기능) 자동 적용
+
 - **프론트엔드**
   - `public/script.js`: 메인 채팅 프론트엔드 스크립트 (index.html용)
     - **HTTP SSE 스트리밍**: WebSocket 제거, Server-Sent Events만 사용
@@ -164,8 +187,8 @@
     - 모듈화 구조: testScripts/ 디렉토리의 개별 모듈을 import
       - `testScripts/user.js`: 사용자 관련 API 테스트 (회원가입, 로그인, 프로필, 설정)
       - `testScripts/session.js`: 세션 관련 API 테스트 (생성, 조회, 수정, 삭제)
-      - `testScripts/message.js`: 메시지 관련 API 테스트 (편집, 리액션, 삭제, 파일 업로드)
-      - `testScripts/search.js`: 검색 기능 API 테스트 (위키피디아, 네이버, 카카오)
+      - `testScripts/message.js`: 메시지 관련 API 테스트 (편집, 리액션, 삭제, 파일 업로드)      - `testScripts/search.js`: 검색 기능 API 테스트 (위키피디아, 네이버, 카카오)
+      - `testScripts/subscription.js`: 구독 관리 API 테스트 **✅ 새로 추가됨** (구독 등급, 업그레이드, 취소, 이력, 권한 확인, 시뮬레이션)
       - `testScripts/chat.js`: 채팅 기능 (세션 초기화, 메시지 전송, 새로고침, Markdown 렌더링)
         - **기본 AI Provider: `'geminiapi'`로 설정됨**
         - Gemini UI 선택 시 `geminiapi` 사용 (`radio.value === 'gemini' ? 'geminiapi' : radio.value`)
@@ -245,12 +268,11 @@
   - 메시지 편집: 편집 기록 저장, AI 재응답 요청, 권한 체크 강화
   - 다국어 지원: 번역 리소스 관리, 사용자별 언어 설정
   - 테스트 UI 추가: test.html에 모든 신규 기능 테스트 인터페이스 구현
-[2025-01-27] Oracle SQL 문법 오류 수정: sqldb.sql에서 멀티라인 INSERT, 중복 인덱스, 특수문자 문제 등 Oracle 호환성 문제 해결 → 개별 INSERT 문 분리, MERGE 문 사용, 문법 정리로 완전 해결 (해결)
-[2025-01-27] subscription.js 모듈 최적화: 모든 window 함수를 export로 변경, testSimulateRenewal 포함 9개 함수 export 통일 → 모듈화 구조 완성으로 import/export 일관성 확보 (해결)
-[2025-01-27] subscription.js Oracle SQL 오류: getUserSubscription 함수에서 존재하지 않는 컬럼 참조 및 Oracle 비호환 SQL 함수 사용 → 정확한 컬럼명으로 수정, DATE() → TRUNC(), sender → message_type으로 변경하여 Oracle 호환성 확보 (해결)
-[2025-01-27] session.js 문법 오류: API_TEST_USER_ID 상수에서 닫는 따옴표 누락으로 JavaScript 구문 오류 발생 → 문자열 인용부호 추가로 해결 (해결)
-[2025-01-27] 테스트 페이지 최적화: 모듈화 구조 유지,  시뮬레이션 섹션 제거로 UI 간소화, subscription.js 모듈 위치 수정 → 클린한 테스트 인터페이스 완성 (해결)
-[2025-01-27] 구독 관리 API 명세 수정: api_docs.js에서 isPath를 inPath로 변경, URL 파라미터 처리 정상화로 400 Bad Request 오류 해결 → 구독 업그레이드/다운그레이드/취소/시뮬레이션 API 정상 작동 (해결)
+
+[2025-01-27] 뱃지 시스템 코드 간소화: handleBugReport, handleFeedbackSubmission, handleTestParticipation 3개 함수의 중복 로직을 handleUserActivity 통합 함수로 리팩토링 → 150줄 코드를 60줄로 축소, 유지보수성 크게 향상 (해결)
+  - models/user.js: handleUserActivity 통합 함수 추가, 기존 3개 함수는 래퍼로 하위 호환성 유지
+  - controllers/userController.js: handleUserActivityController 통합 컨트롤러 추가, 기존 3개 컨트롤러는 래퍼로 변경
+  - 동일한 기능(경험치 지급, 활동 로그, 뱃지 처리)을 하나의 함수에서 activity_type으로 분기 처리하여 코드 중복 제거
 
 ---
 
@@ -581,6 +603,7 @@
 - **기본 AI Provider**: `geminiapi` (Google AI Studio)
 - **기본 모델**: `gemini-2.0-flash-thinking-exp-01-21`
 - **테스트 사용자 ID**: `guest`
+- **기본 구독 등급**: 코멧 (무료) - 일일 30회 AI 요청, 10MB 파일 업로드 **✅ 구독 시스템 추가됨**
 - **Vertex AI 모델**: `gemini-2.5-pro-exp-03-25` (대체 옵션)
 - **Ollama 모델**: `gemma3:4b` (대체 옵션)
 - **스트리밍 방식**: HTTP SSE (Server-Sent Events) 전용
@@ -592,6 +615,7 @@
 4. **자동 매핑**: 테스트 페이지에서 `gemini` → `geminiapi` 자동 변환
 5. **기본값 통일**: 전체 시스템에서 Google AI Studio 우선 사용, 'guest' 사용자 ID 통일
 6. **Markdown 렌더링**: AI 응답의 완전한 Markdown 지원 및 코드 하이라이팅
+7. **구독 관리 시스템**:  4단계 구독 등급 및 기능 제한 시스템 **✅ 새로 추가됨**
 
 ### 🚀 성능 향상
 - Gemini 2.0 Flash Thinking Exp의 고품질 응답 제공
@@ -599,6 +623,7 @@
 - 검색 기능과 AI 응답 통합
 - DB 저장 보장 (스트리밍 모드에서도 메시지 정상 저장)
 - Markdown 렌더링을 통한 가독성 향상
+- 구독 등급별 일일 사용량 제한 및 권한 관리 **✅  구독 시스템 추가**
 
 ### 📋 주요 변경 사항 요약 (2025-06-20)
 1. **Markdown 렌더링 구현**: Marked.js + Highlight.js 통합
@@ -621,37 +646,34 @@
 
 ## 수정 기록 (2025-01-27)
 
-### DB 통합 초기화 스크립트 완성 및 오류 수정
-- **통합된 파일**:
-  - `sqldb.sql`: 기존 기본 스키마 + db_enhancement.sql 내용 완전 통합 + Oracle SQL 호환성 개선
-  - `db_enhancement_backup.sql`: 기존 db_enhancement.sql 백업 (더 이상 사용하지 않음)
+### 구독 관리 시스템 구현 ()
+- **새로운 파일**:
+  - `models/subscription.js`: 구독 등급/정보/업데이트/취소/이력/권한/사용량 모델 함수
+  - `controllers/subscriptionController.js`: 구독 관리 API 컨트롤러 (8개 주요 엔드포인트)
+  - `routes/subscriptions.js`: 구독 관리 REST API 라우트
+  - `middleware/subscription.js`: 기능별 구독 권한/사용량 제한 미들웨어
+  - `testScripts/subscription.js`: 프론트엔드 구독 관리 테스트 함수
 
-- **주요 변경사항**:
-  - 모든 테이블 생성 스크립트 통합 (기본 + 구독 + 레벨 + 다국어 등)
-  - 인덱스 생성 통합 (기본 + 확장 테이블 인덱스)
-  - 초기 데이터 통합 (구독 등급, 레벨, 뱃지, 번역 리소스, guest 사용자)
-  - 한 번의 스크립트 실행으로 완전한 DB 초기화 가능
-
-- **Oracle SQL 호환성 개선**:
-  - 멀티라인 INSERT 문을 개별 INSERT 문으로 분리 (ORA-00933 해결)
-  - 중복 인덱스 생성 제거 (ORA-01408 해결)
-  - MERGE 문을 사용한 중복 데이터 삽입 방지 (ORA-00001 해결)
-  - 존재하지 않는 제약조건 삭제 제거 (ORA-02443 해결)
-  - 주석과 SQL 문 사이 줄바꿈 정리 (ORA-00911 해결)
+- **수정된 파일**:
+  - `app.js`: 구독 라우트 (`/api/subscriptions`) 추가
+  - `controllers/chatController.js`: 일일 AI 요청 제한 체크 추가
+  - `routes/chat.js`: 파일 업로드에 구독 기능 제한 미들웨어 적용
+  - `public/test.html`: 구독 관리 UI 섹션 (8개 테스트 버튼) 추가
+  - `public/testScript.js`: 구독 관리 모듈 import 및 이벤트 연결
+  - `copilot-instructions.md`: 구독 시스템 구조/API/모델/미들웨어 문서화
 
 ### 주요 기능
-1. **완전한 DB 초기화**: 단일 스크립트 실행으로 모든 테이블과 데이터 생성
-2. **구독 관리 시스템**: 4단계 구독 등급 (코멧/플래닛/스타/갤럭시) 완전 구현
-3. **레벨/경험치 시스템**: 사용자 레벨, 경험치 기록, 뱃지 시스템
-4. **프로필 꾸미기**: 테마, 테두리, 배경, 상태 메시지 등 커스터마이징
-5. **다국어 지원**: 한국어/영어 번역 리소스 관리
-6. **메시지 편집**: 편집 기록 및 AI 재응답 시스템
+1. **4단계 구독 등급**: 코멧(무료), 플래닛(월1.5만원), 스타(월15만원), 갤럭시(기업용월300만원)
+2. **기능별 제한**: AI 요청 횟수, 파일 업로드 크기, 고급 기능 접근 권한
+3. **일일 사용량 추적**: Redis 없이 DB 기반 일일 사용량 관리 (매일 자동 초기화)
+4. **구독 시뮬레이션**: 결제 연동 없이 구독 변경/취소 테스트 가능
+5. **미들웨어 통합**: 채팅/파일 업로드 등 기존 기능에 구독 제한 자동 적용
 
 ### 기술적 세부사항
-- **Oracle DB 최적화**: CLOB 처리, CASCADE 관계, 효율적 인덱싱
-- **데이터 무결성**: Foreign Key 제약조건으로 관계 데이터 보장
-- **초기 데이터**: guest 사용자 기본 설정, 뱃지, 무료 구독 자동 생성
-- **확장성**: 새로운 기능 추가 시 쉽게 스키마 확장 가능
+- **포트폴리오 목적**: 실제 결제 없이 구독 비즈니스 로직 및 권한 관리 시스템 시연
+- **확장 가능**: 실제 결제 게이트웨이 (토스페이, 아임포트 등) 연동 준비 완료
+- **권한 체크**: HTTP 403 (권한 부족), HTTP 429 (사용량 초과) 표준 응답
+- **데이터 무결성**: 트랜잭션 처리로 구독 변경 시 데이터 일관성 보장
 
 ---
 

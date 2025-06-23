@@ -171,8 +171,10 @@ CREATE TABLE user_badges (
     badge_description VARCHAR2(500),
     badge_icon VARCHAR2(200), -- 아이콘 경로 또는 이모지
     badge_color VARCHAR2(7) DEFAULT '#808080', -- 뱃지 색상 (hex)
+    badge_level NUMBER DEFAULT 1, -- 뱃지 레벨 (버그 제보, 피드백 등으로 증가)
     is_equipped NUMBER(1) DEFAULT 0, -- 착용 여부
     earned_at TIMESTAMP DEFAULT SYSTIMESTAMP,
+    updated_at TIMESTAMP DEFAULT SYSTIMESTAMP, -- 뱃지 레벨 업데이트 시간
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 );
 
@@ -385,18 +387,12 @@ SELECT 'guest', t.tier_id, SYSTIMESTAMP, NULL, 1, 'free', 0
 FROM subscription_tiers t
 WHERE t.tier_name = 'free';
 
--- 기본 뱃지 데이터 (guest 사용자)
-INSERT INTO user_badges (user_id, badge_type, badge_name, badge_description, badge_icon, badge_color, is_equipped) VALUES
-('guest', 'achievement', '첫 대화', '처음으로 AI와 대화를 나눈 기념', '💬', '#4CAF50', 1);
+-- 기본 뱃지 데이터 (guest 사용자) - 갤럭시(기업용) 제외, API 테스트 관련 제외
+INSERT INTO user_badges (user_id, badge_type, badge_name, badge_description, badge_icon, badge_color, badge_level, is_equipped) VALUES
+('guest', 'achievement', '첫 대화', '처음으로 AI와 대화를 나눈 기념', '💬', '#4CAF50', 1, 1);
 
 INSERT INTO user_badges (user_id, badge_type, badge_name, badge_description, badge_icon, badge_color, is_equipped) VALUES
-('guest', 'event', '알파 테스터', '오비메이트 알파 버전 테스터', '🧪', '#2196F3', 1);
-
-INSERT INTO user_badges (user_id, badge_type, badge_name, badge_description, badge_icon, badge_color, is_equipped) VALUES
-('guest', 'premium', '플래닛 시작', '플래닛 기능을 처음 사용한 기념', '🪐', '#FFD700', 0);
-
-INSERT INTO user_badges (user_id, badge_type, badge_name, badge_description, badge_icon, badge_color, is_equipped) VALUES
-('guest', 'special', '베타 테스터', '오비메이트 베타 버전 테스터', '🔬', '#FF9800', 1);
+('guest', 'special', '오비메이트 얼리어답터', '오비메이트 초기 사용자', '�', '#FF9800', 1);
 
 -- 오비메이트 구독 등급 뱃지 (2025년 6월 업데이트)
 -- 플래닛 등급 (월 1.5만원) - 다양한 기간과 특별 이벤트 뱃지
@@ -433,6 +429,55 @@ INSERT INTO user_badges (user_id, badge_type, badge_name, badge_description, bad
 
 INSERT INTO user_badges (user_id, badge_type, badge_name, badge_description, badge_icon, badge_color, is_equipped) VALUES
 ('guest', 'premium', '얼티밋 스타', '스타 3년 이상 최고 등급', '💫', '#FFCC02', 0);
+
+-- 🏆 특별 이벤트 및 성취 뱃지
+INSERT INTO user_badges (user_id, badge_type, badge_name, badge_description, badge_icon, badge_color, is_equipped) VALUES
+('guest', 'achievement', '대화왕', '100회 이상 AI와 대화', '👑', '#FFD700', 0);
+
+INSERT INTO user_badges (user_id, badge_type, badge_name, badge_description, badge_icon, badge_color, is_equipped) VALUES
+('guest', 'achievement', '탐험가', '10가지 이상 다른 주제로 대화', '🧭', '#4CAF50', 0);
+
+INSERT INTO user_badges (user_id, badge_type, badge_name, badge_description, badge_icon, badge_color, is_equipped) VALUES
+('guest', 'achievement', '야행성', '밤 12시 이후에 활동한 기록', '🦉', '#673AB7', 0);
+
+INSERT INTO user_badges (user_id, badge_type, badge_name, badge_description, badge_icon, badge_color, is_equipped) VALUES
+('guest', 'achievement', '이른 새', '오전 6시 이전에 활동한 기록', '🐔', '#FF9800', 0);
+
+INSERT INTO user_badges (user_id, badge_type, badge_name, badge_description, badge_icon, badge_color, is_equipped) VALUES
+('guest', 'achievement', '파일 마스터', '50개 이상 파일을 업로드', '📎', '#2196F3', 0);
+
+-- 🎉 특별 기념일 뱃지
+INSERT INTO user_badges (user_id, badge_type, badge_name, badge_description, badge_icon, badge_color, is_equipped) VALUES
+('guest', 'event', '창립 기념', 'Orbitmate 1주년 기념 뱃지', '🎂', '#E91E63', 0);
+
+INSERT INTO user_badges (user_id, badge_type, badge_name, badge_description, badge_icon, badge_color, is_equipped) VALUES
+('guest', 'event', '신년 맞이', '새해 첫 로그인 기념', '🎊', '#FF5722', 0);
+
+INSERT INTO user_badges (user_id, badge_type, badge_name, badge_description, badge_icon, badge_color, is_equipped) VALUES
+('guest', 'event', '여름 휴가', '여름 특별 이벤트 참여', '🏖️', '#00BCD4', 0);
+
+-- 🌟 일반 사용자 성취 뱃지 추가
+INSERT INTO user_badges (user_id, badge_type, badge_name, badge_description, badge_icon, badge_color, is_equipped) VALUES
+('guest', 'achievement', '출석왕', '7일 연속 로그인', '📅', '#4CAF50', 0);
+
+INSERT INTO user_badges (user_id, badge_type, badge_name, badge_description, badge_icon, badge_color, is_equipped) VALUES
+('guest', 'achievement', '소셜 마스터', '친구 추천으로 가입', '👥', '#2196F3', 0);
+
+INSERT INTO user_badges (user_id, badge_type, badge_name, badge_description, badge_icon, badge_color, is_equipped) VALUES
+('guest', 'achievement', '창작자', '긴 대화를 통해 창의적 작업 완성', '✍️', '#9C27B0', 0);
+
+-- 🚀 개발자 기여 뱃지 (기여 활동 장려용)
+INSERT INTO user_badges (user_id, badge_type, badge_name, badge_description, badge_icon, badge_color, is_equipped) VALUES
+('guest', 'special', '알파 테스터', '오비메이트 알파 버전 테스터', '🧪', '#2196F3', 0);
+
+INSERT INTO user_badges (user_id, badge_type, badge_name, badge_description, badge_icon, badge_color, is_equipped) VALUES
+('guest', 'special', '베타 테스터', '오비메이트 베타 버전 테스터', '🔬', '#FF9800', 0);
+
+INSERT INTO user_badges (user_id, badge_type, badge_name, badge_description, badge_icon, badge_color, is_equipped) VALUES
+('guest', 'special', '버그 헌터', '버그 신고로 서비스 개선에 기여', '🐛', '#795548', 0);
+
+INSERT INTO user_badges (user_id, badge_type, badge_name, badge_description, badge_icon, badge_color, is_equipped) VALUES
+('guest', 'special', '피드백 전문가', '유용한 피드백 제공', '💡', '#FFC107', 0);
 
 -- 특정 사용자 정보 조회 쿼리 (A66C8382886C4EA6B57B9F1033E49EB2)
 -- 이 쿼리는 사용자의 기본 정보, 설정, 프로필 정보를 모두 가져옵니다

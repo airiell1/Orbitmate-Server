@@ -1,4 +1,4 @@
-const { oracledb, getConnection } = require('../config/database'); // Ensure oracledb is also available if not already
+const { oracledb, getConnection } = require("../config/database"); // Ensure oracledb is also available if not already
 
 /**
  * Oracle CLOB을 문자열로 변환
@@ -8,11 +8,11 @@ const { oracledb, getConnection } = require('../config/database'); // Ensure ora
 async function clobToString(clob) {
   if (!clob) return null;
   return new Promise((resolve, reject) => {
-    let data = '';
-    clob.setEncoding('utf8');
-    clob.on('data', chunk => data += chunk);
-    clob.on('end', () => resolve(data));
-    clob.on('error', reject);
+    let data = "";
+    clob.setEncoding("utf8");
+    clob.on("data", (chunk) => (data += chunk));
+    clob.on("end", () => resolve(data));
+    clob.on("error", reject);
   });
 }
 
@@ -23,8 +23,9 @@ async function clobToString(clob) {
  */
 async function convertClobFields(data) {
   if (!data) return null;
-  
-  if (Array.isArray(data)) return Promise.all(data.map(item => convertClobFields(item)));
+
+  if (Array.isArray(data))
+    return Promise.all(data.map((item) => convertClobFields(item)));
 
   const result = { ...data };
   const promises = [];
@@ -32,39 +33,42 @@ async function convertClobFields(data) {
   for (const key in result) {
     const value = result[key];
 
-    if (value && typeof value === 'object' &&
-        value.type && typeof value.type === 'object' &&
-        (value.type.name === 'DB_TYPE_CLOB' || value.type.column_type_name === 'CLOB')
-       ) {
-      
+    if (
+      value &&
+      typeof value === "object" &&
+      value.type &&
+      typeof value.type === "object" &&
+      (value.type.name === "DB_TYPE_CLOB" ||
+        value.type.column_type_name === "CLOB")
+    ) {
       promises.push(
-        clobToString(value).then(str => {
-          
-          result[key] = str; // 복사된 객체의 필드 업데이트
-          
-        }).catch(err => {
+        clobToString(value)
+          .then((str) => {
+            result[key] = str; // 복사된 객체의 필드 업데이트
+          })
+          .catch((err) => {
             throw err;
-        })
+          })
       );
     }
   }
-  
+
   await Promise.all(promises);
   return result;
 }
 
 function toSnakeCaseObj(obj) {
   if (Array.isArray(obj)) return obj.map(toSnakeCaseObj);
-  if (obj && typeof obj === 'object') {
+  if (obj && typeof obj === "object") {
     return Object.fromEntries(
       Object.entries(obj).map(([k, v]) => [
         k
-          .replace(/([a-z0-9])([A-Z])/g, '$1_$2') 
-          .replace(/([A-Z]+)([A-Z][a-z0-9]+)/g, '$1_$2') // USERID → USER_ID
-          .replace(/([A-Z]+)/g, m => m.toLowerCase()) // USER_ID → user_id
-          .replace(/^_+/, '') // 앞쪽 언더스코어 제거
+          .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+          .replace(/([A-Z]+)([A-Z][a-z0-9]+)/g, "$1_$2") // USERID → USER_ID
+          .replace(/([A-Z]+)/g, (m) => m.toLowerCase()) // USER_ID → user_id
+          .replace(/^_+/, "") // 앞쪽 언더스코어 제거
           .toLowerCase(),
-        toSnakeCaseObj(v)
+        toSnakeCaseObj(v),
       ])
     );
   }
@@ -75,7 +79,7 @@ module.exports = {
   clobToString,
   convertClobFields,
   toSnakeCaseObj,
-  withTransaction // Add this
+  withTransaction, // Add this
 };
 
 async function withTransaction(callback) {
@@ -91,7 +95,7 @@ async function withTransaction(callback) {
         await connection.rollback();
       } catch (rollbackError) {
         // Log or handle rollback error, but prioritize original error
-        console.error('Rollback failed:', rollbackError); // Or use a proper logger
+        console.error("Rollback failed:", rollbackError); // Or use a proper logger
       }
     }
     throw err; // Re-throw the original error
@@ -101,7 +105,7 @@ async function withTransaction(callback) {
         await connection.close();
       } catch (closeError) {
         // Log or handle close error
-        console.error('Failed to close connection:', closeError); // Or use a proper logger
+        console.error("Failed to close connection:", closeError); // Or use a proper logger
       }
     }
   }

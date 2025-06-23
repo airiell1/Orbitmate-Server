@@ -30,6 +30,16 @@ import {
 } from './testScripts/message.js';
 
 import { 
+    getBadgeDetailsTest,
+    submitBugReportTest,
+    submitFeedbackTest,
+    testParticipationTest,
+    upgradeSubscriptionBadgeTest,
+    approveBadgeTest,
+    upgradeBadgeLevelDirectTest
+} from './testScripts/badgeLevel.js';
+
+import { 
     searchWikipediaTest, 
     getWeatherByIpTest, 
     getWeatherByCityTest,
@@ -45,13 +55,15 @@ import {
     testCancelSubscription,
     testGetSubscriptionHistory,
     testCheckFeatureAccess,
-    testCheckDailyUsage
+    testCheckDailyUsage,
+    testSimulateUpgrade,
+    testSimulateRenewal
 } from './testScripts/subscription.js';
 
 import { 
-    initializeChatTest, 
-    sendMessageTest, 
-    refreshMessagesTest 
+    initializeSession, 
+    sendMessage, 
+    refreshSessionMessages 
 } from './testScripts/chat.js';
 
 import {
@@ -67,6 +79,11 @@ import {
     getTranslationsTest,
     updateUserLanguageTest
 } from './testScripts/language.js';
+
+// 유틸리티 함수들 import
+import {
+    updateApiResponse
+} from './testScripts/utils.js';
 
 // =========================
 // 이벤트 리스너 연결 (버튼 동작 연결)
@@ -113,9 +130,32 @@ document.addEventListener('DOMContentLoaded', function() {
     aiProviderRadios.forEach(radio => {
         radio.addEventListener('change', toggleOllamaOptions);
     });
-    
-    // 초기 상태 설정
+      // 초기 상태 설정
     toggleOllamaOptions();
+
+    // 다크모드 토글 기능
+    function toggleDarkMode() {
+        document.body.classList.toggle('dark-mode');
+        const isDarkMode = document.body.classList.contains('dark-mode');
+        localStorage.setItem('darkMode', isDarkMode);
+        
+        const toggleButton = document.getElementById('dark-mode-toggle');
+        if (toggleButton) {
+            toggleButton.textContent = isDarkMode ? '☀️ 라이트모드' : '🌓 다크모드';
+        }
+    }
+    
+    // 다크모드 상태 복원
+    const savedDarkMode = localStorage.getItem('darkMode') === 'true';
+    if (savedDarkMode) {
+        document.body.classList.add('dark-mode');
+    }
+    
+    const darkModeToggle = document.getElementById('dark-mode-toggle');
+    if (darkModeToggle) {
+        darkModeToggle.textContent = savedDarkMode ? '☀️ 라이트모드' : '🌓 다크모드';
+        darkModeToggle.addEventListener('click', toggleDarkMode);
+    }
 
     // 사용자 관리 버튼들
     const registerButton = document.getElementById('register-button');
@@ -191,6 +231,20 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('search-weather-button').addEventListener('click', getWeatherByIpTest);
     }
     
+    // 추가 날씨 검색 버튼들
+    if (document.getElementById('weather-by-ip-button')) {
+        document.getElementById('weather-by-ip-button').addEventListener('click', getWeatherByIpTest);
+    }
+    if (document.getElementById('weather-by-city-button')) {
+        document.getElementById('weather-by-city-button').addEventListener('click', getWeatherByCityTest);
+    }
+    if (document.getElementById('clear-cache-button')) {
+        document.getElementById('clear-cache-button').addEventListener('click', clearCacheTest);
+    }
+    if (document.getElementById('get-cache-stats-button')) {
+        document.getElementById('get-cache-stats-button').addEventListener('click', getCacheStatsTest);
+    }
+    
     // 구독 관리 이벤트 연결
     const getSubscriptionTiersButton = document.getElementById('get-subscription-tiers-button');
     const getUserSubscriptionButton = document.getElementById('get-user-subscription-button');
@@ -198,33 +252,126 @@ document.addEventListener('DOMContentLoaded', function() {
     const cancelSubscriptionButton = document.getElementById('cancel-subscription-button');
     const getSubscriptionHistoryButton = document.getElementById('get-subscription-history-button');    const checkFeatureAccessButton = document.getElementById('check-feature-access-button');
     const checkDailyUsageButton = document.getElementById('check-daily-usage-button');
+      if (getSubscriptionTiersButton) getSubscriptionTiersButton.addEventListener('click', testGetSubscriptionTiers);
+    if (getUserSubscriptionButton) getUserSubscriptionButton.addEventListener('click', testGetUserSubscription);
+    if (updateSubscriptionButton) updateSubscriptionButton.addEventListener('click', testUpdateSubscription);
+    if (cancelSubscriptionButton) cancelSubscriptionButton.addEventListener('click', testCancelSubscription);
+    if (getSubscriptionHistoryButton) getSubscriptionHistoryButton.addEventListener('click', testGetSubscriptionHistory);
+    if (checkFeatureAccessButton) checkFeatureAccessButton.addEventListener('click', testCheckFeatureAccess);
+    if (checkDailyUsageButton) checkDailyUsageButton.addEventListener('click', testCheckDailyUsage);
+
+    // 프로필 꾸미기 & 레벨 시스템 이벤트 연결
+    const getCustomizationButton = document.getElementById('get-customization-button');
+    const updateCustomizationButton = document.getElementById('update-customization-button');
+    const getLevelButton = document.getElementById('get-level-button');
+    const addExperienceButton = document.getElementById('add-experience-button');
+    const getBadgesButton = document.getElementById('get-badges-button');
+    const toggleBadgeButton = document.getElementById('toggle-badge-button');
     
-    if (getSubscriptionTiersButton) getSubscriptionTiersButton.addEventListener('click', window.testGetSubscriptionTiers);
-    if (getUserSubscriptionButton) getUserSubscriptionButton.addEventListener('click', window.testGetUserSubscription);
-    if (updateSubscriptionButton) updateSubscriptionButton.addEventListener('click', window.testUpdateSubscription);
-    if (cancelSubscriptionButton) cancelSubscriptionButton.addEventListener('click', window.testCancelSubscription);
-    if (getSubscriptionHistoryButton) getSubscriptionHistoryButton.addEventListener('click', window.testGetSubscriptionHistory);
-    if (checkFeatureAccessButton) checkFeatureAccessButton.addEventListener('click', window.testCheckFeatureAccess);
-    if (checkDailyUsageButton) checkDailyUsageButton.addEventListener('click', window.testCheckDailyUsage);    // 채팅 UI 이벤트 연결
-    if (sendButton) sendButton.addEventListener('click', sendMessageTest);
+    if (getCustomizationButton) getCustomizationButton.addEventListener('click', getCustomizationTest);
+    if (updateCustomizationButton) updateCustomizationButton.addEventListener('click', updateCustomizationTest);
+    if (getLevelButton) getLevelButton.addEventListener('click', getLevelTest);
+    if (addExperienceButton) addExperienceButton.addEventListener('click', addExperienceTest);
+    if (getBadgesButton) getBadgesButton.addEventListener('click', getBadgesTest);
+    if (toggleBadgeButton) toggleBadgeButton.addEventListener('click', toggleBadgeTest);
+
+    // 다국어 지원 이벤트 연결
+    const getTranslationsButton = document.getElementById('get-translations-button');
+    const updateUserLanguageButton = document.getElementById('update-user-language-button');
+    
+    if (getTranslationsButton) getTranslationsButton.addEventListener('click', getTranslationsTest);
+    if (updateUserLanguageButton) updateUserLanguageButton.addEventListener('click', updateUserLanguageTest);    // 채팅 UI 이벤트 연결
+    if (sendButton) sendButton.addEventListener('click', sendMessage);
     if (resetSessionButton) resetSessionButton.addEventListener('click', () => {
         // 강제로 새 세션을 만들도록 플래그 설정
         localStorage.setItem('forceNewTestSession', 'true');
-        initializeChatTest();
-    });
-    if (refreshMessagesButton) refreshMessagesButton.addEventListener('click', refreshMessagesTest);
+        initializeSession();
+    });    if (refreshMessagesButton) refreshMessagesButton.addEventListener('click', refreshSessionMessages);
 
     // 메시지 입력 Enter 키 이벤트
-    if (messageInput) {        messageInput.addEventListener('keypress', (e) => {
+    if (messageInput) {
+        messageInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                sendMessageTest();
+                sendMessage();
             }
         });
     }
 
     // 페이지 로드 시 세션 초기화
-    initializeChatTest();
-});
+    initializeSession();
 
-console.log('모듈화된 testScript.js 로드 완료');
+    // 모든 import된 함수들을 window 객체에 추가 (HTML에서 직접 호출하기 위해)
+    // 사용자 관리 함수들
+    window.registerUserTest = registerUserTest;
+    window.loginUserTest = loginUserTest;
+    window.getUserProfileTest = getUserProfileTest;
+    window.deleteUserTest = deleteUserTest;
+    window.getUserSettingsTest = getUserSettingsTest;
+    window.updateUserSettingsTest = updateUserSettingsTest;
+    window.uploadProfileImageTest = uploadProfileImageTest;
+
+    // 세션 관리 함수들
+    window.createSessionTest = createSessionTest;
+    window.getUserSessionsTest = getUserSessionsTest;
+    window.updateSessionTest = updateSessionTest;
+    window.deleteSessionTest = deleteSessionTest;
+    window.getSessionMessagesTest = getSessionMessagesTest;
+
+    // 메시지 관리 함수들
+    window.editMessageTest = editMessageTest;
+    window.addReactionTest = addReactionTest;
+    window.removeReactionTest = removeReactionTest;
+    window.deleteMessageTest = deleteMessageTest;
+    window.uploadFileTest = uploadFileTest;
+    window.getMessageHistoryTest = getMessageHistoryTest;
+    window.requestAiReresponseTest = requestAiReresponseTest;
+
+    // 검색 기능 함수들
+    window.searchWikipediaTest = searchWikipediaTest;
+    window.getWeatherByIpTest = getWeatherByIpTest;
+    window.getWeatherByCityTest = getWeatherByCityTest;
+    window.clearCacheTest = clearCacheTest;
+    window.getCacheStatsTest = getCacheStatsTest;
+
+    // 구독 관리 함수들
+    window.testGetSubscriptionTiers = testGetSubscriptionTiers;
+    window.testGetUserSubscription = testGetUserSubscription;
+    window.testUpdateSubscription = testUpdateSubscription;
+    window.testCancelSubscription = testCancelSubscription;
+    window.testGetSubscriptionHistory = testGetSubscriptionHistory;
+    window.testCheckFeatureAccess = testCheckFeatureAccess;
+    window.testCheckDailyUsage = testCheckDailyUsage;
+    window.testSimulateUpgrade = testSimulateUpgrade;
+    window.testSimulateRenewal = testSimulateRenewal;    // 채팅 기능 함수들
+    window.initializeSession = initializeSession;
+    window.sendMessage = sendMessage;
+    window.refreshSessionMessages = refreshSessionMessages;
+
+    // 프로필 꾸미기 함수들
+    window.getCustomizationTest = getCustomizationTest;
+    window.updateCustomizationTest = updateCustomizationTest;
+    window.getLevelTest = getLevelTest;
+    window.addExperienceTest = addExperienceTest;
+    window.getBadgesTest = getBadgesTest;
+    window.toggleBadgeTest = toggleBadgeTest;
+
+    // 다국어 지원 함수들
+    window.getTranslationsTest = getTranslationsTest;
+    window.updateUserLanguageTest = updateUserLanguageTest;
+
+    // 뱃지 레벨 시스템 함수들    window.getBadgeDetailsTest = getBadgeDetailsTest;
+    window.submitBugReportTest = submitBugReportTest;
+    window.submitFeedbackTest = submitFeedbackTest;
+    window.testParticipationTest = testParticipationTest;
+    window.upgradeSubscriptionBadgeTest = upgradeSubscriptionBadgeTest;
+    window.approveBadgeTest = approveBadgeTest;
+
+    // 뱃지 레벨 시스템 이벤트 리스너
+    document.getElementById('get-badge-details-button')?.addEventListener('click', getBadgeDetailsTest);
+    document.getElementById('submit-bug-report-button')?.addEventListener('click', submitBugReportTest);
+    document.getElementById('submit-feedback-button')?.addEventListener('click', submitFeedbackTest);
+    document.getElementById('test-participation-button')?.addEventListener('click', testParticipationTest);
+    document.getElementById('upgrade-subscription-badge-button')?.addEventListener('click', upgradeSubscriptionBadgeTest);
+    document.getElementById('approve-badge-button')?.addEventListener('click', approveBadgeTest);
+});

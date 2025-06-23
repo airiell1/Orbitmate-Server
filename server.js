@@ -1,5 +1,5 @@
 // 모듈화된 서버 구성을 위한 메인 파일
-const app = require('./app');
+const app = require("./app");
 
 // 서버 애플리케이션은 이제 app.js에서 관리됩니다.
 // 이 파일은 서버 시작 진입점으로만 사용됩니다.

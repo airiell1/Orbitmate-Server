@@ -773,3 +773,292 @@ h1 {
     border-top: 2px solid #ecf0f1;
     margin: 1.5em 0;
 }
+
+/* =========================
+   다크모드 스타일
+   ========================= */
+
+/* 다크모드 기본 스타일 */
+body.dark-mode {
+    background-color: #1a1a1a;
+    color: #e0e0e0;
+}
+
+/* 채팅 컨테이너 다크모드 */
+body.dark-mode #chat-container {
+    background-color: #2d2d2d;
+    border-color: #444;
+}
+
+body.dark-mode .chat-controls {
+    background-color: #333;
+    border-bottom-color: #555;
+}
+
+body.dark-mode #chat-box {
+    background-color: #2d2d2d;
+}
+
+/* 메시지 다크모드 */
+body.dark-mode .message.user {
+    background-color: #0d47a1;
+    color: white;
+}
+
+body.dark-mode .message.ai {
+    background-color: #424242;
+    color: #e0e0e0;
+}
+
+/* 입력 영역 다크모드 */
+body.dark-mode #input-area {
+    background-color: #333;
+    border-top-color: #555;
+}
+
+body.dark-mode #message-input {
+    background-color: #444;
+    border-color: #666;
+    color: #e0e0e0;
+}
+
+body.dark-mode #message-input::placeholder {
+    color: #aaa;
+}
+
+body.dark-mode #send-button {
+    background-color: #1976d2;
+}
+
+body.dark-mode #send-button:hover {
+    background-color: #1565c0;
+}
+
+/* 테스트 페이지 다크모드 */
+body.dark-mode .header {
+    background-color: #2d2d2d;
+    color: #e0e0e0;
+}
+
+body.dark-mode .test-panel {
+    background-color: #2d2d2d;
+    border-color: #444;
+}
+
+body.dark-mode .test-section {
+    background-color: #333;
+    border-color: #555;
+}
+
+body.dark-mode .test-section h3 {
+    color: #e0e0e0;
+    border-bottom-color: #555;
+}
+
+body.dark-mode .test-section h4 {
+    color: #ccc;
+}
+
+/* 버튼 다크모드 */
+body.dark-mode .test-button,
+body.dark-mode button {
+    background-color: #444;
+    color: #e0e0e0;
+    border-color: #666;
+}
+
+body.dark-mode .test-button:hover,
+body.dark-mode button:hover {
+    background-color: #555;
+}
+
+/* 입력 필드 다크모드 */
+body.dark-mode input[type="text"],
+body.dark-mode input[type="password"],
+body.dark-mode input[type="email"],
+body.dark-mode textarea,
+body.dark-mode select {
+    background-color: #444;
+    border-color: #666;
+    color: #e0e0e0;
+}
+
+body.dark-mode input[type="text"]::placeholder,
+body.dark-mode input[type="password"]::placeholder,
+body.dark-mode input[type="email"]::placeholder,
+body.dark-mode textarea::placeholder {
+    color: #aaa;
+}
+
+/* API 응답 영역 다크모드 */
+body.dark-mode .api-response {
+    background-color: #333;
+    border-color: #555;
+    color: #e0e0e0;
+}
+
+/* 코드 블록 다크모드 */
+body.dark-mode .message-content pre {
+    background-color: #1e1e1e;
+    border-color: #555;
+}
+
+body.dark-mode .message-content code {
+    background-color: #333;
+    color: #f8f8f2;
+}
+
+/* 테이블 다크모드 */
+body.dark-mode .message-content table {
+    border-color: #555;
+}
+
+body.dark-mode .message-content th,
+body.dark-mode .message-content td {
+    border-color: #555;
+    background-color: #333;
+}
+
+body.dark-mode .message-content th {
+    background-color: #444;
+}
+
+/* 인용구 다크모드 */
+body.dark-mode .message-content blockquote {
+    background-color: #333;
+    border-left-color: #666;
+    color: #ccc;
+}
+
+/* 링크 다크모드 */
+body.dark-mode .message-content a {
+    color: #64b5f6;
+}
+
+body.dark-mode .message-content a:hover {
+    color: #90caf9;
+}
+
+/* 푸터 다크모드 */
+body.dark-mode .footer {
+    background-color: #2d2d2d;
+    color: #aaa;
+}
+
+/* 다크모드 토글 버튼 스타일 */
+#dark-mode-toggle {
+    transition: all 0.3s ease;
+}
+
+body.dark-mode #dark-mode-toggle {
+    background-color: #ffc107 !important;
+    color: #000 !important;
+}
+
+/* 로그인 오버레이 다크모드 */
+body.dark-mode #test-login-overlay > div {
+    background-color: #2d2d2d;
+    color: #e0e0e0;
+}
+
+/* =========================
+   메인 페이지 다크모드 추가 스타일
+   ========================= */
+
+/* 헤더 다크모드 */
+body.dark-mode .header {
+    background-color: #2d2d2d;
+    border-bottom-color: #555;
+    color: #e0e0e0;
+}
+
+/* 사이드바 다크모드 */
+body.dark-mode .sidebar {
+    background-color: #333;
+    border-left-color: #555;
+}
+
+body.dark-mode .sidebar h3 {
+    color: #e0e0e0;
+}
+
+body.dark-mode .sidebar select,
+body.dark-mode .sidebar input {
+    background-color: #444;
+    border-color: #666;
+    color: #e0e0e0;
+}
+
+body.dark-mode .sidebar button {
+    background-color: #555;
+    color: #e0e0e0;
+}
+
+body.dark-mode .sidebar button:hover {
+    background-color: #666;
+}
+
+/* 메인 콘텐츠 래퍼 다크모드 */
+body.dark-mode #main-content-wrapper {
+    background-color: #1a1a1a;
+}
+
+/* 다크모드 토글 버튼 스타일 (메인 페이지용) */
+body.dark-mode #dark-mode-toggle {
+    background-color: #ffc107 !important;
+    color: #000 !important;
+}
+
+/* 테스트 페이지 컨테이너 다크모드 스타일 */
+body.dark-mode #test-chat-container {
+    background-color: #2d2d2d;
+    border-color: #555;
+}
+
+body.dark-mode #test-chat-box {
+    background-color: #333;
+    border-color: #555;
+    color: #e0e0e0;
+}
+
+body.dark-mode #api-test-container {
+    background-color: #2d2d2d;
+}
+
+body.dark-mode .api-section {
+    background-color: #333;
+    border-color: #555;
+}
+
+body.dark-mode .api-section h3 {
+    color: #e0e0e0;
+    border-bottom-color: #555;
+}
+
+body.dark-mode .api-section h4 {
+    color: #ccc;
+}
+
+body.dark-mode .prompt-container {
+    background-color: #333;
+    border-color: #555;
+}
+
+/* 추가 테스트 페이지 요소들 다크모드 */
+body.dark-mode #ai-selector {
+    background-color: #333;
+    color: #e0e0e0;
+}
+
+body.dark-mode .session-controls {
+    background-color: #333;
+}
+
+body.dark-mode .session-controls button {
+    background-color: #555;
+    color: #e0e0e0;
+}
+
+body.dark-mode .session-controls button:hover {
+    background-color: #666;
+}

@@ -3,7 +3,11 @@
  * AI가 필요에 따라 호출할 수 있는 도구들을 정의합니다.
  */
 
-const { searchWikipedia, getWeatherByIP, getWeatherByLocation } = require('../models/search');
+const {
+  searchWikipedia,
+  getWeatherByIP,
+  getWeatherByLocation,
+} = require("../models/search");
 
 /**
  * AI가 사용할 수 있는 도구들의 정의
@@ -11,58 +15,60 @@ const { searchWikipedia, getWeatherByIP, getWeatherByLocation } = require('../mo
 const AI_TOOLS = {
   search_wikipedia: {
     name: "search_wikipedia",
-    description: "위키피디아에서 정보를 검색합니다. 백과사전적 지식, 역사, 인물, 개념 등을 찾을 때 사용하세요.",
+    description:
+      "위키피디아에서 정보를 검색합니다. 백과사전적 지식, 역사, 인물, 개념 등을 찾을 때 사용하세요.",
     parameters: {
       type: "object",
       properties: {
         query: {
           type: "string",
-          description: "검색할 키워드나 주제"
+          description: "검색할 키워드나 주제",
         },
         language: {
           type: "string",
           description: "검색 언어 (ko: 한국어, en: 영어)",
           enum: ["ko", "en", "ja", "zh"],
-          default: "ko"
+          default: "ko",
         },
         limit: {
           type: "integer",
           description: "검색 결과 개수 (1-10)",
           minimum: 1,
           maximum: 10,
-          default: 5
-        }
+          default: 5,
+        },
       },
-      required: ["query"]
-    }
+      required: ["query"],
+    },
   },
-  
+
   get_weather: {
     name: "get_weather",
-    description: "현재 날씨 정보를 조회합니다. 도시명이 제공되면 해당 도시의 날씨를, 없으면 사용자 IP 기반으로 현재 위치 날씨를 조회합니다.",
+    description:
+      "현재 날씨 정보를 조회합니다. 도시명이 제공되면 해당 도시의 날씨를, 없으면 사용자 IP 기반으로 현재 위치 날씨를 조회합니다.",
     parameters: {
       type: "object",
       properties: {
         city: {
           type: "string",
-          description: "날씨를 조회할 도시명 (예: 서울, Seoul, 도쿄)"
+          description: "날씨를 조회할 도시명 (예: 서울, Seoul, 도쿄)",
         },
         units: {
           type: "string",
           description: "온도 단위",
           enum: ["metric", "imperial", "kelvin"],
-          default: "metric"
+          default: "metric",
         },
         language: {
           type: "string",
           description: "날씨 설명 언어",
           enum: ["ko", "en"],
-          default: "ko"
-        }
+          default: "ko",
+        },
       },
-      required: []
-    }
-  }
+      required: [],
+    },
+  },
 };
 
 /**
@@ -74,71 +80,82 @@ const AI_TOOLS = {
  */
 async function executeAiTool(toolName, parameters, context = {}) {
   try {
-    console.log(`[AI Tool] Executing ${toolName} with parameters:`, JSON.stringify(parameters, null, 2));
+    console.log(
+      `[AI Tool] Executing ${toolName} with parameters:`,
+      JSON.stringify(parameters, null, 2)
+    );
     console.log(`[AI Tool] Context:`, JSON.stringify(context, null, 2));
 
-    switch (toolName) {      case 'search_wikipedia':
-        console.log(`[AI Tool] Starting Wikipedia search for: "${parameters.query}"`);
+    switch (toolName) {
+      case "search_wikipedia":
+        console.log(
+          `[AI Tool] Starting Wikipedia search for: "${parameters.query}"`
+        );
         const wikiResult = await searchWikipedia(
           parameters.query,
           parameters.limit || 5,
-          parameters.language || 'ko'
+          parameters.language || "ko"
         );
-        
-        console.log(`[AI Tool] Wikipedia search completed. Found ${wikiResult?.length || 0} results`);
+
+        console.log(
+          `[AI Tool] Wikipedia search completed. Found ${
+            wikiResult?.length || 0
+          } results`
+        );
         if (wikiResult?.length > 0) {
           console.log(`[AI Tool] First result:`, {
             title: wikiResult[0].title,
-            extract: wikiResult[0].extract?.substring(0, 100) + '...'
+            extract: wikiResult[0].extract?.substring(0, 100) + "...",
           });
         }
-        
+
         // AI가 이해하기 쉬운 형태로 결과 포맷팅
         const formattedWikiResult = {
           success: true,
-          tool: 'search_wikipedia',
+          tool: "search_wikipedia",
           query: parameters.query,
-          results: wikiResult?.map(item => ({
-            title: item.title,
-            summary: item.snippet || item.extract,
-            url: item.url,
-            wordcount: item.wordcount
-          })) || [],
+          results:
+            wikiResult?.map((item) => ({
+              title: item.title,
+              summary: item.snippet || item.extract,
+              url: item.url,
+              wordcount: item.wordcount,
+            })) || [],
           count: wikiResult?.length || 0,
-          source: 'Wikipedia'
+          source: "Wikipedia",
         };
-        
+
         console.log(`[AI Tool] Returning formatted Wikipedia result:`, {
           success: formattedWikiResult.success,
           query: formattedWikiResult.query,
-          count: formattedWikiResult.count
+          count: formattedWikiResult.count,
         });
-        
+
         return formattedWikiResult;
 
-      case 'get_weather':
+      case "get_weather":
         let weatherResult;
-        
+
         if (parameters.city) {
           // 도시명이 제공된 경우
           weatherResult = await getWeatherByLocation({
             city: parameters.city,
-            units: parameters.units || 'metric',
-            lang: parameters.language || 'ko'
+            units: parameters.units || "metric",
+            lang: parameters.language || "ko",
           });
         } else {
           // IP 기반 위치 감지
           weatherResult = await getWeatherByIP(
-            context.clientIp || '127.0.0.1',
-            parameters.units || 'metric',
-            parameters.language || 'ko'
+            context.clientIp || "127.0.0.1",
+            parameters.units || "metric",
+            parameters.language || "ko"
           );
         }
 
         // AI가 이해하기 쉬운 형태로 결과 포맷팅
         return {
           success: true,
-          tool: 'get_weather',
+          tool: "get_weather",
           location: weatherResult.location,
           current: {
             temperature: weatherResult.current.temperature,
@@ -146,10 +163,10 @@ async function executeAiTool(toolName, parameters, context = {}) {
             feels_like: weatherResult.current.feels_like,
             humidity: weatherResult.current.humidity,
             wind_speed: weatherResult.current.wind.speed,
-            wind_direction: weatherResult.current.wind.direction
+            wind_direction: weatherResult.current.wind.direction,
           },
           units: weatherResult.units,
-          source: 'OpenWeatherMap'
+          source: "OpenWeatherMap",
         };
 
       default:
@@ -161,7 +178,7 @@ async function executeAiTool(toolName, parameters, context = {}) {
       success: false,
       tool: toolName,
       error: error.message,
-      source: 'System Error'
+      source: "System Error",
     };
   }
 }
@@ -171,13 +188,15 @@ async function executeAiTool(toolName, parameters, context = {}) {
  * @returns {Array} Gemini API Function Calling 형식의 도구 배열
  */
 function getGeminiTools() {
-  return [{
-    functionDeclarations: Object.values(AI_TOOLS).map(tool => ({
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.parameters
-    }))
-  }];
+  return [
+    {
+      functionDeclarations: Object.values(AI_TOOLS).map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+      })),
+    },
+  ];
 }
 
 /**
@@ -185,7 +204,7 @@ function getGeminiTools() {
  * @param {string} originalPrompt - 기존 시스템 프롬프트
  * @returns {string} 도구 사용법이 추가된 시스템 프롬프트
  */
-function enhancePromptWithTools(originalPrompt = '') {
+function enhancePromptWithTools(originalPrompt = "") {
   const toolInstructions = `
 
 **사용 가능한 도구들:**
@@ -209,5 +228,5 @@ module.exports = {
   AI_TOOLS,
   executeAiTool,
   getGeminiTools,
-  enhancePromptWithTools
+  enhancePromptWithTools,
 };

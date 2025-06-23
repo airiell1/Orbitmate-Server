@@ -1,39 +1,47 @@
-const { getConnection, oracledb } = require('../config/database'); // Removed getConnection
-const { 
-  saveUserMessageToDB, 
-  saveAiMessageToDB, 
-  deleteUserMessageFromDB, 
-  getSessionMessagesForClient, 
-  getChatHistoryFromDB, 
+const { getConnection, oracledb } = require("../config/database"); // Removed getConnection
+const {
+  saveUserMessageToDB,
+  saveAiMessageToDB,
+  deleteUserMessageFromDB,
+  getSessionMessagesForClient,
+  getChatHistoryFromDB,
   saveAttachmentToDB,
   editUserMessage,
   getMessageEditHistory,
-  requestAiReresponse
-} = require('../models/chat'); // getChatHistoryFromDB 추가, saveAttachmentToDB 추가
-const { getUserSettings } = require('../models/user'); // getUserSettings 추가
-const { fetchChatCompletion } = require('../utils/aiProvider'); // Updated import
-const { convertClobFields, withTransaction } = require('../utils/dbUtils'); // convertClobFields import 추가, withTransaction 추가
-const { standardizeApiResponse } = require('../utils/apiResponse'); // Import standardizeApiResponse
-const path = require('path');
-const fs = require('fs');
+  requestAiReresponse,
+} = require("../models/chat"); // getChatHistoryFromDB 추가, saveAttachmentToDB 추가
+const { getUserSettings } = require("../models/user"); // getUserSettings 추가
+const { fetchChatCompletion } = require("../utils/aiProvider"); // Updated import
+const { convertClobFields, withTransaction } = require("../utils/dbUtils"); // convertClobFields import 추가, withTransaction 추가
+const { standardizeApiResponse } = require("../utils/apiResponse"); // Import standardizeApiResponse
+const path = require("path");
+const fs = require("fs");
 
-const { createErrorResponse, getHttpStatusByErrorCode, handleOracleError, logError } = require('../utils/errorHandler');
+const {
+  createErrorResponse,
+  getHttpStatusByErrorCode,
+  handleOracleError,
+  logError,
+} = require("../utils/errorHandler");
 
 // 구독 관리 함수 import
-const { checkDailyUsage, getUserSubscription } = require('../models/subscription');
+const {
+  checkDailyUsage,
+  getUserSubscription,
+} = require("../models/subscription");
 
 // 채팅 메시지 전송 및 AI 응답 받기 컨트롤러
 async function sendMessageController(req, res) {
   const { session_id } = req.params;
-  const { 
-    message, 
-    systemPrompt, 
+  const {
+    message,
+    systemPrompt,
     specialModeType,
     max_output_tokens_override,
     context_message_limit,
     ai_provider_override,
     model_id_override,
-    user_message_token_count 
+    user_message_token_count,
   } = req.body;
 
   // 디버깅용 로그 추가
@@ -41,290 +49,477 @@ async function sendMessageController(req, res) {
     ai_provider_override,
     model_id_override,
     specialModeType,
-    message: message?.substring(0, 50) + '...'
+    message: message?.substring(0, 50) + "...",
   });
 
   // Validation for sessionId
-  if (!session_id || typeof session_id !== 'string' || session_id.trim() === '') {
-    const errorPayload = createErrorResponse('INVALID_INPUT', '세션 ID는 필수이며 빈 문자열이 아니어야 합니다.');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  if (
+    !session_id ||
+    typeof session_id !== "string" ||
+    session_id.trim() === ""
+  ) {
+    const errorPayload = createErrorResponse(
+      "INVALID_INPUT",
+      "세션 ID는 필수이며 빈 문자열이 아니어야 합니다."
+    );
+    return res
+      .status(getHttpStatusByErrorCode("INVALID_INPUT"))
+      .json(standardizeApiResponse(errorPayload));
   }
   if (session_id.length > 36) {
-    const errorPayload = createErrorResponse('INVALID_INPUT', '세션 ID가 너무 깁니다 (최대 36자).');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+    const errorPayload = createErrorResponse(
+      "INVALID_INPUT",
+      "세션 ID가 너무 깁니다 (최대 36자)."
+    );
+    return res
+      .status(getHttpStatusByErrorCode("INVALID_INPUT"))
+      .json(standardizeApiResponse(errorPayload));
   }
 
   // Validation for message
-  if (!message || typeof message !== 'string' || message.trim() === '') {
-    const errorPayload = createErrorResponse('INVALID_INPUT', '메시지를 입력해주세요.');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  if (!message || typeof message !== "string" || message.trim() === "") {
+    const errorPayload = createErrorResponse(
+      "INVALID_INPUT",
+      "메시지를 입력해주세요."
+    );
+    return res
+      .status(getHttpStatusByErrorCode("INVALID_INPUT"))
+      .json(standardizeApiResponse(errorPayload));
   }
   if (message.length > 4000) {
-    const errorPayload = createErrorResponse('INVALID_INPUT', '메시지가 너무 깁니다 (최대 4000자).');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+    const errorPayload = createErrorResponse(
+      "INVALID_INPUT",
+      "메시지가 너무 깁니다 (최대 4000자)."
+    );
+    return res
+      .status(getHttpStatusByErrorCode("INVALID_INPUT"))
+      .json(standardizeApiResponse(errorPayload));
   }
 
   // Validation for systemPrompt
-  if (systemPrompt && (typeof systemPrompt !== 'string' || systemPrompt.length > 2000)) {
-    const errorPayload = createErrorResponse('INVALID_INPUT', '시스템 프롬프트는 문자열이어야 하며 최대 2000자입니다.');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  if (
+    systemPrompt &&
+    (typeof systemPrompt !== "string" || systemPrompt.length > 2000)
+  ) {
+    const errorPayload = createErrorResponse(
+      "INVALID_INPUT",
+      "시스템 프롬프트는 문자열이어야 하며 최대 2000자입니다."
+    );
+    return res
+      .status(getHttpStatusByErrorCode("INVALID_INPUT"))
+      .json(standardizeApiResponse(errorPayload));
   }
-  
+
   // Validation for specialModeType
-  const allowedSpecialModeTypes = ['stream', 'canvas'];
+  const allowedSpecialModeTypes = ["stream", "canvas"];
   if (specialModeType && !allowedSpecialModeTypes.includes(specialModeType)) {
-    const errorPayload = createErrorResponse('INVALID_INPUT', `잘못된 specialModeType 값입니다. 허용되는 값: ${allowedSpecialModeTypes.join(', ')}.`);
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));  }
-  const user_id = req.user ? req.user.user_id : 'guest';
+    const errorPayload = createErrorResponse(
+      "INVALID_INPUT",
+      `잘못된 specialModeType 값입니다. 허용되는 값: ${allowedSpecialModeTypes.join(
+        ", "
+      )}.`
+    );
+    return res
+      .status(getHttpStatusByErrorCode("INVALID_INPUT"))
+      .json(standardizeApiResponse(errorPayload));
+  }
+  const user_id = req.user ? req.user.user_id : "guest";
 
   // 구독 일일 사용량 제한 체크
   try {
-    console.log(`[chatController] Checking daily usage limit for user: ${user_id}`);
+    console.log(
+      `[chatController] Checking daily usage limit for user: ${user_id}`
+    );
     const usage = await checkDailyUsage(user_id);
-    
+
     if (!usage.data.can_make_request) {
-      console.log(`[chatController] Daily limit exceeded for user: ${user_id}`, usage.data);
+      console.log(
+        `[chatController] Daily limit exceeded for user: ${user_id}`,
+        usage.data
+      );
       return res.status(429).json({
-        error: 'Daily limit exceeded',
-        message: '일일 AI 요청 한도를 초과했습니다. 구독을 업그레이드하거나 내일 다시 시도해주세요.',
+        error: "Daily limit exceeded",
+        message:
+          "일일 AI 요청 한도를 초과했습니다. 구독을 업그레이드하거나 내일 다시 시도해주세요.",
         usage_info: usage.data,
-        upgrade_url: '/api/subscriptions/tiers'
+        upgrade_url: "/api/subscriptions/tiers",
       });
     }
-    
+
     console.log(`[chatController] Usage check passed for user: ${user_id}`, {
       today_requests: usage.data.today_requests,
       max_requests: usage.data.max_requests_per_day,
-      remaining: usage.data.requests_remaining
+      remaining: usage.data.requests_remaining,
     });
   } catch (error) {
-    console.error('[chatController] Error checking daily usage:', error);
+    console.error("[chatController] Error checking daily usage:", error);
     // 사용량 체크 실패 시에도 요청을 계속 진행 (가용성 우선)
   }
 
   // Additional validation for new optional parameters
-  if (max_output_tokens_override !== undefined && (typeof max_output_tokens_override !== 'number' || !Number.isInteger(max_output_tokens_override) || max_output_tokens_override <= 0)) {
-    const errorPayload = createErrorResponse('INVALID_INPUT', 'max_output_tokens_override는 양의 정수여야 합니다.');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  if (
+    max_output_tokens_override !== undefined &&
+    (typeof max_output_tokens_override !== "number" ||
+      !Number.isInteger(max_output_tokens_override) ||
+      max_output_tokens_override <= 0)
+  ) {
+    const errorPayload = createErrorResponse(
+      "INVALID_INPUT",
+      "max_output_tokens_override는 양의 정수여야 합니다."
+    );
+    return res
+      .status(getHttpStatusByErrorCode("INVALID_INPUT"))
+      .json(standardizeApiResponse(errorPayload));
   }
-  if (context_message_limit !== undefined && (typeof context_message_limit !== 'number' || !Number.isInteger(context_message_limit) || context_message_limit < 0)) {
-    const errorPayload = createErrorResponse('INVALID_INPUT', 'context_message_limit는 0 이상의 정수여야 합니다.');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  if (
+    context_message_limit !== undefined &&
+    (typeof context_message_limit !== "number" ||
+      !Number.isInteger(context_message_limit) ||
+      context_message_limit < 0)
+  ) {
+    const errorPayload = createErrorResponse(
+      "INVALID_INPUT",
+      "context_message_limit는 0 이상의 정수여야 합니다."
+    );
+    return res
+      .status(getHttpStatusByErrorCode("INVALID_INPUT"))
+      .json(standardizeApiResponse(errorPayload));
   }
-  if (ai_provider_override !== undefined && typeof ai_provider_override !== 'string') {
-    const errorPayload = createErrorResponse('INVALID_INPUT', 'ai_provider_override는 문자열이어야 합니다.');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  if (
+    ai_provider_override !== undefined &&
+    typeof ai_provider_override !== "string"
+  ) {
+    const errorPayload = createErrorResponse(
+      "INVALID_INPUT",
+      "ai_provider_override는 문자열이어야 합니다."
+    );
+    return res
+      .status(getHttpStatusByErrorCode("INVALID_INPUT"))
+      .json(standardizeApiResponse(errorPayload));
   }
-  if (model_id_override !== undefined && typeof model_id_override !== 'string') {
-    const errorPayload = createErrorResponse('INVALID_INPUT', 'model_id_override는 문자열이어야 합니다.');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  if (
+    model_id_override !== undefined &&
+    typeof model_id_override !== "string"
+  ) {
+    const errorPayload = createErrorResponse(
+      "INVALID_INPUT",
+      "model_id_override는 문자열이어야 합니다."
+    );
+    return res
+      .status(getHttpStatusByErrorCode("INVALID_INPUT"))
+      .json(standardizeApiResponse(errorPayload));
   }
-  if (user_message_token_count !== undefined && (typeof user_message_token_count !== 'number' || !Number.isInteger(user_message_token_count) || user_message_token_count < 0)) {
-    const errorPayload = createErrorResponse('INVALID_INPUT', 'user_message_token_count는 0 이상의 정수여야 합니다.');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  if (
+    user_message_token_count !== undefined &&
+    (typeof user_message_token_count !== "number" ||
+      !Number.isInteger(user_message_token_count) ||
+      user_message_token_count < 0)
+  ) {
+    const errorPayload = createErrorResponse(
+      "INVALID_INPUT",
+      "user_message_token_count는 0 이상의 정수여야 합니다."
+    );
+    return res
+      .status(getHttpStatusByErrorCode("INVALID_INPUT"))
+      .json(standardizeApiResponse(errorPayload));
   }
   let connection;
   try {
     connection = await getConnection();
     // 게스트 사용자 ID 사용
-    const user_id = 'guest'; // 일관성을 위해 'guest' 사용
-      // AI 제공자 및 모델 정보 결정
-    let actualAiProvider = 'geminiapi'; // 기본값
-    let actualModelId = 'gemini-2.0-flash-thinking-exp-01-21'; // 기본 Gemini API Studio 모델
-      // 사용자 설정에서 AI 제공자 확인 (게스트 사용자는 제외)
+    const user_id = "guest"; // 일관성을 위해 'guest' 사용
+    // AI 제공자 및 모델 정보 결정
+    let actualAiProvider = "geminiapi"; // 기본값
+    let actualModelId = "gemini-2.0-flash-thinking-exp-01-21"; // 기본 Gemini API Studio 모델
+    // 사용자 설정에서 AI 제공자 확인 (게스트 사용자는 제외)
     let userSettings = null;
-    if (user_id !== 'guest') {
+    if (user_id !== "guest") {
       try {
         userSettings = await getUserSettings(user_id);
         if (userSettings && userSettings.preferred_ai_provider) {
           actualAiProvider = userSettings.preferred_ai_provider;
-          if (actualAiProvider === 'ollama' && userSettings.preferred_ollama_model) {
+          if (
+            actualAiProvider === "ollama" &&
+            userSettings.preferred_ollama_model
+          ) {
             actualModelId = userSettings.preferred_ollama_model;
           }
         }
       } catch (err) {
         // 사용자 설정을 가져올 수 없는 경우 기본값 사용
-        console.warn('사용자 설정을 가져올 수 없습니다. 기본값을 사용합니다.', err.message);
+        console.warn(
+          "사용자 설정을 가져올 수 없습니다. 기본값을 사용합니다.",
+          err.message
+        );
       }
-    }    const responseData = await withTransaction(async (connection) => {
-      const userMessageTokenCountToStore = user_message_token_count !== undefined ? user_message_token_count : null;
-        const userMessageResult = await saveUserMessageToDB(connection, session_id, user_id, message, userMessageTokenCountToStore);
-      
+    }
+    const responseData = await withTransaction(async (connection) => {
+      const userMessageTokenCountToStore =
+        user_message_token_count !== undefined
+          ? user_message_token_count
+          : null;
+      const userMessageResult = await saveUserMessageToDB(
+        connection,
+        session_id,
+        user_id,
+        message,
+        userMessageTokenCountToStore
+      );
+
       console.log(`[chatController] 사용자 메시지 저장 결과:`, {
         specialModeType,
         user_message_id: userMessageResult?.user_message_id,
         message_length: message?.length,
-        streaming: specialModeType === 'stream'
+        streaming: specialModeType === "stream",
       });
-      
+
       if (!userMessageResult || !userMessageResult.user_message_id) {
-        const err = new Error('사용자 메시지 저장에 실패했습니다.');
-        err.code = 'DB_ERROR';
+        const err = new Error("사용자 메시지 저장에 실패했습니다.");
+        err.code = "DB_ERROR";
         throw err;
       }
 
-      const userMessageId = userMessageResult.user_message_id;      const effectiveContextLimit = context_message_limit !== undefined ? context_message_limit : null;
-      let chatHistoryForAI = await getChatHistoryFromDB(connection, session_id, false, effectiveContextLimit);
-      
+      const userMessageId = userMessageResult.user_message_id;
+      const effectiveContextLimit =
+        context_message_limit !== undefined ? context_message_limit : null;
+      let chatHistoryForAI = await getChatHistoryFromDB(
+        connection,
+        session_id,
+        false,
+        effectiveContextLimit
+      );
+
       // 디버깅: 대화 기록 확인
-      console.log(`[chatController] 대화 기록 조회 결과: ${chatHistoryForAI.length}개 메시지`);
+      console.log(
+        `[chatController] 대화 기록 조회 결과: ${chatHistoryForAI.length}개 메시지`
+      );
       chatHistoryForAI.forEach((msg, index) => {
-        console.log(`[chatController] 메시지 ${index + 1}: ${msg.role} - ${msg.parts[0].text.substring(0, 50)}...`);
+        console.log(
+          `[chatController] 메시지 ${index + 1}: ${
+            msg.role
+          } - ${msg.parts[0].text.substring(0, 50)}...`
+        );
       });
 
-      const effectiveSystemPrompt = systemPrompt && systemPrompt.trim() ? systemPrompt.trim() : null;
-        // Determine AI Provider and Model
-      const defaultUserProvider = process.env.DEFAULT_AI_PROVIDER || 'geminiapi';
-      console.log(`[chatController] ai_provider_override: ${ai_provider_override}, defaultUserProvider: ${defaultUserProvider}`);
+      const effectiveSystemPrompt =
+        systemPrompt && systemPrompt.trim() ? systemPrompt.trim() : null;
+      // Determine AI Provider and Model
+      const defaultUserProvider =
+        process.env.DEFAULT_AI_PROVIDER || "geminiapi";
+      console.log(
+        `[chatController] ai_provider_override: ${ai_provider_override}, defaultUserProvider: ${defaultUserProvider}`
+      );
       const actualAiProvider = ai_provider_override || defaultUserProvider;
-      console.log(`[chatController] actualAiProvider: ${actualAiProvider}`);      let actualModelId = model_id_override;
+      console.log(`[chatController] actualAiProvider: ${actualAiProvider}`);
+      let actualModelId = model_id_override;
       if (!actualModelId) {
-          if (actualAiProvider === 'geminiapi') {
-              actualModelId = process.env.GEMINI_MODEL || 'gemini-2.0-flash-thinking-exp-01-21';
-          } else if (actualAiProvider === 'ollama') {
-              actualModelId = process.env.OLLAMA_MODEL || 'gemma3:4b'; // Default Ollama model
-          } else if (actualAiProvider === 'vertexai') {
-              actualModelId = process.env.VERTEX_AI_MODEL || 'gemini-2.5-pro-exp-03-25';
-          }
+        if (actualAiProvider === "geminiapi") {
+          actualModelId =
+            process.env.GEMINI_MODEL || "gemini-2.0-flash-thinking-exp-01-21";
+        } else if (actualAiProvider === "ollama") {
+          actualModelId = process.env.OLLAMA_MODEL || "gemma3:4b"; // Default Ollama model
+        } else if (actualAiProvider === "vertexai") {
+          actualModelId =
+            process.env.VERTEX_AI_MODEL || "gemini-2.5-pro-exp-03-25";
+        }
       }
-      
+
       // This variable is for the second (ollamaModel) parameter of fetchChatCompletion
       // In fetchChatCompletion, this is now options.ollamaModel
       // For clarity, when calling fetchChatCompletion, we will set options.ollamaModel if actualAiProvider is ollama.
       // The second direct parameter to fetchChatCompletion is currentUserMessage.
 
       const callOptions = {
-          max_output_tokens_override: max_output_tokens_override, // from req.body
-          // Pass the resolved or overridden model_id specific to the provider
-          // fetchChatCompletion will then use this in its own options.ollamaModel or options.vertexModelId
-          model_id_override: actualModelId 
+        max_output_tokens_override: max_output_tokens_override, // from req.body
+        // Pass the resolved or overridden model_id specific to the provider
+        // fetchChatCompletion will then use this in its own options.ollamaModel or options.vertexModelId
+        model_id_override: actualModelId,
       };
-      
+
       // If the determined provider is ollama, set ollamaModel in callOptions
       // This ensures fetchChatCompletion gets the correct model for ollama via its options parameter.
-      if (actualAiProvider === 'ollama') {
-          callOptions.ollamaModel = actualModelId;
-      }      // 스트리밍 콜백 함수 정의
+      if (actualAiProvider === "ollama") {
+        callOptions.ollamaModel = actualModelId;
+      } // 스트리밍 콜백 함수 정의
       let streamResponseCallback = null;
-      if (specialModeType === 'stream') {
+      if (specialModeType === "stream") {
         // SSE 헤더 설정
-        res.setHeader('Content-Type', 'text/event-stream');
-        res.setHeader('Cache-Control', 'no-cache');
-        res.setHeader('Connection', 'keep-alive');
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.flushHeaders();        // 스트리밍 콜백 함수
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("Connection", "keep-alive");
+        res.setHeader("Access-Control-Allow-Origin", "*");
+        res.flushHeaders(); // 스트리밍 콜백 함수
         streamResponseCallback = (chunk) => {
-          if (chunk && typeof chunk === 'string') {
+          if (chunk && typeof chunk === "string") {
             res.write(`data: ${JSON.stringify({ delta: chunk })}\n\n`);
           }
         };
-        
+
         // 사용자 메시지 ID 먼저 전송
-        res.write(`event: ids\ndata: ${JSON.stringify({ userMessageId: userMessageId.toString() })}\n\n`);
-      }      // Updated AI call with context
+        res.write(
+          `event: ids\ndata: ${JSON.stringify({
+            userMessageId: userMessageId.toString(),
+          })}\n\n`
+        );
+      } // Updated AI call with context
       const requestContext = {
-        clientIp: req.ip || req.connection.remoteAddress || '127.0.0.1'
+        clientIp: req.ip || req.connection.remoteAddress || "127.0.0.1",
       };
-      
+
       const aiResponseFull = await fetchChatCompletion(
-          actualAiProvider,           // Provider to use
-          message,                    // Current user message
-          chatHistoryForAI,           // History
-          effectiveSystemPrompt,      // System prompt
-          specialModeType,            // e.g., 'canvas', 'stream'
-          streamResponseCallback,     // 실제 스트리밍 콜백 전달
-          callOptions,                // Options object
-          requestContext              // Context for tools (IP address, etc.)
+        actualAiProvider, // Provider to use
+        message, // Current user message
+        chatHistoryForAI, // History
+        effectiveSystemPrompt, // System prompt
+        specialModeType, // e.g., 'canvas', 'stream'
+        streamResponseCallback, // 실제 스트리밍 콜백 전달
+        callOptions, // Options object
+        requestContext // Context for tools (IP address, etc.)
       );
 
-      if (!aiResponseFull || typeof aiResponseFull.content !== 'string' || aiResponseFull.content.trim() === '') {
-        console.error('Invalid AI response received:', aiResponseFull);
-        const err = new Error('AI로부터 유효한 응답을 받지 못했습니다. 응답 내용이 비어있거나 형식이 잘못되었습니다.');
-        err.code = 'AI_RESPONSE_ERROR';
+      if (
+        !aiResponseFull ||
+        typeof aiResponseFull.content !== "string" ||
+        aiResponseFull.content.trim() === ""
+      ) {
+        console.error("Invalid AI response received:", aiResponseFull);
+        const err = new Error(
+          "AI로부터 유효한 응답을 받지 못했습니다. 응답 내용이 비어있거나 형식이 잘못되었습니다."
+        );
+        err.code = "AI_RESPONSE_ERROR";
         throw err;
-
       }
       const aiContentFromVertex = aiResponseFull.content;
-      const aiMessageTokenCountToStore = aiResponseFull.actual_output_tokens !== undefined ? aiResponseFull.actual_output_tokens : null;      const aiMessageResult = await saveAiMessageToDB(connection, session_id, user_id, aiContentFromVertex, aiMessageTokenCountToStore);
+      const aiMessageTokenCountToStore =
+        aiResponseFull.actual_output_tokens !== undefined
+          ? aiResponseFull.actual_output_tokens
+          : null;
+      const aiMessageResult = await saveAiMessageToDB(
+        connection,
+        session_id,
+        user_id,
+        aiContentFromVertex,
+        aiMessageTokenCountToStore
+      );
 
       console.log(`[chatController] AI 메시지 저장 결과:`, {
         specialModeType,
         ai_message_id: aiMessageResult?.ai_message_id,
         content_length: aiContentFromVertex?.length,
-        streaming: specialModeType === 'stream',
-        db_save_success: !!aiMessageResult?.ai_message_id
+        streaming: specialModeType === "stream",
+        db_save_success: !!aiMessageResult?.ai_message_id,
       });
 
       if (!aiMessageResult || !aiMessageResult.ai_message_id) {
-        const err = new Error('AI 메시지 저장에 실패했습니다.');
-        err.code = 'DB_ERROR';
+        const err = new Error("AI 메시지 저장에 실패했습니다.");
+        err.code = "DB_ERROR";
         throw err;
-      }const aiMessageId = aiMessageResult.ai_message_id.toString();
+      }
+      const aiMessageId = aiMessageResult.ai_message_id.toString();
       const aiCreatedAt = aiMessageResult.created_at;
-      const actualAiContentSaved = aiMessageResult.content;      // 스트리밍 모드에서 AI 메시지 ID 전송
-      if (specialModeType === 'stream') {
-        res.write(`event: ai_message_id\ndata: ${JSON.stringify({ aiMessageId: aiMessageId })}\n\n`);
-      }return {
+      const actualAiContentSaved = aiMessageResult.content; // 스트리밍 모드에서 AI 메시지 ID 전송
+      if (specialModeType === "stream") {
+        res.write(
+          `event: ai_message_id\ndata: ${JSON.stringify({
+            aiMessageId: aiMessageId,
+          })}\n\n`
+        );
+      }
+      return {
         user_message_id: userMessageId.toString(),
         ai_message_id: aiMessageId,
         message: actualAiContentSaved,
-        created_at: aiCreatedAt ? new Date(aiCreatedAt).toISOString() : new Date().toISOString(),
-        ai_message_token_count: aiMessageTokenCountToStore // Include in response
+        created_at: aiCreatedAt
+          ? new Date(aiCreatedAt).toISOString()
+          : new Date().toISOString(),
+        ai_message_token_count: aiMessageTokenCountToStore, // Include in response
       };
-    });    // Send response based on responseData (non-streaming part)
-    if (specialModeType === 'stream') {
+    }); // Send response based on responseData (non-streaming part)
+    if (specialModeType === "stream") {
       // 스트리밍이 완료되었음을 알림
       console.log(`[chatController] 스트리밍 완료 - DB 저장된 메시지:`, {
         user_message_id: responseData.user_message_id,
         ai_message_id: responseData.ai_message_id,
-        session_id: session_id
+        session_id: session_id,
       });
-      res.write(`event: end\ndata: ${JSON.stringify({ message: 'Stream ended' })}\n\n`);
+      res.write(
+        `event: end\ndata: ${JSON.stringify({ message: "Stream ended" })}\n\n`
+      );
       res.end();
       return;
     } else {
       // AI 제공자 및 모델 정보 추가
       responseData.ai_provider = actualAiProvider;
       responseData.model_id = actualModelId;
-      
-      if (specialModeType === 'canvas') {
+
+      if (specialModeType === "canvas") {
         const htmlRegex = /```html\n([\s\S]*?)\n```/;
         const cssRegex = /```css\n([\s\S]*?)\n```/;
         const jsRegex = /```javascript\n([\s\S]*?)\n```/;
         const htmlMatch = responseData.message.match(htmlRegex);
         const cssMatch = responseData.message.match(cssRegex);
         const jsMatch = responseData.message.match(jsRegex);
-        responseData.canvas_html = htmlMatch ? htmlMatch[1].trim() : '';
-        responseData.canvas_css = cssMatch ? cssMatch[1].trim() : '';
-        responseData.canvas_js = jsMatch ? jsMatch[1].trim() : '';
+        responseData.canvas_html = htmlMatch ? htmlMatch[1].trim() : "";
+        responseData.canvas_css = cssMatch ? cssMatch[1].trim() : "";
+        responseData.canvas_js = jsMatch ? jsMatch[1].trim() : "";
       }
-      
+
       res.json(standardizeApiResponse(responseData));
     }
   } catch (err) {
-    logError('chatControllerSendMessage', err);
+    logError("chatControllerSendMessage", err);
     // Error handling remains, but rollback/close is handled by withTransaction
-    if (err.code === 'DB_BIND_ERROR' || (err.message && err.message.includes('NJS-044'))) { // NJS-044 is an example, adjust if needed
-        const errorPayload = createErrorResponse('DB_BIND_ERROR', `데이터베이스 바인딩 오류: ${err.message}`);
-        return res.status(getHttpStatusByErrorCode('DB_BIND_ERROR')).json(standardizeApiResponse(errorPayload));
-    }    if (err.code === 'SESSION_NOT_FOUND' || (err.message && err.message.includes("세션 ID"))) { 
-        const errorPayload = createErrorResponse('SESSION_NOT_FOUND', '세션이 존재하지 않습니다. 세션이 삭제되었거나 만료되었을 수 있습니다.');
-        return res.status(404).json(standardizeApiResponse(errorPayload));
+    if (
+      err.code === "DB_BIND_ERROR" ||
+      (err.message && err.message.includes("NJS-044"))
+    ) {
+      // NJS-044 is an example, adjust if needed
+      const errorPayload = createErrorResponse(
+        "DB_BIND_ERROR",
+        `데이터베이스 바인딩 오류: ${err.message}`
+      );
+      return res
+        .status(getHttpStatusByErrorCode("DB_BIND_ERROR"))
+        .json(standardizeApiResponse(errorPayload));
     }
-     if (err.code === 'DB_ERROR') {
-        const errorPayload = createErrorResponse('DB_ERROR', err.message);
-        return res.status(getHttpStatusByErrorCode('DB_ERROR')).json(standardizeApiResponse(errorPayload));
+    if (
+      err.code === "SESSION_NOT_FOUND" ||
+      (err.message && err.message.includes("세션 ID"))
+    ) {
+      const errorPayload = createErrorResponse(
+        "SESSION_NOT_FOUND",
+        "세션이 존재하지 않습니다. 세션이 삭제되었거나 만료되었을 수 있습니다."
+      );
+      return res.status(404).json(standardizeApiResponse(errorPayload));
     }
-    if (err.code === 'AI_RESPONSE_ERROR') {
-        const errorPayload = createErrorResponse('AI_RESPONSE_ERROR', err.message);
-        return res.status(getHttpStatusByErrorCode('AI_RESPONSE_ERROR')).json(standardizeApiResponse(errorPayload));
+    if (err.code === "DB_ERROR") {
+      const errorPayload = createErrorResponse("DB_ERROR", err.message);
+      return res
+        .status(getHttpStatusByErrorCode("DB_ERROR"))
+        .json(standardizeApiResponse(errorPayload));
     }
-    if (err.errorNum) { 
+    if (err.code === "AI_RESPONSE_ERROR") {
+      const errorPayload = createErrorResponse(
+        "AI_RESPONSE_ERROR",
+        err.message
+      );
+      return res
+        .status(getHttpStatusByErrorCode("AI_RESPONSE_ERROR"))
+        .json(standardizeApiResponse(errorPayload));
+    }
+    if (err.errorNum) {
       const handledError = handleOracleError(err);
-      return res.status(getHttpStatusByErrorCode(handledError.code)).json(standardizeApiResponse(handledError));
+      return res
+        .status(getHttpStatusByErrorCode(handledError.code))
+        .json(standardizeApiResponse(handledError));
     }
-    const errorPayload = createErrorResponse('SERVER_ERROR', `메시지 처리 중 서버 오류가 발생했습니다: ${err.message}`);
-    res.status(getHttpStatusByErrorCode('SERVER_ERROR')).json(standardizeApiResponse(errorPayload));
+    const errorPayload = createErrorResponse(
+      "SERVER_ERROR",
+      `메시지 처리 중 서버 오류가 발생했습니다: ${err.message}`
+    );
+    res
+      .status(getHttpStatusByErrorCode("SERVER_ERROR"))
+      .json(standardizeApiResponse(errorPayload));
   }
 }
 
@@ -339,34 +534,46 @@ async function editMessageController(req, res) {
   try {
     const { message_id } = req.params;
     const { new_content, edit_reason } = req.body;
-    const user_id = req.body.user_id || 'guest'; // 테스트용 기본값
-    
+    const user_id = req.body.user_id || "guest"; // 테스트용 기본값
+
     if (!message_id || !new_content) {
-      const errorPayload = createErrorResponse('INVALID_INPUT', '메시지 ID와 새로운 내용이 필요합니다.');
+      const errorPayload = createErrorResponse(
+        "INVALID_INPUT",
+        "메시지 ID와 새로운 내용이 필요합니다."
+      );
       return res.status(400).json(standardizeApiResponse(errorPayload));
     }
 
-    if (typeof new_content !== 'string' || new_content.trim().length === 0) {
-      const errorPayload = createErrorResponse('INVALID_INPUT', '유효한 메시지 내용을 입력해주세요.');
+    if (typeof new_content !== "string" || new_content.trim().length === 0) {
+      const errorPayload = createErrorResponse(
+        "INVALID_INPUT",
+        "유효한 메시지 내용을 입력해주세요."
+      );
       return res.status(400).json(standardizeApiResponse(errorPayload));
     }
 
-    const result = await editUserMessage(message_id, user_id, new_content.trim(), edit_reason);
-    
+    const result = await editUserMessage(
+      message_id,
+      user_id,
+      new_content.trim(),
+      edit_reason
+    );
+
     // 사용자에게 경험치 지급 (메시지 편집 시)
     try {
-      const { addUserExperience } = require('../models/user');
-      await addUserExperience(user_id, 5, 'message_edit', '메시지 편집');
+      const { addUserExperience } = require("../models/user");
+      await addUserExperience(user_id, 5, "message_edit", "메시지 편집");
     } catch (expError) {
-      console.warn('[chatController] 경험치 지급 실패:', expError.message);
+      console.warn("[chatController] 경험치 지급 실패:", expError.message);
     }
 
     return res.status(200).json(standardizeApiResponse(result));
-    
   } catch (error) {
-    logError('editMessageController', error);
+    logError("editMessageController", error);
     const errorPayload = handleOracleError(error);
-    return res.status(getHttpStatusByErrorCode(errorPayload.code)).json(standardizeApiResponse(errorPayload));
+    return res
+      .status(getHttpStatusByErrorCode(errorPayload.code))
+      .json(standardizeApiResponse(errorPayload));
   }
 }
 
@@ -376,19 +583,23 @@ async function editMessageController(req, res) {
 async function getMessageEditHistoryController(req, res) {
   try {
     const { message_id } = req.params;
-    
+
     if (!message_id) {
-      const errorPayload = createErrorResponse('INVALID_INPUT', '메시지 ID가 필요합니다.');
+      const errorPayload = createErrorResponse(
+        "INVALID_INPUT",
+        "메시지 ID가 필요합니다."
+      );
       return res.status(400).json(standardizeApiResponse(errorPayload));
     }
 
     const editHistory = await getMessageEditHistory(message_id);
     return res.status(200).json(standardizeApiResponse(editHistory));
-    
   } catch (error) {
-    logError('getMessageEditHistoryController', error);
+    logError("getMessageEditHistoryController", error);
     const errorPayload = handleOracleError(error);
-    return res.status(getHttpStatusByErrorCode(errorPayload.code)).json(standardizeApiResponse(errorPayload));
+    return res
+      .status(getHttpStatusByErrorCode(errorPayload.code))
+      .json(standardizeApiResponse(errorPayload));
   }
 }
 
@@ -398,20 +609,24 @@ async function getMessageEditHistoryController(req, res) {
 async function requestAiReresponseController(req, res) {
   try {
     const { session_id, message_id } = req.params;
-    const user_id = req.body.user_id || 'guest';
-    
+    const user_id = req.body.user_id || "guest";
+
     if (!session_id || !message_id) {
-      const errorPayload = createErrorResponse('INVALID_INPUT', '세션 ID와 메시지 ID가 필요합니다.');
+      const errorPayload = createErrorResponse(
+        "INVALID_INPUT",
+        "세션 ID와 메시지 ID가 필요합니다."
+      );
       return res.status(400).json(standardizeApiResponse(errorPayload));
     }
 
     const result = await requestAiReresponse(session_id, message_id, user_id);
     return res.status(200).json(standardizeApiResponse(result));
-    
   } catch (error) {
-    logError('requestAiReresponseController', error);
+    logError("requestAiReresponseController", error);
     const errorPayload = handleOracleError(error);
-    return res.status(getHttpStatusByErrorCode(errorPayload.code)).json(standardizeApiResponse(errorPayload));
+    return res
+      .status(getHttpStatusByErrorCode(errorPayload.code))
+      .json(standardizeApiResponse(errorPayload));
   }
 }
 
@@ -421,25 +636,46 @@ async function addReactionController(req, res) {
   const { reaction } = req.body;
 
   // Validation for messageId
-  if (!messageId || typeof messageId !== 'string' || messageId.trim() === '') {
-    const errorPayload = createErrorResponse('INVALID_INPUT', '메시지 ID는 필수이며 빈 문자열이 아니어야 합니다.');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  if (!messageId || typeof messageId !== "string" || messageId.trim() === "") {
+    const errorPayload = createErrorResponse(
+      "INVALID_INPUT",
+      "메시지 ID는 필수이며 빈 문자열이 아니어야 합니다."
+    );
+    return res
+      .status(getHttpStatusByErrorCode("INVALID_INPUT"))
+      .json(standardizeApiResponse(errorPayload));
   }
   if (messageId.length > 36) {
-    const errorPayload = createErrorResponse('INVALID_INPUT', '메시지 ID가 너무 깁니다 (최대 36자).');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+    const errorPayload = createErrorResponse(
+      "INVALID_INPUT",
+      "메시지 ID가 너무 깁니다 (최대 36자)."
+    );
+    return res
+      .status(getHttpStatusByErrorCode("INVALID_INPUT"))
+      .json(standardizeApiResponse(errorPayload));
   }
 
   // Validation for reaction
-  if (!reaction || typeof reaction !== 'string' || reaction.trim() === '') {
-    const errorPayload = createErrorResponse('INVALID_INPUT', '리액션은 필수이며 빈 문자열이 아니어야 합니다.');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  if (!reaction || typeof reaction !== "string" || reaction.trim() === "") {
+    const errorPayload = createErrorResponse(
+      "INVALID_INPUT",
+      "리액션은 필수이며 빈 문자열이 아니어야 합니다."
+    );
+    return res
+      .status(getHttpStatusByErrorCode("INVALID_INPUT"))
+      .json(standardizeApiResponse(errorPayload));
   }
-  if (reaction.length > 10) { // Example: allows for a few emojis
-    const errorPayload = createErrorResponse('INVALID_INPUT', '리액션이 너무 깁니다 (최대 10자).');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  if (reaction.length > 10) {
+    // Example: allows for a few emojis
+    const errorPayload = createErrorResponse(
+      "INVALID_INPUT",
+      "리액션이 너무 깁니다 (최대 10자)."
+    );
+    return res
+      .status(getHttpStatusByErrorCode("INVALID_INPUT"))
+      .json(standardizeApiResponse(errorPayload));
   }
-    try {
+  try {
     let reactionUpdated = false;
     await withTransaction(async (connection) => {
       // 먼저 메시지가 존재하는지 확인
@@ -451,7 +687,9 @@ async function addReactionController(req, res) {
 
       if (messageCheck.rows.length === 0) {
         // 메시지가 존재하지 않으면 404 오류가 아닌 200으로 처리 (이미 삭제된 메시지)
-        console.warn(`메시지 ${messageId}가 존재하지 않습니다. 이미 삭제된 메시지일 수 있습니다.`);
+        console.warn(
+          `메시지 ${messageId}가 존재하지 않습니다. 이미 삭제된 메시지일 수 있습니다.`
+        );
         return;
       }
 
@@ -467,21 +705,31 @@ async function addReactionController(req, res) {
     });
 
     if (reactionUpdated) {
-      res.status(200).json(standardizeApiResponse({ 
-        message: '리액션이 성공적으로 추가되었습니다.',
-        reaction: reaction
-      }));
+      res.status(200).json(
+        standardizeApiResponse({
+          message: "리액션이 성공적으로 추가되었습니다.",
+          reaction: reaction,
+        })
+      );
     } else {
       // 메시지가 존재하지 않는 경우 부드럽게 처리
-      res.status(200).json(standardizeApiResponse({ 
-        message: '메시지가 존재하지 않아 리액션을 추가할 수 없습니다. 메시지가 삭제되었을 가능성이 있습니다.',
-        warning: 'MESSAGE_NOT_FOUND'
-      }));
+      res.status(200).json(
+        standardizeApiResponse({
+          message:
+            "메시지가 존재하지 않아 리액션을 추가할 수 없습니다. 메시지가 삭제되었을 가능성이 있습니다.",
+          warning: "MESSAGE_NOT_FOUND",
+        })
+      );
     }
   } catch (err) {
-    logError('chatControllerAddReaction', err);
-    const errorPayload = createErrorResponse('SERVER_ERROR', `리액션 추가 중 오류 발생: ${err.message}`);
-    res.status(getHttpStatusByErrorCode('SERVER_ERROR')).json(standardizeApiResponse(errorPayload));
+    logError("chatControllerAddReaction", err);
+    const errorPayload = createErrorResponse(
+      "SERVER_ERROR",
+      `리액션 추가 중 오류 발생: ${err.message}`
+    );
+    res
+      .status(getHttpStatusByErrorCode("SERVER_ERROR"))
+      .json(standardizeApiResponse(errorPayload));
   }
 }
 
@@ -490,13 +738,23 @@ async function removeReactionController(req, res) {
   const messageId = req.params.message_id;
 
   // Validation for messageId
-  if (!messageId || typeof messageId !== 'string' || messageId.trim() === '') {
-    const errorPayload = createErrorResponse('INVALID_INPUT', '메시지 ID는 필수이며 빈 문자열이 아니어야 합니다.');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  if (!messageId || typeof messageId !== "string" || messageId.trim() === "") {
+    const errorPayload = createErrorResponse(
+      "INVALID_INPUT",
+      "메시지 ID는 필수이며 빈 문자열이 아니어야 합니다."
+    );
+    return res
+      .status(getHttpStatusByErrorCode("INVALID_INPUT"))
+      .json(standardizeApiResponse(errorPayload));
   }
   if (messageId.length > 36) {
-    const errorPayload = createErrorResponse('INVALID_INPUT', '메시지 ID가 너무 깁니다 (최대 36자).');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+    const errorPayload = createErrorResponse(
+      "INVALID_INPUT",
+      "메시지 ID가 너무 깁니다 (최대 36자)."
+    );
+    return res
+      .status(getHttpStatusByErrorCode("INVALID_INPUT"))
+      .json(standardizeApiResponse(errorPayload));
   }
   try {
     let reactionRemoved = false;
@@ -510,7 +768,9 @@ async function removeReactionController(req, res) {
 
       if (messageCheck.rows.length === 0) {
         // 메시지가 존재하지 않으면 200으로 처리 (이미 삭제된 메시지)
-        console.warn(`메시지 ${messageId}가 존재하지 않습니다. 이미 삭제된 메시지일 수 있습니다.`);
+        console.warn(
+          `메시지 ${messageId}가 존재하지 않습니다. 이미 삭제된 메시지일 수 있습니다.`
+        );
         return;
       }
 
@@ -526,20 +786,30 @@ async function removeReactionController(req, res) {
     });
 
     if (reactionRemoved) {
-      res.status(200).json(standardizeApiResponse({ 
-        message: '리액션이 성공적으로 제거되었습니다.'
-      }));
+      res.status(200).json(
+        standardizeApiResponse({
+          message: "리액션이 성공적으로 제거되었습니다.",
+        })
+      );
     } else {
       // 메시지가 존재하지 않는 경우 부드럽게 처리
-      res.status(200).json(standardizeApiResponse({ 
-        message: '메시지가 존재하지 않아 리액션을 제거할 수 없습니다. 메시지가 삭제되었을 가능성이 있습니다.',
-        warning: 'MESSAGE_NOT_FOUND'
-      }));
+      res.status(200).json(
+        standardizeApiResponse({
+          message:
+            "메시지가 존재하지 않아 리액션을 제거할 수 없습니다. 메시지가 삭제되었을 가능성이 있습니다.",
+          warning: "MESSAGE_NOT_FOUND",
+        })
+      );
     }
   } catch (err) {
-    logError('chatControllerRemoveReaction', err);
-    const errorPayload = createErrorResponse('SERVER_ERROR', `리액션 제거 중 오류 발생: ${err.message}`);
-    res.status(getHttpStatusByErrorCode('SERVER_ERROR')).json(standardizeApiResponse(errorPayload));
+    logError("chatControllerRemoveReaction", err);
+    const errorPayload = createErrorResponse(
+      "SERVER_ERROR",
+      `리액션 제거 중 오류 발생: ${err.message}`
+    );
+    res
+      .status(getHttpStatusByErrorCode("SERVER_ERROR"))
+      .json(standardizeApiResponse(errorPayload));
   }
 }
 
@@ -548,37 +818,64 @@ async function deleteMessageController(req, res) {
   const messageId = req.params.message_id;
 
   // Validation for messageId
-  if (!messageId || typeof messageId !== 'string' || messageId.trim() === '') {
-    const errorPayload = createErrorResponse('INVALID_INPUT', '메시지 ID는 필수이며 빈 문자열이 아니어야 합니다.');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  if (!messageId || typeof messageId !== "string" || messageId.trim() === "") {
+    const errorPayload = createErrorResponse(
+      "INVALID_INPUT",
+      "메시지 ID는 필수이며 빈 문자열이 아니어야 합니다."
+    );
+    return res
+      .status(getHttpStatusByErrorCode("INVALID_INPUT"))
+      .json(standardizeApiResponse(errorPayload));
   }
   if (messageId.length > 36) {
-    const errorPayload = createErrorResponse('INVALID_INPUT', '메시지 ID가 너무 깁니다 (최대 36자).');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+    const errorPayload = createErrorResponse(
+      "INVALID_INPUT",
+      "메시지 ID가 너무 깁니다 (최대 36자)."
+    );
+    return res
+      .status(getHttpStatusByErrorCode("INVALID_INPUT"))
+      .json(standardizeApiResponse(errorPayload));
   }
 
   try {
     const deleted = await withTransaction(async (connection) => {
-        // user_id is not passed to deleteUserMessageFromDB as per previous refactoring
-        return await deleteUserMessageFromDB(connection, messageId); 
+      // user_id is not passed to deleteUserMessageFromDB as per previous refactoring
+      return await deleteUserMessageFromDB(connection, messageId);
     });
 
     if (!deleted) {
       // console.warn(`Warning in deleteMessageController: Message with ID ${messageId} not found or not deleted.`);
-      const errorPayload = createErrorResponse('MESSAGE_NOT_FOUND', '메시지를 찾을 수 없거나 삭제할 수 없습니다. 이미 삭제되었거나 다른 사용자의 메시지일 수 있습니다.');
+      const errorPayload = createErrorResponse(
+        "MESSAGE_NOT_FOUND",
+        "메시지를 찾을 수 없거나 삭제할 수 없습니다. 이미 삭제되었거나 다른 사용자의 메시지일 수 있습니다."
+      );
       // This case might be handled inside withTransaction if deleteUserMessageFromDB throws an error for not found.
       // If deleteUserMessageFromDB returns false for not found, this check is needed here.
-      return res.status(getHttpStatusByErrorCode('MESSAGE_NOT_FOUND')).json(standardizeApiResponse(errorPayload));
+      return res
+        .status(getHttpStatusByErrorCode("MESSAGE_NOT_FOUND"))
+        .json(standardizeApiResponse(errorPayload));
     }
-    res.status(200).json(standardizeApiResponse({ message: '메시지가 성공적으로 삭제되었습니다.' }));
+    res.status(200).json(
+      standardizeApiResponse({
+        message: "메시지가 성공적으로 삭제되었습니다.",
+      })
+    );
   } catch (err) {
-    logError('chatControllerDeleteMessage', err);
-     if (err.code === 'MESSAGE_NOT_FOUND') { // Assuming deleteUserMessageFromDB might throw this
-        const errorPayload = createErrorResponse(err.code, err.message);
-        return res.status(getHttpStatusByErrorCode(err.code)).json(standardizeApiResponse(errorPayload));
+    logError("chatControllerDeleteMessage", err);
+    if (err.code === "MESSAGE_NOT_FOUND") {
+      // Assuming deleteUserMessageFromDB might throw this
+      const errorPayload = createErrorResponse(err.code, err.message);
+      return res
+        .status(getHttpStatusByErrorCode(err.code))
+        .json(standardizeApiResponse(errorPayload));
     }
-    const errorPayload = createErrorResponse('SERVER_ERROR', `메시지 삭제 중 오류 발생: ${err.message}`);
-    res.status(getHttpStatusByErrorCode('SERVER_ERROR')).json(standardizeApiResponse(errorPayload));
+    const errorPayload = createErrorResponse(
+      "SERVER_ERROR",
+      `메시지 삭제 중 오류 발생: ${err.message}`
+    );
+    res
+      .status(getHttpStatusByErrorCode("SERVER_ERROR"))
+      .json(standardizeApiResponse(errorPayload));
   }
 }
 
@@ -587,37 +884,64 @@ async function uploadFile(req, res) {
   const sessionId = req.params.session_id;
 
   // Validation for sessionId
-  if (!sessionId || typeof sessionId !== 'string' || sessionId.trim() === '') {
-    const errorPayload = createErrorResponse('INVALID_INPUT', '세션 ID는 필수이며 빈 문자열이 아니어야 합니다.');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  if (!sessionId || typeof sessionId !== "string" || sessionId.trim() === "") {
+    const errorPayload = createErrorResponse(
+      "INVALID_INPUT",
+      "세션 ID는 필수이며 빈 문자열이 아니어야 합니다."
+    );
+    return res
+      .status(getHttpStatusByErrorCode("INVALID_INPUT"))
+      .json(standardizeApiResponse(errorPayload));
   }
   if (sessionId.length > 36) {
-    const errorPayload = createErrorResponse('INVALID_INPUT', '세션 ID가 너무 깁니다 (최대 36자).');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+    const errorPayload = createErrorResponse(
+      "INVALID_INPUT",
+      "세션 ID가 너무 깁니다 (최대 36자)."
+    );
+    return res
+      .status(getHttpStatusByErrorCode("INVALID_INPUT"))
+      .json(standardizeApiResponse(errorPayload));
   }
 
   // Validation for file
   if (!req.file) {
-    const errorPayload = createErrorResponse('INVALID_INPUT', '업로드할 파일이 없습니다.');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+    const errorPayload = createErrorResponse(
+      "INVALID_INPUT",
+      "업로드할 파일이 없습니다."
+    );
+    return res
+      .status(getHttpStatusByErrorCode("INVALID_INPUT"))
+      .json(standardizeApiResponse(errorPayload));
   }
 
   const file = req.file;
-  const allowedMimeTypes = ['image/jpeg', 'image/png', 'application/pdf']; // Example mimetypes
+  const allowedMimeTypes = ["image/jpeg", "image/png", "application/pdf"]; // Example mimetypes
   const maxFileSize = 5 * 1024 * 1024; // 5MB
 
   if (!allowedMimeTypes.includes(file.mimetype)) {
-    const errorPayload = createErrorResponse('INVALID_INPUT', `허용되지 않는 파일 타입입니다. 허용되는 타입: ${allowedMimeTypes.join(', ')}.`);
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+    const errorPayload = createErrorResponse(
+      "INVALID_INPUT",
+      `허용되지 않는 파일 타입입니다. 허용되는 타입: ${allowedMimeTypes.join(
+        ", "
+      )}.`
+    );
+    return res
+      .status(getHttpStatusByErrorCode("INVALID_INPUT"))
+      .json(standardizeApiResponse(errorPayload));
   }
 
   if (file.size > maxFileSize) {
-    const errorPayload = createErrorResponse('INVALID_INPUT', `파일 크기가 너무 큽니다 (최대 ${maxFileSize / (1024 * 1024)}MB).`);
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+    const errorPayload = createErrorResponse(
+      "INVALID_INPUT",
+      `파일 크기가 너무 큽니다 (최대 ${maxFileSize / (1024 * 1024)}MB).`
+    );
+    return res
+      .status(getHttpStatusByErrorCode("INVALID_INPUT"))
+      .json(standardizeApiResponse(errorPayload));
   }
-  
-  const user_id = req.body.user_id || 'guest'; 
-  const messageContent = `파일 업로드: ${file.originalname}`; 
+
+  const user_id = req.body.user_id || "guest";
+  const messageContent = `파일 업로드: ${file.originalname}`;
 
   try {
     const resultData = await withTransaction(async (connection) => {
@@ -627,45 +951,52 @@ async function uploadFile(req, res) {
          RETURNING message_id INTO :messageId`,
         {
           sessionId: sessionId,
-          user_id: user_id, 
+          user_id: user_id,
           messageContent: messageContent,
-          messageId: { type: oracledb.STRING, dir: oracledb.BIND_OUT }
+          messageId: { type: oracledb.STRING, dir: oracledb.BIND_OUT },
         }
         // autoCommit is false by default, which is fine for withTransaction
       );
 
       const messageId = messageResult.outBinds.messageId[0];
       if (!messageId) {
-          // console.error('Error in uploadFile: Failed to save file message to chat_messages.');
-          const errorPayload = createErrorResponse('DB_ERROR', '파일 메시지 저장 중 오류가 발생했습니다.');
-          const err = new Error(errorPayload.error.message);
-          err.code = 'DB_ERROR';
-          throw err;
+        // console.error('Error in uploadFile: Failed to save file message to chat_messages.');
+        const errorPayload = createErrorResponse(
+          "DB_ERROR",
+          "파일 메시지 저장 중 오류가 발생했습니다."
+        );
+        const err = new Error(errorPayload.error.message);
+        err.code = "DB_ERROR";
+        throw err;
       }
 
       const attachment = await saveAttachmentToDB(connection, messageId, file); // Pass connection
       if (!attachment) {
-          // console.error('Error in uploadFile: Failed to save attachment details.');
-          const errorPayload = createErrorResponse('DB_ERROR', '첨부 파일 정보 저장 중 오류가 발생했습니다.');
-          const err = new Error(errorPayload.error.message);
-          err.code = 'DB_ERROR';
-          throw err;
+        // console.error('Error in uploadFile: Failed to save attachment details.');
+        const errorPayload = createErrorResponse(
+          "DB_ERROR",
+          "첨부 파일 정보 저장 중 오류가 발생했습니다."
+        );
+        const err = new Error(errorPayload.error.message);
+        err.code = "DB_ERROR";
+        throw err;
       }
       return { message_id: messageId, file_info: file }; // Return necessary data for the response
     });
-    
-    res.status(201).json(standardizeApiResponse({ 
-      message: '파일이 성공적으로 업로드되었습니다.',
-      message_id: resultData.message_id,
-      file_info: {
-        original_name: resultData.file_info.originalname,
-        file_name: resultData.file_info.filename, 
-        path: resultData.file_info.path,        
-        mimetype: resultData.file_info.mimetype,
-        size: resultData.file_info.size
-      }
-    }));
 
+    res.status(201).json(
+      standardizeApiResponse({
+        message: "파일이 성공적으로 업로드되었습니다.",
+        message_id: resultData.message_id,
+        file_info: {
+          original_name: resultData.file_info.originalname,
+          file_name: resultData.file_info.filename,
+          path: resultData.file_info.path,
+          mimetype: resultData.file_info.mimetype,
+          size: resultData.file_info.size,
+        },
+      })
+    );
   } catch (err) {
     // Rollback is handled by withTransaction. File cleanup should still happen.
     if (req.file && req.file.path) {
@@ -673,45 +1004,67 @@ async function uploadFile(req, res) {
         fs.unlinkSync(req.file.path);
         console.log(`Cleaned up uploaded file: ${req.file.path}`);
       } catch (unlinkErr) {
-        logError('chatControllerUploadFileUnlink', unlinkErr);
+        logError("chatControllerUploadFileUnlink", unlinkErr);
       }
     }
-    logError('chatControllerUploadFile', err);
-    if (err.code === 'DB_ERROR') {
-        const errorPayload = createErrorResponse('DB_ERROR', err.message);
-        return res.status(getHttpStatusByErrorCode('DB_ERROR')).json(standardizeApiResponse(errorPayload));
+    logError("chatControllerUploadFile", err);
+    if (err.code === "DB_ERROR") {
+      const errorPayload = createErrorResponse("DB_ERROR", err.message);
+      return res
+        .status(getHttpStatusByErrorCode("DB_ERROR"))
+        .json(standardizeApiResponse(errorPayload));
     }
-    const errorPayload = createErrorResponse('SERVER_ERROR', `파일 업로드 중 오류 발생: ${err.message}`);
-    res.status(getHttpStatusByErrorCode('SERVER_ERROR')).json(standardizeApiResponse(errorPayload));
+    const errorPayload = createErrorResponse(
+      "SERVER_ERROR",
+      `파일 업로드 중 오류 발생: ${err.message}`
+    );
+    res
+      .status(getHttpStatusByErrorCode("SERVER_ERROR"))
+      .json(standardizeApiResponse(errorPayload));
   }
 }
 
 // 세션의 메시지 목록 조회 컨트롤러
 async function getSessionMessagesController(req, res) {
   const sessionId = req.params.session_id;
-  
+
   // Validation for sessionId
-  if (!sessionId || typeof sessionId !== 'string' || sessionId.trim() === '') {
-    const errorPayload = createErrorResponse('INVALID_INPUT', '세션 ID는 필수이며 빈 문자열이 아니어야 합니다.');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+  if (!sessionId || typeof sessionId !== "string" || sessionId.trim() === "") {
+    const errorPayload = createErrorResponse(
+      "INVALID_INPUT",
+      "세션 ID는 필수이며 빈 문자열이 아니어야 합니다."
+    );
+    return res
+      .status(getHttpStatusByErrorCode("INVALID_INPUT"))
+      .json(standardizeApiResponse(errorPayload));
   }
   if (sessionId.length > 36) {
-    const errorPayload = createErrorResponse('INVALID_INPUT', '세션 ID가 너무 깁니다 (최대 36자).');
-    return res.status(getHttpStatusByErrorCode('INVALID_INPUT')).json(standardizeApiResponse(errorPayload));
+    const errorPayload = createErrorResponse(
+      "INVALID_INPUT",
+      "세션 ID가 너무 깁니다 (최대 36자)."
+    );
+    return res
+      .status(getHttpStatusByErrorCode("INVALID_INPUT"))
+      .json(standardizeApiResponse(errorPayload));
   }
-  
+
   try {
     const messages = await withTransaction(async (connection) => {
-        return await getSessionMessagesForClient(connection, sessionId);
+      return await getSessionMessagesForClient(connection, sessionId);
     });
-    
+
     res.status(200).json(standardizeApiResponse(messages));
   } catch (err) {
-    logError('chatControllerGetSessionMessages', err);
+    logError("chatControllerGetSessionMessages", err);
     // Since getSessionMessagesForClient might throw various errors,
     // a generic server error is appropriate here unless specific codes are thrown.
-    const errorPayload = createErrorResponse('SERVER_ERROR', `메시지 목록 조회 중 오류 발생: ${err.message}`);
-    res.status(getHttpStatusByErrorCode('SERVER_ERROR')).json(standardizeApiResponse(errorPayload));
+    const errorPayload = createErrorResponse(
+      "SERVER_ERROR",
+      `메시지 목록 조회 중 오류 발생: ${err.message}`
+    );
+    res
+      .status(getHttpStatusByErrorCode("SERVER_ERROR"))
+      .json(standardizeApiResponse(errorPayload));
   }
 }
 
@@ -724,5 +1077,5 @@ module.exports = {
   deleteMessageController,
   removeReactionController,
   uploadFile,
-  getSessionMessagesController
+  getSessionMessagesController,
 };

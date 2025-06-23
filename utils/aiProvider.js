@@ -3,9 +3,9 @@
  */
 
 // Import the correctly named function from vertexai.js
-const { getVertexAiApiResponse } = require('../config/vertexai'); 
-const { getOllamaResponse } = require('../config/ollama');
-const { getGeminiApiResponse } = require('../config/geminiapi'); // 새로 추가
+const { getVertexAiApiResponse } = require("../config/vertexai");
+const { getOllamaResponse } = require("../config/ollama");
+const { getGeminiApiResponse } = require("../config/geminiapi"); // 새로 추가
 
 /**
  * 지정된 AI 제공자로부터 채팅 완성을 가져옵니다.
@@ -24,7 +24,7 @@ const { getGeminiApiResponse } = require('../config/geminiapi'); // 새로 추�
  * @throws {Error} 지원되지 않는 AI 제공자가 지정된 경우.
  */
 async function fetchChatCompletion(
-  aiProvider = 'geminiapi', // 기본 제공자를 geminiapi로 변경
+  aiProvider = "geminiapi", // 기본 제공자를 geminiapi로 변경
   currentUserMessage,
   history = [],
   systemMessageText = null,
@@ -32,17 +32,28 @@ async function fetchChatCompletion(
   streamResponseCallback = null,
   options = {}, // Added options parameter
   context = {} // Added context parameter
-) {  // Consolidate model selection for logging
+) {
+  // Consolidate model selection for logging
   let modelToLog;
-  if (aiProvider === 'geminiapi') {
-    modelToLog = options.model_id_override || options.geminiModel || 'gemini-2.0-flash-thinking-exp-01-21';
-  } else if (aiProvider === 'vertexai') {
-    modelToLog = options.vertexModelId || `Vertex AI default (${process.env.VERTEX_AI_MODEL || 'gemini-2.5-pro-exp-03-25'})`;
-  } else if (aiProvider === 'ollama') {
-    modelToLog = options.ollamaModel || 'gemma3:4b';
+  if (aiProvider === "geminiapi") {
+    modelToLog =
+      options.model_id_override ||
+      options.geminiModel ||
+      "gemini-2.0-flash-thinking-exp-01-21";
+  } else if (aiProvider === "vertexai") {
+    modelToLog =
+      options.vertexModelId ||
+      `Vertex AI default (${
+        process.env.VERTEX_AI_MODEL || "gemini-2.5-pro-exp-03-25"
+      })`;
+  } else if (aiProvider === "ollama") {
+    modelToLog = options.ollamaModel || "gemma3:4b";
   }
-  
-  console.log(`[aiProviderUtils] Requesting chat completion. Provider: ${aiProvider}, Model: ${modelToLog}`);  if (aiProvider === 'geminiapi') {
+
+  console.log(
+    `[aiProviderUtils] Requesting chat completion. Provider: ${aiProvider}, Model: ${modelToLog}`
+  );
+  if (aiProvider === "geminiapi") {
     console.log(`[aiProviderUtils] Using Gemini API provider.`);
     return await getGeminiApiResponse(
       currentUserMessage,
@@ -51,14 +62,14 @@ async function fetchChatCompletion(
       specialModeType,
       streamResponseCallback,
       options, // Pass all options to Gemini API
-      context  // Pass context for tools
+      context // Pass context for tools
     );
-  } else if (aiProvider === 'vertexai') {
+  } else if (aiProvider === "vertexai") {
     console.log(`[aiProviderUtils] Using Vertex AI provider.`);
     // Prepare options for Vertex AI, separating Gemini-specific ones.
     const vertexOptions = { ...options };
     delete vertexOptions.geminiModel; // Remove geminiModel if it exists in options for Vertex call
-    
+
     return await getVertexAiApiResponse(
       currentUserMessage,
       history,
@@ -67,9 +78,11 @@ async function fetchChatCompletion(
       streamResponseCallback,
       vertexOptions // Pass the filtered options object
     );
-  } else if (aiProvider === 'ollama') {
-    const ollamaModelToUse = options.ollamaModel || 'gemma3:4b'; // Default if not provided in options
-    console.log(`[aiProviderUtils] Using Ollama provider with model: ${ollamaModelToUse}`);
+  } else if (aiProvider === "ollama") {
+    const ollamaModelToUse = options.ollamaModel || "gemma3:4b"; // Default if not provided in options
+    console.log(
+      `[aiProviderUtils] Using Ollama provider with model: ${ollamaModelToUse}`
+    );
     // Note: getOllamaResponse might also need an options parameter if it needs to handle maxOutputTokens etc.
     // For now, assuming it takes ollamaModel directly as its first argument.
     return await getOllamaResponse(
@@ -77,15 +90,17 @@ async function fetchChatCompletion(
       currentUserMessage,
       history,
       systemMessageText,
-      specialModeType === 'stream' ? streamResponseCallback : null,
+      specialModeType === "stream" ? streamResponseCallback : null,
       options // Pass through options to Ollama in case it can use them (e.g. max_output_tokens)
     );
   } else {
     console.error(`[aiProviderUtils] Unsupported AI provider: ${aiProvider}`);
-    throw new Error(`Unsupported AI provider: ${aiProvider}. Must be 'geminiapi', 'vertexai' or 'ollama'.`);
+    throw new Error(
+      `Unsupported AI provider: ${aiProvider}. Must be 'geminiapi', 'vertexai' or 'ollama'.`
+    );
   }
 }
 
 module.exports = {
-  fetchChatCompletion // Export the renamed function
+  fetchChatCompletion, // Export the renamed function
 };
