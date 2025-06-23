@@ -249,75 +249,71 @@ async function editUserMessage(
   new_content,
   edit_reason = null
 ) {
-  // Removed try-catch and finally for connection management, as it's handled by withTransaction
-  // BEGIN/COMMIT/ROLLBACK are also handled by withTransaction
+  try {
+    // 기존 메시지 조회 및 권한 확인
+    const messageResult = await connection.execute(
+      `SELECT message_content, user_id, message_type, session_id
+       FROM chat_messages
+       WHERE message_id = :message_id AND is_deleted = 0`,
+      { message_id },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
 
-  // 기존 메시지 조회 및 권한 확인
-  const messageResult = await connection.execute(
-    `SELECT message_content, user_id, message_type, session_id
-     FROM chat_messages
-     WHERE message_id = :message_id AND is_deleted = 0`,
-    { message_id },
-    { outFormat: oracledb.OUT_FORMAT_OBJECT }
-  );
+    if (messageResult.rows.length === 0) {
+      const error = new Error("메시지를 찾을 수 없습니다.");
+      error.code = "MESSAGE_NOT_FOUND";
+      throw error;
+    }
 
-  if (messageResult.rows.length === 0) {
-    const error = new Error("메시지를 찾을 수 없습니다.");
-    error.code = "MESSAGE_NOT_FOUND";
-    throw error;
-  }
+    const message = messageResult.rows[0];
+    const oldContent = await clobToString(message.MESSAGE_CONTENT);
 
-  const message = messageResult.rows[0];
-  const oldContent = await clobToString(message.MESSAGE_CONTENT);
+    if (message.USER_ID !== user_id) {
+      const error = new Error("메시지를 편집할 권한이 없습니다.");
+      error.code = "FORBIDDEN";
+      throw error;
+    }
 
-  if (message.USER_ID !== user_id) {
-    const error = new Error("메시지를 편집할 권한이 없습니다.");
-    error.code = "FORBIDDEN";
-    throw error;
-  }
+    if (message.MESSAGE_TYPE === "ai") {
+      const error = new Error("AI 메시지는 편집할 수 없습니다.");
+      error.code = "INVALID_OPERATION"; // Or a more specific code
+      throw error;
+    }
 
-  if (message.MESSAGE_TYPE === "ai") {
-    const error = new Error("AI 메시지는 편집할 수 없습니다.");
-    error.code = "INVALID_OPERATION"; // Or a more specific code
-    throw error;
-  }
+    // 편집 기록 저장
+    await connection.execute(
+      `INSERT INTO message_edit_history
+       (message_id, old_content, new_content, edit_reason, edited_by)
+       VALUES (:message_id, :old_content, :new_content, :edit_reason, :edited_by)`,
+      {
+        message_id,
+        old_content: oldContent,
+        new_content,
+        edit_reason,
+        edited_by: user_id,
+      },
+      { autoCommit: false }
+    );
 
-  // 편집 기록 저장
-  await connection.execute(
-    `INSERT INTO message_edit_history
-     (message_id, old_content, new_content, edit_reason, edited_by)
-     VALUES (:message_id, :old_content, :new_content, :edit_reason, :edited_by)`,
-    {
+    // 메시지 업데이트
+    await connection.execute(
+      `UPDATE chat_messages
+       SET message_content = :new_content,
+           is_edited = 1,
+           edited_at = SYSTIMESTAMP
+       WHERE message_id = :message_id`,
+      { message_id, new_content },
+      { autoCommit: false }
+    );
+
+    return {
+      success: true, // This structure might change with standardized responses
       message_id,
       old_content: oldContent,
       new_content,
-      edit_reason,
-      edited_by: user_id,
-    },
-    { autoCommit: false }
-  );
-
-  // 메시지 업데이트
-  await connection.execute(
-    `UPDATE chat_messages
-     SET message_content = :new_content,
-         is_edited = 1,
-         edited_at = SYSTIMESTAMP
-     WHERE message_id = :message_id`,
-    { message_id, new_content },
-    { autoCommit: false }
-  );
-
-  return {
-    success: true, // This structure might change with standardized responses
-    message_id,
-    old_content: oldContent,
-    new_content,
-    session_id: message.SESSION_ID,
-    edited_at: new Date().toISOString(), // Consider if DB should provide this
-  };
-  // Removed catch block here; errors will propagate to withTransaction
-  // Ensure errors are thrown correctly to be caught by withTransaction
+      session_id: message.SESSION_ID,
+      edited_at: new Date().toISOString(), // Consider if DB should provide this
+    };
   } catch (err) {
     if (err.code === "MESSAGE_NOT_FOUND" || err.code === "FORBIDDEN" || err.code === "INVALID_OPERATION") {
       throw err; // Rethrow specific known errors

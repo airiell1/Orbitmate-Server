@@ -693,34 +693,7 @@ async function toggleUserBadge(connection, user_id, badge_id, is_equipped) {
 // handleUserActivity, upgradeBadgeLevel, approveBadgeUpgrade 등도 connection을 인자로 받고,
 // 내부 DB 호출 시 autoCommit: false, 에러 처리 등을 적용해야 합니다.
 
-
 module.exports = {
-  registerUser,
-  loginUser,
-  getUserSettings,
-  updateUserSettings,
-  updateUserProfileImage,
-  getUserProfile,
-  updateUserProfile,
-  addUserExperience, // 두 개 중 하나 선택 (아래 것이 더 상세함)
-  deleteUser,
-  checkEmailExists,
-  getUserCustomization,
-  updateUserCustomization,
-  getUserLevel,
-  // addUserExperience, // 위와 중복, 아래 것으로 대체
-  getUserBadges,
-  toggleUserBadge,
-  checkAndGrantBadges, // connection 인자 추가 필요
-  getTranslationResources,
-  updateUserLanguage,
-  upgradeBadgeLevel, // connection 인자 추가 필요
-  handleBugReport, // 내부적으로 handleUserActivity 호출, handleUserActivity 수정 필요
-  handleFeedbackSubmission, // ""
-  handleTestParticipation, // ""
-  upgradeSubscriptionBadge, // connection 인자 추가 필요
-  approveBadgeUpgrade, // connection 인자 추가 필요
-};
   registerUser,
   loginUser,
   getUserSettings,
