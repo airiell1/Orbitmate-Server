@@ -1,49 +1,46 @@
 const { VertexAI } = require("@google-cloud/vertexai");
-require("dotenv").config();
-const path = require("path");
-const { logError } = require("../utils/errorHandler"); // Import logError
+const config = require("./index"); // 중앙 설정 파일 import
+const { logError } = require("../utils/errorHandler");
 
-// Vertex AI 설정
+// Vertex AI 설정 (중앙 설정 파일에서 가져옴)
 let vertex_ai, generativeModel;
-const project = process.env.GOOGLE_PROJECT_ID;
-const keyFilename = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-const location = "global";
+const project = config.ai.vertexAi.projectId;
+const keyFilename = config.ai.vertexAi.applicationCredentials;
+const location = config.ai.vertexAi.location;
+const defaultModelId = config.ai.vertexAi.defaultModel;
+
+// 기본 generationConfig, 필요시 중앙 설정으로 이동 가능
+const defaultGenerationConfig = {
+  temperature: 0.8,
+  topP: 0.95,
+  maxOutputTokens: 65535, // Vertex AI의 기본 최대값 또는 서비스 한도에 따름
+};
 
 if (project && keyFilename) {
   try {
     vertex_ai = new VertexAI({ project, location, keyFilename });
-    const modelId = process.env.VERTEX_AI_MODEL || "gemini-2.5-pro-exp-03-25"; // Consistent model ID var name
-    console.log(`Attempting to initialize Vertex AI model: ${modelId}`);
+    console.log(`[VertexAI] Attempting to initialize model: ${defaultModelId}`);
 
     generativeModel = vertex_ai.getGenerativeModel({
-      model: modelId, // Use the variable
-      generationConfig: {
-        temperature: 0.8,
-        topP: 0.95,
-        maxOutputTokens: 65535,
-      },
-      // safetySettings can be configured here if needed, following Vertex AI SDK documentation.
-      // Example:
-      // safetySettings: [
-      //   { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-      // ],
+      model: defaultModelId,
+      generationConfig: defaultGenerationConfig,
+      // safetySettings 등 추가 설정 가능
     });
-    console.log(`Vertex AI model '${modelId}' initialized successfully.`);
+    console.log(`[VertexAI] Model '${defaultModelId}' initialized successfully.`);
   } catch (error) {
     logError(
       "vertexAiConfig:startup",
-      "Failed to initialize Vertex AI client or model during startup",
-      error
+      new Error(`Failed to initialize Vertex AI client or model '${defaultModelId}' during startup: ${error.message}`), // Error 객체로 전달
+      { originalError: error } // 상세 오류는 context로
     );
-    // vertex_ai and generativeModel will remain undefined or partially defined.
-    // The getVertexAiApiResponse function will handle this.
   }
 } else {
-  logError(
-    "vertexAiConfig:startup",
-    "Vertex AI credentials (GOOGLE_PROJECT_ID, GOOGLE_APPLICATION_CREDENTIALS) are not set. Vertex AI will not be available.",
-    null
-  );
+   const message = "Vertex AI credentials (GOOGLE_PROJECT_ID, GOOGLE_APPLICATION_CREDENTIALS) are not set. Vertex AI will not be available.";
+   if (config.ai.defaultProvider === 'vertexai') {
+    console.error(`[VertexAI] ${message}`);
+   } else {
+    console.warn(`[VertexAI] ${message}`);
+   }
 }
 
 // AI 응답을 가져오는 함수 (Vertex AI 전용)
@@ -53,364 +50,173 @@ async function getVertexAiApiResponse(
   systemMessageText = null,
   specialModeType = null,
   streamResponseCallback = null,
-  options = {}
+  options = {} // options 객체에 model_id_override, generationConfig, max_output_tokens_override 포함 가능
 ) {
-  console.log(`Executing Vertex AI (Gemini) logic.`);
+  console.log(`[VertexAI] Executing Vertex AI (Gemini) logic.`);
 
-  // 1. Check if Vertex AI client is initialized
   if (!vertex_ai) {
-    const errorMsg =
-      "Vertex AI client not initialized. Check GOOGLE_PROJECT_ID and GOOGLE_APPLICATION_CREDENTIALS.";
-    logError("getVertexAiApiResponse:init", errorMsg, null);
-    if (
-      specialModeType === "stream" &&
-      typeof streamResponseCallback === "function"
-    ) {
+    const errorMsg = "Vertex AI client not initialized. Check credentials and logs.";
+    logError("getVertexAiApiResponse:init", new Error(errorMsg));
+    if (streamResponseCallback && typeof streamResponseCallback === "function") {
       streamResponseCallback(null, new Error(errorMsg));
       return null;
     }
     throw new Error(errorMsg);
   }
 
-  // 2. Determine the model to use and ensure it's available
-  const modelIdToUse =
-    options.model_id_override ||
-    generativeModel?.model ||
-    process.env.VERTEX_AI_MODEL ||
-    "gemini-2.5-pro-exp-03-25";
-  let currentGenerativeModel;
+  const modelIdToUse = options.model_id_override || defaultModelId;
+  let currentGenerativeModel = generativeModel; // 기본적으로 시작 시 초기화된 모델 사용
 
-  if (
-    options.model_id_override &&
-    options.model_id_override !== generativeModel?.model
-  ) {
-    console.log(
-      `Using dynamically configured Vertex AI model: ${modelIdToUse}`
-    );
+  // 모델 ID가 다르거나, 현재 모델이 초기화되지 않은 경우 (시작 시 실패) 동적으로 모델 가져오기
+  if (modelIdToUse !== defaultModelId || !currentGenerativeModel) {
+    console.log(`[VertexAI] Using dynamically configured model: ${modelIdToUse}`);
     try {
-      // Ensure generationConfig from original model or defaults is applied if needed
-      const baseGenerationConfig = generativeModel?.generationConfig || {
-        temperature: 0.8,
-        topP: 0.95,
-        maxOutputTokens: 65535,
-      };
       currentGenerativeModel = vertex_ai.getGenerativeModel({
         model: modelIdToUse,
-        generationConfig: {
-          // Apply base config to new model instance
-          ...baseGenerationConfig,
-          ...(options.generationConfig || {}), // Allow overriding generationConfig via options
+        generationConfig: { // options.generationConfig가 있으면 그것을 우선 사용, 없으면 기본값
+          ...defaultGenerationConfig,
+          ...(options.generationConfig || {}),
         },
       });
     } catch (error) {
       const errorMsg = `Failed to initialize overridden Vertex AI model '${modelIdToUse}': ${error.message}`;
-      logError("getVertexAiApiResponse:modelInit", errorMsg, error);
-      if (
-        specialModeType === "stream" &&
-        typeof streamResponseCallback === "function"
-      ) {
+      logError("getVertexAiApiResponse:modelInit", new Error(errorMsg), { originalError: error });
+      if (streamResponseCallback && typeof streamResponseCallback === "function") {
         streamResponseCallback(null, new Error(errorMsg));
         return null;
       }
       throw new Error(errorMsg);
     }
-  } else if (generativeModel) {
-    // Use the initially configured model
-    currentGenerativeModel = generativeModel;
-    // If options specify different generation config for the *same* model, re-get it or adjust.
-    // For simplicity, if model ID is same, we assume initial genConfig is fine unless overridden by options.generationConfig
-    if (options.generationConfig) {
-      console.log(
-        `Applying custom generationConfig for model ${currentGenerativeModel.model}`
-      );
-      // This creates a new model instance with updated generation config.
-      // This is how the underlying SDK seems to work; it doesn't modify in-place.
-      try {
+  } else if (options.generationConfig) { // 같은 모델이지만 generationConfig만 변경하는 경우
+     console.log(`[VertexAI] Applying custom generationConfig for model ${modelIdToUse}`);
+     try {
         currentGenerativeModel = vertex_ai.getGenerativeModel({
-          model: currentGenerativeModel.model, // existing model ID
+          model: modelIdToUse,
           generationConfig: {
-            ...currentGenerativeModel.generationConfig,
-            ...options.generationConfig,
+            ...currentGenerativeModel.generationConfig, // 기존 모델의 generationConfig를 기본으로
+            ...options.generationConfig, // options에 있는 값으로 덮어쓰기
           },
         });
-      } catch (error) {
-        const errorMsg = `Failed to apply new generationConfig to Vertex AI model '${currentGenerativeModel.model}': ${error.message}`;
-        logError("getVertexAiApiResponse:genConfig", errorMsg, error);
-        if (
-          specialModeType === "stream" &&
-          typeof streamResponseCallback === "function"
-        ) {
+     } catch (error) {
+        const errorMsg = `Failed to apply new generationConfig to Vertex AI model '${modelIdToUse}': ${error.message}`;
+        logError("getVertexAiApiResponse:genConfig", new Error(errorMsg), { originalError: error });
+        if (streamResponseCallback && typeof streamResponseCallback === "function") {
           streamResponseCallback(null, new Error(errorMsg));
           return null;
         }
         throw new Error(errorMsg);
-      }
-    }
+     }
   }
-  // Else, generativeModel was not initialized during startup.
+
 
   if (!currentGenerativeModel) {
-    // This case covers if generativeModel was null (startup failure) AND no override was provided,
-    // OR if an override was provided but it failed to initialize.
-    const errorMsg = `Vertex AI model '${modelIdToUse}' not available. It might not have been initialized correctly at startup or the override failed.`;
-    logError("getVertexAiApiResponse:modelNotAvailable", errorMsg, null);
-    if (
-      specialModeType === "stream" &&
-      typeof streamResponseCallback === "function"
-    ) {
+    const errorMsg = `Vertex AI model '${modelIdToUse}' not available.`;
+    logError("getVertexAiApiResponse:modelNotAvailable", new Error(errorMsg));
+    if (streamResponseCallback && typeof streamResponseCallback === "function") {
       streamResponseCallback(null, new Error(errorMsg));
       return null;
     }
     throw new Error(errorMsg);
   }
-  console.log(`Using Vertex AI model: ${currentGenerativeModel.model}`);
+  console.log(`[VertexAI] Using model: ${currentGenerativeModel.model}`);
 
-  // Vertex AI specific logic starts here directly
   let conversationContents = [];
+  let finalSystemMessageText = systemMessageText ? systemMessageText.trim() : "";
 
-  // Initialize finalSystemMessageText with the base systemMessageText if provided.
-  let finalSystemMessageText = systemMessageText
-    ? systemMessageText.trim()
-    : "";
-
-  // Augment system prompt based on specialModeType
   if (specialModeType === "canvas") {
-    const canvasSystemPrompt =
-      "중요: 당신은 HTML, CSS, JavaScript 코드를 생성하는 AI입니다. " +
-      "사용자의 요청에 따라 웹 페이지의 구조(HTML)와 스타일(CSS)을 제공해야 합니다. " +
-      "각 코드는 반드시 마크다운 코드 블록(예: ```html ... ```, ```css ... ```)으로 감싸서 제공해주세요. " +
-      "HTML에는 기본적인 구조를 포함하고, CSS는 해당 HTML을 스타일링하는 내용을 포함해야 합니다. " +
-      "JavaScript가 필요하다면 그것도 코드 블록으로 제공해주세요. " +
-      "만약 사용자가 '캔버스에 그림 그려줘' 같이 모호하게 요청하면, 구체적으로 어떤 그림인지 되묻거나 간단한 예시를 제시할 수 있습니다. " +
-      "생성된 코드는 바로 웹페이지에 적용될 수 있도록 완전한 형태로 제공하는 것을 목표로 합니다.";
-    finalSystemMessageText = finalSystemMessageText
-      ? `${finalSystemMessageText}\n\n${canvasSystemPrompt}`
-      : canvasSystemPrompt;
-    console.log(
-      "Canvas mode: System prompt augmented for HTML/CSS/JS code generation."
-    );
+    const canvasSystemPrompt = "중요: 당신은 HTML, CSS, JavaScript 코드를 생성하는 AI입니다. 사용자의 요청에 따라 웹 페이지의 구조(HTML)와 스타일(CSS)을 제공해야 합니다. 각 코드는 반드시 마크다운 코드 블록(예: ```html ... ```, ```css ... ```)으로 감싸서 제공해주세요. HTML에는 기본적인 구조를 포함하고, CSS는 해당 HTML을 스타일링하는 내용을 포함해야 합니다. JavaScript가 필요하다면 그것도 코드 블록으로 제공해주세요. 만약 사용자가 '캔버스에 그림 그려줘' 같이 모호하게 요청하면, 구체적으로 어떤 그림인지 되묻거나 간단한 예시를 제시할 수 있습니다. 생성된 코드는 바로 웹페이지에 적용될 수 있도록 완전한 형태로 제공하는 것을 목표로 합니다.";
+    finalSystemMessageText = finalSystemMessageText ? `${finalSystemMessageText}\n\n${canvasSystemPrompt}` : canvasSystemPrompt;
   } else if (specialModeType === "search") {
-    const searchSystemPrompt =
-      "Please answer based on web search results if necessary. Provide concise answers with relevant information found.";
-    finalSystemMessageText = finalSystemMessageText
-      ? `${finalSystemMessageText}\n${searchSystemPrompt}`
-      : searchSystemPrompt;
-    console.log(
-      "Search mode: System prompt augmented for search-based concise answers."
-    );
-  } else if (specialModeType === "stream") {
-    // For stream mode, typically no major system prompt augmentation is needed by default,
-    // unless a specific streaming behavior instruction is desired.
-    console.log(
-      "Stream mode: System prompt will be used as is or with minimal stream-specific additions if any."
-    );
-    // Example for future:
-    // const streamEnhancement = "Provide your response in a continuous stream, ensuring each part is a complete thought or sentence if possible.";
-    // finalSystemMessageText = finalSystemMessageText
-    //     ? `${finalSystemMessageText}\n${streamEnhancement}`
-    //     : streamEnhancement;
+    const searchSystemPrompt = "Please answer based on web search results if necessary. Provide concise answers with relevant information found.";
+    finalSystemMessageText = finalSystemMessageText ? `${finalSystemMessageText}\n${searchSystemPrompt}` : searchSystemPrompt;
   }
 
-  // Construct the systemInstruction object for Vertex AI API
-  // Only include systemInstruction if finalSystemMessageText has content after trimming.
-  const systemInstruction =
-    finalSystemMessageText && finalSystemMessageText.trim() !== ""
-      ? { parts: [{ text: finalSystemMessageText.trim() }] } // Ensure trimmed text
-      : null;
+  const systemInstruction = finalSystemMessageText && finalSystemMessageText.trim() !== ""
+    ? { parts: [{ text: finalSystemMessageText.trim() }] }
+    : null;
 
-  if (systemInstruction) {
-    console.log(
-      "Final System Instruction being sent to Vertex AI:",
-      JSON.stringify(systemInstruction, null, 2)
-    );
-  }
-
-  // 2. Prepare conversation history (ensure it's an array of {role, parts} objects)
   conversationContents = [...history];
-
-  // 3. 현재 사용자 입력 중복 방지
   const lastMsg = conversationContents[conversationContents.length - 1];
-  if (
-    !lastMsg ||
-    lastMsg.role !== "user" ||
-    !lastMsg.parts ||
-    !lastMsg.parts[0] ||
-    lastMsg.parts[0].text !== currentUserMessage
-  ) {
-    conversationContents.push({
-      role: "user",
-      parts: [{ text: currentUserMessage }],
-    });
+  if (!lastMsg || lastMsg.role !== "user" || !lastMsg.parts || !lastMsg.parts[0] || lastMsg.parts[0].text !== currentUserMessage) {
+    conversationContents.push({ role: "user", parts: [{ text: currentUserMessage }] });
   }
 
-  const generationConfig = {
-    // Default generation config
-    temperature: 0.8,
-    topP: 0.95,
-    maxOutputTokens: 65535, // Default max, can be overridden by options
-  };
-
-  // Override maxOutputTokens if a valid value is provided in options
+  // generationConfig를 currentGenerativeModel에서 가져오고, options.max_output_tokens_override로 덮어쓰기
+  const finalGenerationConfig = { ...currentGenerativeModel.generationConfig };
   if (options.max_output_tokens_override !== undefined) {
     const userMaxTokens = parseInt(options.max_output_tokens_override, 10);
     if (!isNaN(userMaxTokens) && userMaxTokens > 0) {
-      generationConfig.maxOutputTokens = userMaxTokens;
-      console.log(`Overriding maxOutputTokens to: ${userMaxTokens}`);
+      finalGenerationConfig.maxOutputTokens = userMaxTokens;
+      console.log(`[VertexAI] Overriding maxOutputTokens to: ${userMaxTokens}`);
     } else {
-      logError(
-        "getVertexAiApiResponse:genConfig",
-        `Invalid max_output_tokens_override: ${options.max_output_tokens_override}. Using default ${generationConfig.maxOutputTokens}.`,
-        null
-      );
-      // Keeps the default 65535 or a previously set valid value.
+      logError("getVertexAiApiResponse:genConfig", new Error(`Invalid max_output_tokens_override: ${options.max_output_tokens_override}. Using default ${finalGenerationConfig.maxOutputTokens}.`));
     }
   }
 
-  // Construct the final request object for Vertex AI API
   const request = {
     contents: conversationContents,
     systemInstruction: systemInstruction,
-    generationConfig: generationConfig,
+    generationConfig: finalGenerationConfig, // 최종적으로 결정된 generationConfig 사용
   };
 
-  console.log("Vertex AI Request (final):", JSON.stringify(request, null, 2));
+  console.log("[VertexAI] Request (final):", JSON.stringify(request, null, 2).substring(0, 500) + "...");
+
 
   try {
-    if (
-      specialModeType === "stream" &&
-      typeof streamResponseCallback === "function"
-    ) {
-      let streamErrorOccurred = false; // Flag to track if an error was sent via callback during streaming
-      const streamResult = await currentGenerativeModel.generateContentStream(
-        request
-      );
+    if (streamResponseCallback && typeof streamResponseCallback === "function") {
+      let streamErrorOccurred = false;
+      const streamResult = await currentGenerativeModel.generateContentStream(request);
       for await (const item of streamResult.stream) {
-        if (
-          item &&
-          item.candidates &&
-          item.candidates[0] &&
-          item.candidates[0].content &&
-          item.candidates[0].content.parts &&
-          item.candidates[0].content.parts.length > 0
-        ) {
-          const chunkText = item.candidates[0].content.parts
-            .map((part) => part.text)
-            .join("");
-          streamResponseCallback(chunkText); // Send content chunk
+        if (item && item.candidates && item.candidates[0] && item.candidates[0].content && item.candidates[0].content.parts && item.candidates[0].content.parts.length > 0) {
+          const chunkText = item.candidates[0].content.parts.map((part) => part.text).join("");
+          streamResponseCallback(chunkText);
         } else {
           const streamError = new Error("Malformed stream item from Vertex AI");
-          logError(
-            "getVertexAiApiResponse:streamError",
-            "Malformed stream item received during streaming",
-            { item }
-          );
-          streamResponseCallback(null, streamError); // Send error via callback
+          logError("getVertexAiApiResponse:streamError", streamError, { item });
+          streamResponseCallback(null, streamError);
           streamErrorOccurred = true;
-          break; // Exit the loop on malformed item
+          break;
         }
       }
-
-      // After the loop, if no error occurred during streaming, signal successful completion.
       if (!streamErrorOccurred) {
-        streamResponseCallback(null, null); // Signal end of successful stream
+        streamResponseCallback(null, null); // 스트림 성공적 종료 알림
       }
-      return null; // Indicate that the response was handled via streaming
+      // 스트리밍 응답의 경우, 전체 content를 반환하지 않고 콜백으로 처리했음을 나타내기 위해 null 또는 특정 객체 반환
+      return { streaming_handled: true, model_used: currentGenerativeModel.model, provider: "vertexai" };
     } else {
-      // Non-streaming call
       const result = await currentGenerativeModel.generateContent(request);
-      if (
-        result &&
-        result.response &&
-        result.response.candidates &&
-        result.response.candidates.length > 0 &&
-        result.response.candidates[0].content &&
-        result.response.candidates[0].content.parts &&
-        result.response.candidates[0].content.parts.length > 0
-      ) {
-        const aiResponseText = result.response.candidates[0].content.parts
-          .map((part) => part.text)
-          .join("");
-        console.log("Vertex AI 응답 (일반):", aiResponseText);
-        const actual_output_tokens =
-          result.response.usageMetadata?.candidatesTokenCount || 0;
-        const input_tokens_processed =
-          result.response.usageMetadata?.promptTokenCount || 0;
+      if (result && result.response && result.response.candidates && result.response.candidates.length > 0 &&
+          result.response.candidates[0].content && result.response.candidates[0].content.parts &&
+          result.response.candidates[0].content.parts.length > 0) {
+        const aiResponseText = result.response.candidates[0].content.parts.map((part) => part.text).join("");
         return {
           content: aiResponseText,
-          actual_output_tokens: actual_output_tokens,
-          input_tokens_processed: input_tokens_processed,
+          actual_output_tokens: result.response.usageMetadata?.candidatesTokenCount || 0,
+          input_tokens_processed: result.response.usageMetadata?.promptTokenCount || 0,
+          model_used: currentGenerativeModel.model,
+          provider: "vertexai",
         };
       } else {
-        const errorMsg =
-          "Invalid AI response structure from Vertex AI (non-streaming).";
-        logError("getVertexAiApiResponse:invalidResponse", errorMsg, {
-          response: result.response,
-        });
+        const errorMsg = "Invalid AI response structure from Vertex AI (non-streaming).";
+        logError("getVertexAiApiResponse:invalidResponse", new Error(errorMsg), { response: result.response });
         throw new Error(errorMsg);
       }
     }
   } catch (error) {
-    logError(
-      "getVertexAiApiResponse:apiCall",
-      "Vertex AI API call error",
-      error
-    );
+    logError("getVertexAiApiResponse:apiCall", new Error(`Vertex AI API call failed: ${error.message}`), { originalError: error, requestDetails: { modelIdToUse, systemInstructionIsSet: !!systemInstruction } });
     if (error.message && error.message.includes("<!DOCTYPE")) {
-      // These console.errors provide specific debugging info not easily passed to logError's message
-      console.error(
-        "HTML 응답을 받았습니다. 인증 또는 네트워크 문제일 수 있습니다."
-      );
-      console.error("이 오류는 주로 다음 문제로 발생합니다:");
-      console.error("1. Google Cloud 인증 정보가 잘못되었거나 만료됨");
-      console.error("2. 네트워크/프록시 설정 문제");
-      console.error("3. Vertex AI 서비스 접근 권한 부족");
+      console.error("[VertexAI] HTML response received. This often indicates authentication or network issues.");
     }
-    if (error.response && error.response.data) {
-      // SDK specific error structure
-      console.error("오류 응답 데이터 (SDK):", error.response.data);
-    }
-    try {
-      if (
-        error.response &&
-        error.response.body &&
-        typeof error.response.body.toString === "function"
-      ) {
-        const bodyText = error.response.body.toString();
-        console.error(
-          "응답 본문 내용 (SDK):",
-          bodyText.substring(0, 500) + "..."
-        );
-      }
-    } catch (bodyError) {
-      logError(
-        "getVertexAiApiResponse:apiCallBodyError",
-        "Failed to parse error response body",
-        bodyError
-      );
-    }
-
-    // Ensure callback for stream or re-throw for non-stream
-    if (
-      specialModeType === "stream" &&
-      typeof streamResponseCallback === "function"
-    ) {
-      // If streamResponseCallback was already called with an error (e.g., inside the loop), this might be redundant.
-      // However, this catch block handles errors from currentGenerativeModel.generateContentStream() itself
-      // or errors from currentGenerativeModel.generateContent().
-      streamResponseCallback(null, error); // Pass the original error
-      return null; // Stop further processing for stream
+    if (streamResponseCallback && typeof streamResponseCallback === "function") {
+      streamResponseCallback(null, error);
+      return { streaming_handled: true, error: true, model_used: modelIdToUse, provider: "vertexai" };
     } else {
-      // For non-streaming errors, or errors setting up the stream.
-      // Wrapping the original error for context.
-      throw new Error(`Vertex AI API call failed: ${error.message}`);
+      throw error; // Re-throw for non-streaming errors
     }
   }
-  // Removed the outer 'else if (providerToUse === 'vertexai')' and 'else' blocks
-  // as this function is now solely for Vertex AI.
 }
 
 module.exports = {
-  getVertexAiApiResponse, // Updated function name
-  vertex_ai: vertex_ai, // Export the initialized client (or undefined if failed)
-  generativeModel: generativeModel, // Export the initially configured model (or undefined)
+  getVertexAiApiResponse,
+  // vertex_ai 및 generativeModel은 내부적으로만 사용하고 직접 export하지 않음
 };

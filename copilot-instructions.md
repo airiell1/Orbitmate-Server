@@ -273,6 +273,84 @@
   - models/user.js: handleUserActivity 통합 함수 추가, 기존 3개 함수는 래퍼로 하위 호환성 유지
   - controllers/userController.js: handleUserActivityController 통합 컨트롤러 추가, 기존 3개 컨트롤러는 래퍼로 변경
   - 동일한 기능(경험치 지급, 활동 로그, 뱃지 처리)을 하나의 함수에서 activity_type으로 분기 처리하여 코드 중복 제거
+[YYYY-MM-DD] 코드베이스 리팩토링: 설정 관리 중앙화, DB 연결/트랜잭션 관리 개선, API 응답 및 에러 처리 표준화, 모델/컨트롤러 구조 개선 (진행중 - Jules)
+
+---
+## 중요: 코드베이스 리팩토링 관련 최신 지침 (YYYY-MM-DD 업데이트)
+
+이 프로젝트는 최근 주요 리팩토링을 거쳤습니다. 아래 지침을 반드시 숙지하고 코드를 수정해주십시오.
+
+### 1. 설정 관리 (`config/index.js`)
+
+- 모든 환경 변수 및 주요 설정은 `config/index.js` 파일을 통해 접근해야 합니다.
+- `process.env`를 코드베이스 다른 곳에서 직접 사용하지 마십시오.
+- 예시: `const config = require('../config'); const dbUser = config.database.user;`
+
+### 2. 데이터베이스 연결 및 트랜잭션 (`utils/dbUtils.js`의 `withTransaction`)
+
+- **모델 함수**:
+    - 모든 데이터베이스 작업을 수행하는 모델 함수는 첫 번째 인자로 `connection` 객체를 받아야 합니다.
+    - 모델 함수 내에서 `getConnection()`, `connection.close()`, `connection.commit()`, `connection.rollback()`을 직접 호출해서는 안 됩니다.
+    - SQL 실행 시 `autoCommit` 옵션은 `false`로 설정하거나, `withTransaction`의 기본 동작에 맡깁니다 (일반적으로 불필요).
+- **컨트롤러 함수**:
+    - 데이터베이스 트랜잭션이 필요한 모든 컨트롤러 로직은 `utils/dbUtils.js`의 `withTransaction(async (connection) => { ... })` 유틸리티 함수로 감싸야 합니다.
+    - 이 콜백 함수 내에서 모델 함수를 호출할 때 `connection` 객체를 전달합니다.
+- 예시 (컨트롤러):
+  ```javascript
+  const { withTransaction } = require("../utils/dbUtils");
+  const myModel = require("../models/myModel");
+
+  async function myController(req, res, next) {
+    try {
+      const result = await withTransaction(async (connection) => {
+        // 단일 DB 작업
+        const data = await myModel.getData(connection, req.params.id);
+        // 여러 DB 작업 (트랜잭션으로 묶임)
+        // await myModel.updateData(connection, req.params.id, req.body);
+        // await myModel.logAction(connection, req.user.id, "UPDATE");
+        return data;
+      });
+      // 응답 처리 (standardizeApiResponse 사용)
+      const apiResponse = standardizeApiResponse(result);
+      res.status(apiResponse.statusCode).json(apiResponse.body);
+    } catch (error) {
+      next(error); // 중앙 에러 핸들러로 전달
+    }
+  }
+  ```
+
+### 3. API 응답 형식 (`utils/apiResponse.js`)
+
+- 모든 컨트롤러의 API 응답은 `utils/apiResponse.js`의 `standardizeApiResponse(data, error = null)` 함수를 사용하여 생성해야 합니다.
+- 이 함수는 `{ statusCode, body }` 객체를 반환합니다.
+- 컨트롤러에서는 `res.status(apiResponse.statusCode).json(apiResponse.body);` 형태로 응답합니다.
+- 성공 시: `standardizeApiResponse(dataToReturn)` -> `{ statusCode: 2xx, body: { status: 'success', data: ... } }`
+- 에러 시: `standardizeApiResponse(null, errorObject)` -> `{ statusCode: 4xx/5xx, body: { status: 'error', error: { code, message, details } } }` (에러 객체는 `code`, `message`, `details` 속성을 가질 수 있음)
+
+### 4. 에러 처리 (`utils/errorHandler.js`)
+
+- **컨트롤러**:
+    - `try...catch` 블록을 사용하여 모든 잠재적 에러를 포착해야 합니다.
+    - `catch` 블록에서는 에러 객체에 `code` (예: `INVALID_INPUT`, `USER_NOT_FOUND`)와 `message`를 명확히 설정한 후, `next(error)`를 호출하여 중앙 에러 핸들러로 전달합니다.
+    - 직접 `res.status().json()`으로 에러 응답을 보내지 마십시오.
+- **모델**:
+    - DB 관련 에러 발생 시, `utils/errorHandler.js`의 `handleOracleError(oraError)` 함수를 사용하여 표준화된 에러 객체(Error 인스턴스에 `code`, `message`, `details` 포함)를 생성하여 `throw` 해야 합니다.
+    - 비즈니스 로직 상의 특정 에러(예: "리소스를 찾을 수 없음")는 `code`와 `message`를 가진 새로운 `Error` 객체를 생성하여 `throw` 합니다.
+- **중앙 에러 핸들러**:
+    - `app.js`에 등록된 `handleCentralError` 미들웨어가 `next(error)`로 전달된 모든 에러를 최종적으로 처리하고, `standardizeApiResponse`를 사용하여 클라이언트에 응답합니다.
+
+### 5. 로깅
+
+- 코드 내에서 직접 `console.log`, `console.warn`, `console.error` 사용을 최소화해주십시오.
+- 디버깅 목적의 로그는 개발 중에만 사용하고, 커밋 전에는 제거하거나 조건부 로깅으로 변경해주십시오.
+- 주요 에러 로깅은 중앙 에러 핸들러의 `logError` 함수를 통해 이루어집니다. (향후 별도 로거 도입 가능성 있음)
+
+### 6. CLOB 처리 (`utils/dbUtils.js`)
+- Oracle DB의 CLOB 데이터 타입은 `utils/dbUtils.js`의 `clobToString(clob)` 또는 `convertClobFields(data)` 함수를 사용하여 문자열로 변환해야 합니다.
+- 모델 함수에서 DB 조회 결과 중 CLOB 필드가 있다면, 이 유틸리티를 사용하여 적절히 변환 후 반환해주십시오.
+
+---
+(기존 내용은 여기에 이어짐)
 
 ---
 

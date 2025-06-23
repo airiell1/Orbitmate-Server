@@ -84,7 +84,13 @@ async function startServer() {  try {
     // 서버 상태 확인용 엔드포인트
     app.get('/api/health', (req, res) => {
       res.json({ status: 'ok', timestamp: new Date().toISOString() });
-    });    const port = process.env.PORT || 7777;
+    });
+
+    // 중앙 에러 핸들링 미들웨어 등록 (모든 라우트 및 일반 미들웨어 뒤에 위치)
+    const { handleCentralError } = require('./utils/errorHandler');
+    app.use(handleCentralError);
+
+    const port = process.env.PORT || 7777; // config.port를 사용하는 것이 더 일관적일 수 있음
     
     // ** Express 서버 시작 **
     app.listen(port, () => {
