@@ -456,7 +456,7 @@ async function getUserBadgeDetailsController(req, res, next) {
 module.exports = {
   registerUserController,
   loginUserController,
-  getUserSettingsController, // Already done
+  getUserSettingsController,
   updateUserSettingsController,
   uploadProfileImageController,
   deleteUserController,

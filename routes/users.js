@@ -8,7 +8,7 @@ const {
   deleteUserController,
   getUserProfileController,
   updateUserProfileController,
-  checkEmailExists,
+  checkEmailExistsController, // 수정됨
   getUserCustomizationController,
   updateUserCustomizationController,
   getUserLevelController,
