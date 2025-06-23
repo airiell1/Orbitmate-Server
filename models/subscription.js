@@ -1,122 +1,88 @@
 // models/subscription.js
-const { getConnection } = require("../config/database");
-const { standardizeApiResponse } = require("../utils/apiResponse");
+// const { getConnection } = require("../config/database"); // Removed
+const { oracledb } = require("../config/database");
+// const { standardizeApiResponse } = require("../utils/apiResponse"); // Removed, controller will handle
+const { handleOracleError } = require("../utils/errorHandler");
+const { toSnakeCaseObj } = require("../utils/dbUtils");
+
 
 /**
  * 구독 등급 목록 조회
+ * @param {oracledb.Connection} connection - DB connection object
  * @returns {Promise<Array>} 구독 등급 목록
  */
-async function getSubscriptionTiers() {
-  let connection;
+async function getSubscriptionTiers(connection) {
   try {
-    connection = await getConnection();
-
     const query = `
             SELECT 
-                tier_id,
-                tier_name,
-                tier_display_name,
-                tier_emoji,
-                monthly_price,
-                yearly_price,
-                tier_level,
-                max_ai_requests_per_day,
-                max_file_upload_size,
-                features_included,
-                is_enterprise,
-                is_active
+                tier_id, tier_name, tier_display_name, tier_emoji,
+                monthly_price, yearly_price, tier_level,
+                max_ai_requests_per_day, max_file_upload_size,
+                features_included, is_enterprise, is_active
             FROM subscription_tiers
             WHERE is_active = 1
             ORDER BY tier_level ASC
         `;
 
-    const result = await connection.execute(query);
-    const tiers = result.rows.map((row) => {
-      let featuresIncluded = [];
+    const result = await connection.execute(query, {}, { outFormat: oracledb.OUT_FORMAT_OBJECT });
 
-      // features_included 필드 안전하게 파싱
-      if (row[9]) {
+    return result.rows.map((row) => {
+      let featuresIncluded = [];
+      if (row.FEATURES_INCLUDED) {
         try {
-          // 이미 객체인 경우 그대로 사용
-          if (typeof row[9] === "object") {
-            featuresIncluded = Array.isArray(row[9]) ? row[9] : [];
-          }
-          // 문자열인 경우 JSON 파싱
-          else if (typeof row[9] === "string") {
-            featuresIncluded = JSON.parse(row[9]);
+          if (typeof row.FEATURES_INCLUDED === "object") { // CLOB might be pre-fetched as object by some driver versions/settings
+            featuresIncluded = Array.isArray(row.FEATURES_INCLUDED) ? row.FEATURES_INCLUDED : JSON.parse(row.FEATURES_INCLUDED.toString());
+          } else if (typeof row.FEATURES_INCLUDED === "string") {
+            featuresIncluded = JSON.parse(row.FEATURES_INCLUDED);
           }
         } catch (parseError) {
-          console.warn(
-            "[subscriptionModel] Failed to parse features_included:",
-            row[9],
-            parseError
-          );
+          // console.warn(`[SubscriptionModel] Failed to parse features_included for tier ${row.TIER_NAME}:`, row.FEATURES_INCLUDED, parseError);
+          // Instead of console.warn, consider logging via a logger utility if available
+          // For now, keep it simple and default to empty array.
           featuresIncluded = [];
         }
       }
-
-      const tierData = {
-        tier_id: row[0],
-        tier_name: row[1],
-        tier_display_name: row[2],
-        tier_emoji: row[3],
-        monthly_price: row[4],
-        yearly_price: row[5],
-        tier_level: row[6],
-        max_ai_requests_per_day: row[7],
-        max_file_upload_size: row[8],
+      // Return snake_case directly from model, or let controller handle it.
+      // For consistency, models should return data as close to DB as possible, or a defined DTO.
+      // Here, returning a mapped object is fine. Controller will ensure final snake_case.
+      return {
+        tier_id: row.TIER_ID,
+        tier_name: row.TIER_NAME,
+        tier_display_name: row.TIER_DISPLAY_NAME,
+        tier_emoji: row.TIER_EMOJI,
+        monthly_price: row.MONTHLY_PRICE,
+        yearly_price: row.YEARLY_PRICE,
+        tier_level: row.TIER_LEVEL,
+        max_ai_requests_per_day: row.MAX_AI_REQUESTS_PER_DAY,
+        max_file_upload_size: row.MAX_FILE_UPLOAD_SIZE,
         features_included: featuresIncluded,
-        is_enterprise: row[10] === 1,
-        is_active: row[11] === 1,
+        is_enterprise: row.IS_ENTERPRISE === 1,
+        is_active: row.IS_ACTIVE === 1,
       };
-      return tierData;
     });
-
-    return standardizeApiResponse(tiers);
   } catch (error) {
-    console.error(
-      "[subscriptionModel] Error getting subscription tiers:",
-      error
-    );
-    throw error;
-  } finally {
-    if (connection) {
-      await connection.close();
-    }
+    throw handleOracleError(error);
   }
 }
 
 /**
- * 사용자 구독 정보 조회
+ * 사용자 구독 정보 조회. 구독이 없으면 기본 무료 구독을 생성 시도.
+ * @param {oracledb.Connection} connection - DB connection object
  * @param {string} user_id - 사용자 ID
- * @returns {Promise<Object>} 사용자 구독 정보
+ * @returns {Promise<Object|null>} 사용자 구독 정보 또는 null (무료 구독 생성 실패 시)
  */
-async function getUserSubscription(user_id) {
-  let connection;
+async function getUserSubscription(connection, user_id) {
   try {
-    connection = await getConnection();
     const query = `
             SELECT 
-                us.subscription_id,
-                us.user_id,
-                us.tier_id,
-                us.subscription_start,
-                us.subscription_end,
-                us.is_active,
-                us.payment_method,
-                us.auto_renewal,
-                us.created_at,
-                us.updated_at,
-                st.tier_name,
-                st.tier_display_name,
-                st.tier_emoji,
-                st.monthly_price,
-                st.yearly_price,
-                st.tier_level,
-                st.max_ai_requests_per_day,
-                st.max_file_upload_size,
-                st.features_included,
-                st.is_enterprise
+                us.subscription_id, us.user_id, us.tier_id,
+                us.subscription_start, us.subscription_end, us.is_active,
+                us.payment_method, us.auto_renewal,
+                us.created_at, us.updated_at,
+                st.tier_name, st.tier_display_name, st.tier_emoji,
+                st.monthly_price, st.yearly_price, st.tier_level,
+                st.max_ai_requests_per_day, st.max_file_upload_size,
+                st.features_included, st.is_enterprise
             FROM user_subscriptions us
             JOIN subscription_tiers st ON us.tier_id = st.tier_id
             WHERE us.user_id = :user_id 
@@ -124,259 +90,199 @@ async function getUserSubscription(user_id) {
             AND ROWNUM = 1
             ORDER BY us.created_at DESC
         `;
-
-    const result = await connection.execute(query, { user_id });
+    const result = await connection.execute(query, { user_id }, { outFormat: oracledb.OUT_FORMAT_OBJECT });
 
     if (result.rows.length === 0) {
-      // 구독이 없으면 무료 등급으로 자동 설정
-      return await createDefaultSubscription(user_id);
+      // 구독이 없으면 무료 등급으로 자동 설정 (새로운 connection으로 시도하지 않음, 같은 트랜잭션 내에서)
+      return await createDefaultSubscription(connection, user_id);
     }
 
-    const row = result.rows[0]; // features_included 필드 안전하게 파싱
+    const row = result.rows[0];
     let featuresIncluded = [];
-    if (row[18]) {
-      try {
-        // 이미 객체인 경우 그대로 사용
-        if (typeof row[18] === "object") {
-          featuresIncluded = Array.isArray(row[18]) ? row[18] : [];
+    if (row.FEATURES_INCLUDED) {
+        try {
+          if (typeof row.FEATURES_INCLUDED === "object") {
+            featuresIncluded = Array.isArray(row.FEATURES_INCLUDED) ? row.FEATURES_INCLUDED : JSON.parse(row.FEATURES_INCLUDED.toString());
+          } else if (typeof row.FEATURES_INCLUDED === "string") {
+            featuresIncluded = JSON.parse(row.FEATURES_INCLUDED);
+          }
+        } catch (parseError) {
+          // console.warn(`[SubscriptionModel] Failed to parse features_included for user ${user_id}:`, row.FEATURES_INCLUDED, parseError);
+          featuresIncluded = [];
         }
-        // 문자열인 경우 JSON 파싱
-        else if (typeof row[18] === "string") {
-          featuresIncluded = JSON.parse(row[18]);
-        }
-      } catch (parseError) {
-        console.warn(
-          "[subscriptionModel] Failed to parse features_included:",
-          row[18],
-          parseError
-        );
-        featuresIncluded = [];
-      }
     }
 
-    const subscription = {
-      subscription_id: row[0],
-      user_id: row[1],
-      tier_id: row[2],
-      subscription_start: row[3],
-      subscription_end: row[4],
-      is_active: row[5] === 1,
-      payment_method: row[6],
-      auto_renewal: row[7] === 1,
-      created_at: row[8],
-      updated_at: row[9],
+    return {
+      subscription_id: row.SUBSCRIPTION_ID,
+      user_id: row.USER_ID,
+      tier_id: row.TIER_ID,
+      subscription_start: row.SUBSCRIPTION_START,
+      subscription_end: row.SUBSCRIPTION_END,
+      is_active: row.IS_ACTIVE === 1,
+      payment_method: row.PAYMENT_METHOD,
+      auto_renewal: row.AUTO_RENEWAL === 1,
+      created_at: row.CREATED_AT,
+      updated_at: row.UPDATED_AT,
       tier: {
-        tier_name: row[10],
-        tier_display_name: row[11],
-        tier_emoji: row[12],
-        monthly_price: row[13],
-        yearly_price: row[14],
-        tier_level: row[15],
-        max_ai_requests_per_day: row[16],
-        max_file_upload_size: row[17],
+        tier_id: row.TIER_ID, // tier 객체에도 tier_id 포함
+        tier_name: row.TIER_NAME,
+        tier_display_name: row.TIER_DISPLAY_NAME,
+        tier_emoji: row.TIER_EMOJI,
+        monthly_price: row.MONTHLY_PRICE,
+        yearly_price: row.YEARLY_PRICE,
+        tier_level: row.TIER_LEVEL,
+        max_ai_requests_per_day: row.MAX_AI_REQUESTS_PER_DAY,
+        max_file_upload_size: row.MAX_FILE_UPLOAD_SIZE,
         features_included: featuresIncluded,
-        is_enterprise: row[19] === 1,
+        is_enterprise: row.IS_ENTERPRISE === 1,
       },
     };
-
-    return standardizeApiResponse(subscription);
   } catch (error) {
-    console.error(
-      "[subscriptionModel] Error getting user subscription:",
-      error
-    );
-    throw error;
-  } finally {
-    if (connection) {
-      await connection.close();
-    }
+    throw handleOracleError(error);
   }
 }
 
 /**
  * 기본 무료 구독 생성
+ * @param {oracledb.Connection} connection - DB connection object
  * @param {string} user_id - 사용자 ID
- * @returns {Promise<Object>} 생성된 구독 정보
+ * @returns {Promise<Object|null>} 생성된 구독 정보, 실패 시 null 또는 에러 throw
  */
-async function createDefaultSubscription(user_id) {
-  let connection;
+async function createDefaultSubscription(connection, user_id) {
   try {
-    connection = await getConnection();
-
-    // 무료 등급 ID 조회
-    const tierQuery = `
-            SELECT tier_id FROM subscription_tiers 
-            WHERE tier_name = 'free' AND is_active = 1
-        `;
-    const tierResult = await connection.execute(tierQuery);
+    const tierResult = await connection.execute(
+        `SELECT tier_id FROM subscription_tiers WHERE tier_name = 'free' AND is_active = 1`,
+        {}, { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
 
     if (tierResult.rows.length === 0) {
-      throw new Error("Free tier not found");
+      const err = new Error("Free tier not found or not active.");
+      err.code = "RESOURCE_NOT_FOUND";
+      throw err;
     }
+    const freeTierId = tierResult.rows[0].TIER_ID;
 
-    const freeTierId = tierResult.rows[0][0];
-
-    // 무료 구독 생성
-    const insertQuery = `
-            INSERT INTO user_subscriptions (
-                user_id, tier_id, subscription_start, 
-                subscription_end, is_active, payment_method, auto_renewal
-            ) VALUES (
-                :user_id, :tier_id, SYSTIMESTAMP, 
-                NULL, 1, 'free', 0
-            )
-        `;
-
-    await connection.execute(insertQuery, {
-      user_id,
-      tier_id: freeTierId,
-    });
-
-    await connection.commit();
-
-    // 생성된 구독 정보 반환
-    return await getUserSubscription(user_id);
-  } catch (error) {
-    if (connection) {
-      await connection.rollback();
-    }
-    console.error(
-      "[subscriptionModel] Error creating default subscription:",
-      error
+    await connection.execute(
+        `INSERT INTO user_subscriptions (user_id, tier_id, subscription_start, subscription_end, is_active, payment_method, auto_renewal)
+         VALUES (:user_id, :tier_id, SYSTIMESTAMP, NULL, 1, 'free', 0)`,
+        { user_id, tier_id: freeTierId },
+        { autoCommit: false } // Part of a transaction
     );
-    throw error;
-  } finally {
-    if (connection) {
-      await connection.close();
-    }
+    // commit은 withTransaction에서 처리
+
+    // 생성된 구독 정보 다시 조회하여 반환
+    // 주의: 이 함수가 다른 함수의 일부로 호출될 때, 여기서 다시 getUserSubscription을 호출하면
+    //       동일 connection을 사용해야 하며, 순환 호출이 발생하지 않도록 주의해야 함.
+    //       여기서는 createDefaultSubscription이 getUserSubscription 내부에서만 호출되므로,
+    //       getUserSubscription을 다시 호출하는 대신, 생성된 기본 정보를 직접 구성하여 반환하거나,
+    //       getUserSubscription이 이 함수를 호출하지 않도록 로직 분리.
+    //       일단은 직접 구성하여 반환.
+     const freeTierDetails = (await getSubscriptionTiers(connection)).find(t => t.tier_id === freeTierId);
+     if (!freeTierDetails) { // 이론상 발생하면 안됨
+        const err = new Error("Failed to retrieve details for the created free tier.");
+        err.code = "INTERNAL_ERROR"; // 또는 다른 적절한 코드
+        throw err;
+     }
+
+    return {
+        user_id: user_id,
+        tier_id: freeTierId,
+        subscription_start: new Date().toISOString(), // Approximate
+        subscription_end: null,
+        is_active: true,
+        payment_method: 'free',
+        auto_renewal: false,
+        tier: freeTierDetails
+    };
+
+  } catch (error) {
+    if (error.code === "RESOURCE_NOT_FOUND" || error.code === "INTERNAL_ERROR") throw error;
+    throw handleOracleError(error);
   }
 }
 
-// 한국어 구독 등급명을 영어로 매핑하는 함수
-function mapKoreanTierNameToEnglish(koreanTierName) {
-  const tierMapping = {
-    코멧: "free",
-    플래닛: "planet",
-    스타: "star",
-    갤럭시: "galaxy",
-  };
 
-  // 한국어 이름이면 영어로 변환, 아니면 그대로 반환
+function mapKoreanTierNameToEnglish(koreanTierName) {
+  const tierMapping = { 코멧: "free", 플래닛: "planet", 스타: "star", 갤럭시: "galaxy" };
   return tierMapping[koreanTierName] || koreanTierName.toLowerCase();
 }
 
 /**
  * 구독 업그레이드/다운그레이드
+ * @param {oracledb.Connection} connection - DB connection object
  * @param {string} user_id - 사용자 ID
- * @param {string} new_tier_name - 새로운 구독 등급
- * @param {Object} options - 구독 옵션
+ * @param {string} new_tier_name - 새로운 구독 등급 (한국어 또는 영어)
+ * @param {Object} options - 구독 옵션 (payment_method, billing_cycle, auto_renewal)
  * @returns {Promise<Object>} 업데이트된 구독 정보
  */
-async function updateUserSubscription(user_id, new_tier_name, options = {}) {
-  let connection;
+async function updateUserSubscription(connection, user_id, new_tier_name, options = {}) {
   try {
-    connection = await getConnection();
-
     const {
       payment_method = "card",
-      billing_cycle = "monthly",
+      billing_cycle = "monthly", // 'monthly' or 'yearly'
       auto_renewal = true,
     } = options;
 
-    // 한국어 구독 등급명을 영어로 변환
     const englishTierName = mapKoreanTierNameToEnglish(new_tier_name);
-    console.log(
-      `[subscriptionModel] Mapped tier name: ${new_tier_name} -> ${englishTierName}`
+
+    const tierResult = await connection.execute(
+        `SELECT tier_id FROM subscription_tiers WHERE tier_name = :tier_name AND is_active = 1`,
+        { tier_name: englishTierName }, { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
 
-    // 새로운 등급 정보 조회
-    const tierQuery = `
-            SELECT tier_id, tier_level, monthly_price, yearly_price
-            FROM subscription_tiers 
-            WHERE tier_name = :tier_name AND is_active = 1
-        `;
-    const tierResult = await connection.execute(tierQuery, {
-      tier_name: englishTierName,
-    });
     if (tierResult.rows.length === 0) {
-      throw new Error(
-        `Subscription tier '${new_tier_name}' (mapped to '${englishTierName}') not found`
-      );
+      const err = new Error(`Subscription tier '${new_tier_name}' (mapped to '${englishTierName}') not found or not active.`);
+      err.code = "RESOURCE_NOT_FOUND";
+      throw err;
     }
+    const newTierId = tierResult.rows[0].TIER_ID;
 
-    const [new_tier_id, tier_level, monthly_price, yearly_price] =
-      tierResult.rows[0];
+    // 기존 활성 구독 비활성화
+    await connection.execute(
+        `UPDATE user_subscriptions SET is_active = 0, updated_at = SYSTIMESTAMP
+         WHERE user_id = :user_id AND is_active = 1`,
+        { user_id }, { autoCommit: false }
+    );
 
-    // 기존 구독 비활성화
-    const deactivateQuery = `
-            UPDATE user_subscriptions 
-            SET is_active = 0, updated_at = SYSTIMESTAMP
-            WHERE user_id = :user_id AND is_active = 1
-        `;
-    await connection.execute(deactivateQuery, { user_id });
-
-    // 구독 종료일 계산
     let subscription_end = null;
-    if (new_tier_name !== "free") {
+    if (englishTierName !== "free") {
       const now = new Date();
       subscription_end = new Date(now);
       if (billing_cycle === "yearly") {
         subscription_end.setFullYear(now.getFullYear() + 1);
       } else {
-        subscription_end.setMonth(now.getMonth() + 1);
+        subscription_end.setMonth(now.getMonth() + 1); // 기본 월간
       }
     }
 
-    // 새로운 구독 생성
-    const insertQuery = `
-            INSERT INTO user_subscriptions (
-                user_id, tier_id, subscription_start, subscription_end,
-                is_active, payment_method, auto_renewal
-            ) VALUES (
-                :user_id, :tier_id, SYSTIMESTAMP, :subscription_end,
-                1, :payment_method, :auto_renewal
-            )
-        `;
-
-    await connection.execute(insertQuery, {
-      user_id,
-      tier_id: new_tier_id,
-      subscription_end,
-      payment_method,
-      auto_renewal: auto_renewal ? 1 : 0,
-    });
-
-    await connection.commit();
-
-    console.log(
-      `[subscriptionModel] User ${user_id} subscription updated to ${new_tier_name}`
+    // 새 구독 생성
+    await connection.execute(
+        `INSERT INTO user_subscriptions
+            (user_id, tier_id, subscription_start, subscription_end, is_active, payment_method, auto_renewal)
+         VALUES
+            (:user_id, :tier_id, SYSTIMESTAMP, :subscription_end, 1, :payment_method, :auto_renewal)`,
+        { user_id, tier_id: newTierId, subscription_end, payment_method, auto_renewal: auto_renewal ? 1 : 0 },
+        { autoCommit: false }
     );
+    // commit은 withTransaction에서 처리
 
-    // 업데이트된 구독 정보 반환
-    return await getUserSubscription(user_id);
+    // 업데이트된 구독 정보 반환 (새로운 connection 대신 현재 connection 사용)
+    return await getUserSubscription(connection, user_id);
   } catch (error) {
-    if (connection) {
-      await connection.rollback();
-    }
-    console.error(
-      "[subscriptionModel] Error updating user subscription:",
-      error
-    );
-    throw error;
-  } finally {
-    if (connection) {
-      await connection.close();
-    }
+    if (error.code === "RESOURCE_NOT_FOUND") throw error;
+    throw handleOracleError(error);
   }
 }
 
 /**
- * 구독 취소 (다운그레이드를 무료로)
+ * 구독 취소 (무료 등급으로 다운그레이드)
+ * @param {oracledb.Connection} connection - DB connection object
  * @param {string} user_id - 사용자 ID
- * @returns {Promise<Object>} 업데이트된 구독 정보
+ * @returns {Promise<Object>} 업데이트된 구독 정보 (무료 등급)
  */
-async function cancelUserSubscription(user_id) {
-  return await updateUserSubscription(user_id, "free", {
+async function cancelUserSubscription(connection, user_id) {
+  // updateUserSubscription 내부에서 getUserSubscription을 호출하므로, connection을 전달해야 함.
+  return await updateUserSubscription(connection, user_id, "free", {
     payment_method: "canceled",
     auto_renewal: false,
   });
@@ -384,100 +290,81 @@ async function cancelUserSubscription(user_id) {
 
 /**
  * 사용자 구독 이력 조회
+ * @param {oracledb.Connection} connection - DB connection object
  * @param {string} user_id - 사용자 ID
  * @returns {Promise<Array>} 구독 이력 목록
  */
-async function getUserSubscriptionHistory(user_id) {
-  let connection;
+async function getUserSubscriptionHistory(connection, user_id) {
   try {
-    connection = await getConnection();
-
     const query = `
             SELECT 
-                us.subscription_id,
-                us.subscription_start,
-                us.subscription_end,
-                us.is_active,
-                us.payment_method,
-                us.auto_renewal,
-                us.created_at,
-                st.tier_name,
-                st.tier_display_name,
-                st.tier_emoji,
-                st.tier_level
+                us.subscription_id, us.subscription_start, us.subscription_end,
+                us.is_active, us.payment_method, us.auto_renewal, us.created_at,
+                st.tier_name, st.tier_display_name, st.tier_emoji, st.tier_level
             FROM user_subscriptions us
             JOIN subscription_tiers st ON us.tier_id = st.tier_id
             WHERE us.user_id = :user_id
             ORDER BY us.created_at DESC
         `;
+    const result = await connection.execute(query, { user_id }, { outFormat: oracledb.OUT_FORMAT_OBJECT });
 
-    const result = await connection.execute(query, { user_id });
-
-    const history = result.rows.map((row) => ({
-      subscription_id: row[0],
-      subscription_start: row[1],
-      subscription_end: row[2],
-      is_active: row[3] === 1,
-      payment_method: row[4],
-      auto_renewal: row[5] === 1,
-      created_at: row[6],
+    return result.rows.map((row) => ({ // 직접 snake_case로 변환 또는 DTO 사용
+      subscription_id: row.SUBSCRIPTION_ID,
+      subscription_start: row.SUBSCRIPTION_START,
+      subscription_end: row.SUBSCRIPTION_END,
+      is_active: row.IS_ACTIVE === 1,
+      payment_method: row.PAYMENT_METHOD,
+      auto_renewal: row.AUTO_RENEWAL === 1,
+      created_at: row.CREATED_AT,
       tier: {
-        tier_name: row[7],
-        tier_display_name: row[8],
-        tier_emoji: row[9],
-        tier_level: row[10],
+        tier_name: row.TIER_NAME,
+        tier_display_name: row.TIER_DISPLAY_NAME,
+        tier_emoji: row.TIER_EMOJI,
+        tier_level: row.TIER_LEVEL,
       },
     }));
-
-    return standardizeApiResponse(history);
   } catch (error) {
-    console.error(
-      "[subscriptionModel] Error getting subscription history:",
-      error
-    );
-    throw error;
-  } finally {
-    if (connection) {
-      await connection.close();
-    }
+    throw handleOracleError(error);
   }
 }
 
 /**
- * 사용자 기능 권한 확인
+ * 사용자 기능 권한 확인.
+ * 이 함수는 내부적으로 getUserSubscription을 호출하므로, connection 객체를 받아야 합니다.
+ * @param {oracledb.Connection} connection - DB connection object
  * @param {string} user_id - 사용자 ID
  * @param {string} feature_name - 확인할 기능명
  * @returns {Promise<boolean>} 권한 여부
  */
-async function checkUserFeatureAccess(user_id, feature_name) {
+async function checkUserFeatureAccess(connection, user_id, feature_name) {
   try {
-    const subscription = await getUserSubscription(user_id);
+    const subscription = await getUserSubscription(connection, user_id); // connection 전달
 
-    if (!subscription.data || !subscription.data.tier) {
+    if (!subscription || !subscription.tier) { // standardizeApiResponse 제거로 인해 .data 접근 제거
       return false;
     }
-
-    const features = subscription.data.tier.features_included || [];
+    const features = subscription.tier.features_included || [];
     return features.includes(feature_name);
   } catch (error) {
-    console.error("[subscriptionModel] Error checking feature access:", error);
+    // console.error("[SubscriptionModel] Error checking feature access:", error); // 중앙 로깅
+    // 여기서 에러를 다시 throw하거나, false를 반환할지 결정.
+    // 기능 접근 확인 실패는 false로 처리하는 것이 사용자 경험에 나을 수 있음.
     return false;
   }
 }
 
 /**
- * 일일 AI 요청 사용량 확인
+ * 일일 AI 요청 사용량 확인.
+ * 이 함수는 내부적으로 getUserSubscription을 호출하므로, connection 객체를 받아야 합니다.
+ * @param {oracledb.Connection} connection - DB connection object
  * @param {string} user_id - 사용자 ID
  * @returns {Promise<Object>} 사용량 정보
  */
-async function checkDailyUsage(user_id) {
-  let connection;
+async function checkDailyUsage(connection, user_id) {
   try {
-    connection = await getConnection();
+    const subscription = await getUserSubscription(connection, user_id); // connection 전달
+    const maxRequests = subscription?.tier?.max_ai_requests_per_day;
 
-    // 사용자 구독 정보 조회
-    const subscription = await getUserSubscription(user_id);
-    const maxRequests = subscription.data?.tier?.max_ai_requests_per_day; // 오늘 사용한 요청 수 조회 (사용자 메시지만 카운트)
     const usageQuery = `
             SELECT COUNT(*) as today_requests
             FROM chat_messages 
@@ -485,27 +372,22 @@ async function checkDailyUsage(user_id) {
             AND message_type = 'user'
             AND TRUNC(created_at) = TRUNC(SYSDATE)
         `;
+    const result = await connection.execute(usageQuery, { user_id }, { outFormat: oracledb.OUT_FORMAT_OBJECT });
+    const todayRequests = result.rows[0]?.TODAY_REQUESTS || 0;
 
-    const result = await connection.execute(usageQuery, { user_id });
-    const todayRequests = result.rows[0][0] || 0;
-
-    return standardizeApiResponse({
+    return { // standardizeApiResponse 호출 제거
       user_id,
       today_requests: todayRequests,
       max_requests_per_day: maxRequests,
-      has_unlimited: maxRequests === null,
-      requests_remaining: maxRequests
+      has_unlimited: maxRequests === null || maxRequests === undefined, // maxRequests가 null 또는 undefined일 수 있음
+      requests_remaining: (maxRequests !== null && maxRequests !== undefined)
         ? Math.max(0, maxRequests - todayRequests)
-        : null,
-      can_make_request: maxRequests === null || todayRequests < maxRequests,
-    });
+        : null, // 무제한이면 null
+      can_make_request: (maxRequests === null || maxRequests === undefined) || todayRequests < maxRequests,
+    };
   } catch (error) {
-    console.error("[subscriptionModel] Error checking daily usage:", error);
-    throw error;
-  } finally {
-    if (connection) {
-      await connection.close();
-    }
+    // console.error("[SubscriptionModel] Error checking daily usage:", error); // 중앙 로깅
+    throw handleOracleError(error); // 또는 기본값/에러 상태 반환
   }
 }
 
