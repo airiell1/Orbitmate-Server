@@ -58,59 +58,44 @@
     - 옵션을 통한 모델별 설정 지원 (ollamaModel, vertexModelId, geminiModel, max_output_tokens_override 등)
 
 - **컨트롤러**
-  - `controllers/userController.js`: 사용자 회원가입, 로그인, 설정/프로필 조회·수정, 프로필 이미지 업로드, 회원 탈퇴 등 사용자 관련 API 처리
+  - `utils/aiProvider.js`: AI 제공자 추상화 레이어
+    - **기본 provider: `'geminiapi'` (Google AI Studio)** - 2025년 6월 17일 vertexai에서 변경
     - 주요 함수:
-      - `registerUserController()`: 회원가입 (이미 등록된 이메일은 200으로 반환)
-      - `loginUserController()`: 로그인 (JWT 발급)
-      - `getUserSettingsController()`, `updateUserSettingsController()`: 사용자 설정 조회/수정 (테마, 언어, 폰트 크기, AI 모델 선호도 등)
-      - `getUserProfileController()`, `updateUserProfileController()`: 프로필 조회/수정
-      - `uploadProfileImageController()`: 프로필 이미지 업로드
-      - `deleteUserController()`: 회원 탈퇴
-      - `checkEmailExists()`: 이메일 중복 확인 API 처리
-  - `controllers/chatController.js`: 채팅 메시지 전송, AI 응답, 메시지 편집/삭제/리액션, 파일 업로드 등 채팅 관련 API 처리
-    - **기본 AI Provider: `'geminiapi'`, 테스트 사용자 ID: `'guest'`**
-    - **HTTP SSE 스트리밍**: WebSocket 제거, Server-Sent Events만 사용
-    - 주요 함수:
-      - `sendMessageController()`: 메시지 전송 및 AI 응답 처리 (aiProvider 추상화를 통한 HTTP SSE 스트리밍 지원)
-      - `editMessageController()`: 메시지 편집
-      - `addReactionController()`, `removeReactionController()`: 메시지 리액션 추가/제거
-      - `deleteMessageController()`: 메시지 삭제
-      - `uploadFile()`: 파일 업로드 및 첨부파일 DB 저장
-      - `getSessionMessagesController()`: 세션별 메시지 목록 조회 (CLOB 변환 포함)
+      - `fetchChatCompletion(aiProvider, currentUserMessage, history, systemMessageText, specialModeType, streamResponseCallback, options)`: AI 제공자별 요청 라우팅
+    - Google AI Studio, Vertex AI, Ollama 간 통합 인터페이스 제공
+    - 옵션을 통한 모델별 설정 지원 (ollamaModel, vertexModelId, geminiModel, max_output_tokens_override 등)
 
-  - `controllers/sessionController.js`: 채팅 세션 생성/조회/수정/삭제 등 세션 관련 API 처리
-    - 주요 함수:
-      - `createSessionController()`: 세션 생성
-      - `getUserSessionsController()`: 사용자 세션 목록 조회
-      - `updateSessionController()`: 세션 정보 수정 (제목, 카테고리, 보관 여부)
-      - `getSessionMessagesController()`: 세션 메시지 목록 조회 (models/session.js의 getSessionMessages 호출)
-      - `deleteSessionController()`: 세션 삭제
+- **서비스 (services/)** `✅ New Layer`
+  - 비즈니스 로직을 담당하는 계층입니다. 컨트롤러는 서비스 계층을 호출하고, 서비스 계층은 모델을 호출하거나 다른 서비스를 조합하여 사용합니다.
+  - 트랜잭션 관리(`withTransaction`)는 주로 서비스 계층에서 이루어집니다.
+  - 주요 서비스 파일:
+    - `authService.js`: 회원가입, 로그인, 이메일 중복 확인 등 인증 관련 비즈니스 로직.
+    - `userProfileService.js`: 사용자 프로필 조회/수정, 프로필 이미지 관련 비즈니스 로직.
+    - `userSettingsService.js`: 사용자 설정, 언어 설정 등 관련 비즈니스 로직.
+    - `userActivityService.js`: 프로필 꾸미기, 레벨/경험치, 뱃지, 사용자 활동(버그 리포트 등) 관련 비즈니스 로직.
+    - `chatService.js`: 채팅 메시지 전송, AI 응답 처리, 메시지 편집/삭제/리액션, 파일 업로드 등 채팅 관련 복합 비즈니스 로직.
+    - `sessionService.js`: 채팅 세션 생성/조회/수정/삭제 관련 비즈니스 로직.
+    - `subscriptionService.js`: 구독 관련 비즈니스 로직.
+    - `translationService.js`: 번역 리소스 조회 관련 비즈니스 로직.
 
-  - `controllers/aiInfoController.js`: AI 정보 조회 API 처리
-    - **기본 provider: `'vertexai'`로 설정됨**
-    - 주요 함수:
-      - `getModelsInfoController()`: 사용 가능한 AI 모델 목록 조회 (기본값으로 Vertex AI 설정)
-  - `controllers/searchController.js`: 검색 기능 관련 API 처리 (위키피디아 검색 등)
-    - 주요 함수:
-      - `searchWikipediaController()`: 위키피디아 검색 API 처리
+- **컨트롤러 (controllers/)** `✅ Refactored`
+  - HTTP 요청을 받아 입력값을 검증하고, 적절한 서비스 함수를 호출하여 비즈니스 로직 처리를 위임합니다.
+  - 서비스 처리 결과를 받아 `standardizeApiResponse`를 사용하여 HTTP 응답을 반환합니다.
+  - 에러 발생 시 `next(error)`를 호출하여 중앙 에러 핸들러로 처리를 넘깁니다.
+  - 기존 `userController.js`는 기능별로 다음 컨트롤러들로 분리되었습니다:
+    - `authController.js`: 회원가입, 로그인, 이메일 중복 확인 API.
+    - `userProfileController.js`: 사용자 프로필 조회/수정, 프로필 이미지 업로드, 회원 탈퇴 API.
+    - `userSettingsController.js`: 사용자 설정 조회/수정, 언어 설정 API.
+    - `userActivityController.js`: 프로필 꾸미기, 레벨/경험치, 뱃지, 사용자 활동(버그 리포트 등) 관련 API.
+    - `translationController.js`: 번역 리소스 조회 API.
+  - 나머지 컨트롤러 (`chatController.js`, `sessionController.js`, `subscriptionController.js`, `aiInfoController.js`, `searchController.js`)도 해당 서비스 계층을 호출하도록 수정되었습니다 (단, `aiInfoController`와 `searchController`는 로직이 단순하여 직접 모델을 호출하거나 설정을 참조하는 구조를 유지할 수 있음).
 
-  - `controllers/subscriptionController.js`: 구독 관리 시스템 API 처리 **✅ 새로 추가됨**
-    - ** 시뮬레이션**: 실제 결제 없이 구독 상태 관리 시스템 구현
-    - 주요 함수:
-      - `getSubscriptionTiersController()`: 구독 등급 목록 조회
-      - `getUserSubscriptionController()`: 사용자 구독 정보 조회
-      - `updateUserSubscriptionController()`: 구독 업그레이드/다운그레이드
-      - `cancelUserSubscriptionController()`: 구독 취소
-      - `getUserSubscriptionHistoryController()`: 구독 이력 조회
-      - `checkFeatureAccessController()`: 기능 접근 권한 확인
-      - `checkDailyUsageController()`: 일일 사용량 확인
-      - `simulateSubscriptionUpgradeController()`: 구독 업그레이드 시뮬레이션
-      - `simulateSubscriptionRenewalController()`: 구독 갱신 시뮬레이션
+- **API 라우트 (routes/)** `✅ Refactored`
+  - `routes/users.js`: 사용자 프로필, 설정, 활동 관련 라우트. (인증 관련 라우트는 `/api/auth` 등으로 분리 가능하나 현재는 users에 포함)
+  - `routes/translations.js`: 번역 리소스 조회 라우트. `✅ New File`
+  - 기존 라우트 파일 (`chat.js`, `sessions.js`, `aiInfo.js`, `search.js`, `subscriptions.js`)은 유지되나, 분리된 컨트롤러를 참조하도록 수정될 수 있습니다.
 
-- **API 라우트**
-  - `routes/users.js`, `routes/chat.js`, `routes/sessions.js`, `routes/aiInfo.js`, `routes/search.js`, `routes/subscriptions.js` **✅ 구독 관리 라우트 추가됨**
-
-- **미들웨어**
+- **미들웨어 (middleware/)**
   - `middleware/auth.js`: JWT 인증 미들웨어 (학습용 최소 구현)
   - `middleware/subscription.js`: 구독 관리 미들웨어 **✅ 새로 추가됨**
     - ** 권한 체크**: 실제 결제 없이 구독 기반 기능 제한 시스템
@@ -291,26 +276,39 @@
 - **모델 함수**:
     - 모든 데이터베이스 작업을 수행하는 모델 함수는 첫 번째 인자로 `connection` 객체를 받아야 합니다.
     - 모델 함수 내에서 `getConnection()`, `connection.close()`, `connection.commit()`, `connection.rollback()`을 직접 호출해서는 안 됩니다.
-    - SQL 실행 시 `autoCommit` 옵션은 `false`로 설정하거나, `withTransaction`의 기본 동작에 맡깁니다 (일반적으로 불필요).
-- **컨트롤러 함수**:
-    - 데이터베이스 트랜잭션이 필요한 모든 컨트롤러 로직은 `utils/dbUtils.js`의 `withTransaction(async (connection) => { ... })` 유틸리티 함수로 감싸야 합니다.
+    - SQL 실행 시 `autoCommit` 옵션은 `false`로 설정하거나, `withTransaction`의 기본 동작에 맡깁니다.
+- **서비스 함수**:
+    - 데이터베이스 트랜잭션이 필요한 비즈니스 로직은 서비스 함수 내에서 `utils/dbUtils.js`의 `withTransaction(async (connection) => { ... })` 유틸리티 함수로 감싸야 합니다.
     - 이 콜백 함수 내에서 모델 함수를 호출할 때 `connection` 객체를 전달합니다.
-- 예시 (컨트롤러):
+    - 여러 모델 함수 호출이나 데이터 가공 로직이 포함될 수 있습니다.
+- **컨트롤러 함수**:
+    - 컨트롤러는 서비스 계층의 함수를 호출합니다. `withTransaction`을 직접 사용하지 않습니다 (서비스 계층에서 처리).
+- 예시 (서비스 함수):
   ```javascript
+  // services/someService.js
   const { withTransaction } = require("../utils/dbUtils");
   const myModel = require("../models/myModel");
 
-  async function myController(req, res, next) {
+  async function doSomethingComplex(userId, dataToProcess) {
+    return await withTransaction(async (connection) => {
+      const item = await myModel.getItem(connection, dataToProcess.itemId);
+      if (!item) throw new Error("아이템을 찾을 수 없습니다.");
+      // ... (데이터 가공 및 추가 DB 작업) ...
+      await myModel.updateItem(connection, item.id, { processed: true });
+      await myModel.logAction(connection, userId, "PROCESS_ITEM", item.id);
+      return { success: true, processedItemId: item.id };
+    });
+  }
+  ```
+- 예시 (컨트롤러 함수):
+  ```javascript
+  // controllers/someController.js
+  const someService = require("../services/someService");
+  const { standardizeApiResponse } = require("../utils/apiResponse");
+
+  async function handleRequest(req, res, next) {
     try {
-      const result = await withTransaction(async (connection) => {
-        // 단일 DB 작업
-        const data = await myModel.getData(connection, req.params.id);
-        // 여러 DB 작업 (트랜잭션으로 묶임)
-        // await myModel.updateData(connection, req.params.id, req.body);
-        // await myModel.logAction(connection, req.user.id, "UPDATE");
-        return data;
-      });
-      // 응답 처리 (standardizeApiResponse 사용)
+      const result = await someService.doSomethingComplex(req.user.id, req.body);
       const apiResponse = standardizeApiResponse(result);
       res.status(apiResponse.statusCode).json(apiResponse.body);
     } catch (error) {
@@ -330,12 +328,15 @@
 ### 4. 에러 처리 (`utils/errorHandler.js`)
 
 - **컨트롤러**:
-    - `try...catch` 블록을 사용하여 모든 잠재적 에러를 포착해야 합니다.
-    - `catch` 블록에서는 에러 객체에 `code` (예: `INVALID_INPUT`, `USER_NOT_FOUND`)와 `message`를 명확히 설정한 후, `next(error)`를 호출하여 중앙 에러 핸들러로 전달합니다.
-    - 직접 `res.status().json()`으로 에러 응답을 보내지 마십시오.
+    - `try...catch` 블록을 사용하여 서비스 계층에서 발생할 수 있는 모든 에러를 포착해야 합니다.
+    - `catch` 블록에서는 받은 에러 객체를 그대로 `next(error)`를 호출하여 중앙 에러 핸들러로 전달합니다.
+    - 컨트롤러에서 직접 새로운 에러 객체를 생성하거나 `res.status().json()`으로 에러 응답을 보내지 마십시오 (입력값 검증 실패 시에는 컨트롤러에서 `INVALID_INPUT` 에러 객체 생성 후 `next(error)` 가능).
+- **서비스**:
+    - 비즈니스 로직 수행 중 발생하는 특정 에러 (예: "리소스를 찾을 수 없음", "권한 부족")는 `code`와 `message`를 가진 새로운 `Error` 객체를 생성하여 `throw` 합니다. 이 에러는 컨트롤러로 전파됩니다.
+    - 모델에서 throw된 DB 관련 에러는 그대로 다시 throw하거나, 필요시 서비스 특화 에러로 변환하여 throw 할 수 있습니다.
 - **모델**:
     - DB 관련 에러 발생 시, `utils/errorHandler.js`의 `handleOracleError(oraError)` 함수를 사용하여 표준화된 에러 객체(Error 인스턴스에 `code`, `message`, `details` 포함)를 생성하여 `throw` 해야 합니다.
-    - 비즈니스 로직 상의 특정 에러(예: "리소스를 찾을 수 없음")는 `code`와 `message`를 가진 새로운 `Error` 객체를 생성하여 `throw` 합니다.
+    - 데이터 조회 결과가 없는 경우 등은 모델 레벨에서 에러를 throw 하거나 (예: `RESOURCE_NOT_FOUND`), null 또는 빈 배열을 반환하여 서비스 계층에서 처리하도록 할 수 있습니다 (일관된 방식 선택 필요 - 현재는 에러 throw 선호).
 - **중앙 에러 핸들러**:
     - `app.js`에 등록된 `handleCentralError` 미들웨어가 `next(error)`로 전달된 모든 에러를 최종적으로 처리하고, `standardizeApiResponse`를 사용하여 클라이언트에 응답합니다.
 

@@ -1,26 +1,41 @@
 // testScripts/utils.js - 테스트 페이지 유틸리티 함수들
 
 // API 응답 패널 업데이트 함수
-export function updateApiResponse(data) {
-    const apiResponse = document.getElementById('api-response');
-    if (!apiResponse) return;
+export function updateApiResponse(responseData) { // 인자 이름을 responseData로 변경
+    const apiResponsePanel = document.getElementById('api-response'); // 변수명 변경
+    if (!apiResponsePanel) return;
     
     try {
-        apiResponse.textContent = JSON.stringify(data, null, 2);
+        // responseData가 이미 {status, data/error} 형태의 객체라고 가정
+        if (responseData && typeof responseData === 'object') {
+            apiResponsePanel.textContent = JSON.stringify(responseData, null, 2);
+            if (responseData.status === 'error') {
+                apiResponsePanel.classList.add('error');
+            } else {
+                apiResponsePanel.classList.remove('error');
+            }
+        } else { // 문자열이나 다른 타입으로 올 경우 (이전 방식 호환)
+            apiResponsePanel.textContent = typeof responseData === 'string' ? responseData : JSON.stringify(responseData, null, 2);
+            apiResponsePanel.classList.remove('error');
+        }
     } catch (e) {
-        apiResponse.textContent = `JSON 직렬화 오류: ${e.message}`;
+        apiResponsePanel.textContent = `JSON 직렬화 오류: ${e.message}\n원본 데이터: ${String(responseData)}`;
+        apiResponsePanel.classList.add('error');
     }
 }
 
 // 스트림 청크를 API 응답 패널에 추가하는 함수
 export function appendToApiResponse(chunk) {
-    const apiResponse = document.getElementById('api-response');
-    if (!apiResponse) return;
+    const apiResponsePanel = document.getElementById('api-response'); // 변수명 변경
+    if (!apiResponsePanel) return;
     
     try {
-        apiResponse.textContent += chunk;
+        // 스트리밍 데이터는 보통 텍스트이므로 그대로 추가
+        apiResponsePanel.textContent += chunk;
+        apiResponsePanel.classList.remove('error'); // 스트리밍 중에는 에러 상태 해제
     } catch (e) {
-        apiResponse.textContent += `\n[청크 추가 오류: ${e.message}]`;
+        apiResponsePanel.textContent += `\n[청크 추가 오류: ${e.message}]`;
+        apiResponsePanel.classList.add('error');
     }
 }
 

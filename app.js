@@ -15,6 +15,7 @@ let sessionsRouter;
 let aiInfoRouter; // Declare aiInfoRouter
 let searchRouter;
 let subscriptionsRouter;
+let translationsRouter; // translationsRouter 변수 선언 추가
 
 
 // 미들웨어 설정
@@ -73,6 +74,7 @@ async function startServer() {  try {
     aiInfoRouter = require('./routes/aiInfo'); // Require aiInfoRouter
     searchRouter = require('./routes/search'); // Require searchRouter
     subscriptionsRouter = require('./routes/subscriptions'); // Require subscriptionsRouter
+    translationsRouter = require('./routes/translations'); // translationsRouter 로드
 
     app.use('/api/users', usersRouter);
     app.use('/api/chat', chatRouter);
@@ -80,6 +82,7 @@ async function startServer() {  try {
     app.use('/api/ai', aiInfoRouter); // Mount aiInfoRouter
     app.use('/api/search', searchRouter); // Mount searchRouter
     app.use('/api/subscriptions', subscriptionsRouter); // Mount subscriptionsRouter
+    app.use('/api/translations', translationsRouter); // translationsRouter 마운트
 
     // 서버 상태 확인용 엔드포인트
     app.get('/api/health', (req, res) => {
