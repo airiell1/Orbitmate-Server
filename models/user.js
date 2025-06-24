@@ -708,32 +708,7 @@ module.exports = {
   getUserCustomization,
   updateUserCustomization,
   getUserLevel,
-  // addUserExperience, // 위와 중복, 아래 것으로 대체
-  getUserBadges,
-  toggleUserBadge,
-  checkAndGrantBadges, // connection 인자 추가 필요
-  getTranslationResources,
-  updateUserLanguage,
-  upgradeBadgeLevel, // connection 인자 추가 필요
-  handleBugReport, // 내부적으로 handleUserActivity 호출, handleUserActivity 수정 필요
-  handleFeedbackSubmission, // ""
-  handleTestParticipation, // ""
-  upgradeSubscriptionBadge, // connection 인자 추가 필요
-  approveBadgeUpgrade, // connection 인자 추가 필요
-};
-  registerUser,
-  loginUser,
-  getUserSettings,
-  updateUserSettings,
-  updateUserProfileImage,
-  getUserProfile,
-  updateUserProfile,
-  addUserExperience,
-  deleteUser,
-  checkEmailExists,
-  getUserCustomization,
-  updateUserCustomization,
-  getUserLevel,
+  // addUserExperience, // 위에 이미 정의됨
   getUserBadges,
   toggleUserBadge,
   checkAndGrantBadges,
@@ -745,4 +720,7 @@ module.exports = {
   handleTestParticipation,
   upgradeSubscriptionBadge,
   approveBadgeUpgrade,
+  // createDefaultUserProfile, // 내부 헬퍼 함수이므로 export 불필요
+  grantUserBadge, // checkAndGrantBadges 등에서 사용되므로 export (또는 checkAndGrantBadges 내에서만 사용한다면 private으로)
+  // handleUserActivity // 내부 래퍼 함수들을 통해 호출되므로 직접 export 불필요
 };
