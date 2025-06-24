@@ -146,11 +146,12 @@ node app.js
 *   `server.js`: `app.js`를 실행하는 간단한 진입점.
 *   `config/`: 데이터베이스, AI 제공자, JWT 등 각종 설정 파일.
     *   `index.js`: 모든 설정을 통합 관리하며, 환경 변수를 로드하여 애플리케이션에 제공.
-*   `controllers/`: API 요청을 받아 비즈니스 로직을 처리하고 응답을 반환. 모델과 뷰(응답) 사이의 중재자.
+*   `services/`: 비즈니스 로직을 처리하는 서비스 계층. 컨트롤러와 모델 사이의 중재자 역할을 하며, 트랜잭션 관리 및 여러 모델 함수 호출을 조합합니다. (예: `authService.js`, `chatService.js`, `userService.js` - 현재는 기능별로 분리됨)
+*   `controllers/`: API 요청을 받고, 입력값 검증 후 서비스 계층에 비즈니스 로직 처리를 위임하고, 그 결과를 받아 HTTP 응답을 반환합니다. 기능별로 분리되어 있습니다. (예: `authController.js`, `chatController.js`)
 *   `middleware/`: JWT 인증, 구독 기반 권한 체크 등 Express 미들웨어.
-*   `models/`: 데이터베이스 스키마 및 데이터 접근 로직 (SQL 쿼리 실행).
+*   `models/`: 데이터베이스 스키마 및 데이터 접근 로직 (SQL 쿼리 실행). DB CRUD 작업에 집중합니다.
 *   `public/`: 정적 파일 (HTML, CSS, 클라이언트 JavaScript, 이미지 등).
-*   `routes/`: API 엔드포인트 정의 및 해당 컨트롤러 함수 연결.
+*   `routes/`: API 엔드포인트 정의 및 해당 컨트롤러 함수 연결. 기능별로 분리될 수 있습니다. (예: `users.js`, `translations.js`)
 *   `utils/`: 공통 유틸리티 함수 (DB 유틸, API 응답 표준화, 에러 핸들러 등).
 *   `uploads/`: 파일 업로드 시 저장되는 디렉토리 (자동 생성).
 *   `sqldb.sql`: 데이터베이스 스키마 및 초기 데이터 생성 스크립트.
@@ -162,13 +163,17 @@ API 엔드포인트에 대한 자세한 정보는 `public/api_docs.html` 파일�
 
 ## 주요 코드 설계 원칙 (기여자를 위한 안내)
 
+*   **계층 분리 (Layered Architecture)**:
+    *   **Controller**: HTTP 요청/응답 처리, 입력값 검증, 서비스 계층 호출.
+    *   **Service**: 비즈니스 로직 수행, 여러 모델 함수 조합, 트랜잭션 관리 (`withTransaction` 사용).
+    *   **Model**: 데이터베이스 CRUD 작업 및 순수 데이터 접근 로직.
 *   **설정 관리**: 모든 설정 값은 `config/index.js`를 통해 접근합니다. `process.env` 직접 사용을 지양합니다.
 *   **DB 연결 및 트랜잭션**:
     *   모델 함수는 `connection` 객체를 첫 번째 인자로 받습니다.
-    *   컨트롤러에서 DB 작업 시 `utils/dbUtils.js`의 `withTransaction` 유틸리티를 사용합니다.
+    *   서비스 함수 내에서 DB 작업 시 `utils/dbUtils.js`의 `withTransaction` 유틸리티를 사용합니다.
     *   모델 내에서 직접적인 DB 연결 관리(생성, 해제, 커밋, 롤백)를 하지 않습니다.
 *   **API 응답 표준화**: `utils/apiResponse.js`의 `standardizeApiResponse`를 사용하여 모든 API 응답을 일관된 형식(`{ status, data/error }`)으로 반환합니다.
-*   **중앙 에러 처리**: 컨트롤러에서 발생한 에러는 `next(error)`를 통해 `app.js`에 등록된 중앙 에러 핸들러(`handleCentralError`)로 전달되어 처리됩니다.
+*   **중앙 에러 처리**: 컨트롤러 및 서비스에서 발생한 에러는 `next(error)`를 통해 `app.js`에 등록된 중앙 에러 핸들러(`handleCentralError`)로 전달되어 처리됩니다.
 *   **CLOB 처리**: Oracle CLOB 데이터는 `utils/dbUtils.js`의 `clobToString` 또는 `convertClobFields`를 사용하여 문자열로 변환합니다.
 *   **로깅**: `console.log/error` 직접 사용을 지양하고, 중앙 로깅 메커니즘을 따릅니다 (현재는 `errorHandler.js`의 `logError`를 통해 간접적으로 사용).
 

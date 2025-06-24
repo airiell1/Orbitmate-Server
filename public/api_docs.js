@@ -17,59 +17,75 @@ const apis = [
     desc: '서버의 현재 상태와 타임스탬프를 반환합니다.',
     params: [],
     exampleReq: '',
-    exampleRes: `{\n  "status": "ok",\n  "timestamp": "YYYY-MM-DDTHH:mm:ss.sssZ"\n}`
+    exampleRes: `{
+  "status": "success",
+  "data": {
+    "status": "ok",
+    "timestamp": "YYYY-MM-DDTHH:mm:ss.sssZ"
+  }
+}`
   },
   {
     method: 'GET',
     path: '/api/ai/models',
     title: 'AI 모델 정보 조회',
-    desc: '사용 가능한 AI 모델 목록과 관련 정보를 반환합니다. 이 정보는 클라이언트에서 AI 공급자 및 모델 선택 UI를 구성하는 데 사용될 수 있습니다.',
-    params: [], // No parameters for this GET request
-    exampleReq: '', // No request body
-    exampleRes: `[
-   {
-     "provider": "geminiapi",
-     "id": "gemini-2.0-flash-thinking-exp-01-21", 
-     "name": "Google AI Studio (gemini-2.0-flash-thinking-exp-01-21)",
-     "max_input_tokens": 1048576, 
-     "max_output_tokens": 8192,
-     "is_default": true 
-   },
-   {
-     "provider": "ollama",
-     "id": "llama2", 
-     "name": "Ollama (llama2)",
-     "max_input_tokens": 128000, 
-     "max_output_tokens": 8192,
-     "is_default": false 
-   },
-   {
-     "provider": "vertexai",
-     "id": "gemini-2.5-pro-exp-03-25", 
-     "name": "Vertex AI (gemini-2.5-pro-exp-03-25)",
-     "max_input_tokens": 1048576,
-     "max_output_tokens": 65535,
-     "is_default": false 
-   }
- ]`
+    desc: '사용 가능한 AI 모델 목록과 관련 정보를 반환합니다. (컨트롤러: aiInfoController)',
+    params: [],
+    exampleReq: '',
+    exampleRes: `{
+  "status": "success",
+  "data": [
+    {
+      "provider": "geminiapi",
+      "id": "gemini-2.0-flash-thinking-exp-01-21",
+      "name": "Google AI Studio (gemini-2.0-flash-thinking-exp-01-21)",
+      "max_input_tokens": 1048576,
+      "max_output_tokens": 8192,
+      "is_default": true,
+      "description": "Google의 AI Studio를 통해 제공되는 모델입니다. 균형 잡힌 성능과 다양한 기능을 제공합니다.",
+      "strengths": ["일반 대화", "창의적 글쓰기", "요약"],
+      "availability": "available"
+    },
+    {
+      "provider": "ollama",
+      "id": "gemma3:4b",
+      "name": "Ollama (gemma3:4b)",
+      "max_input_tokens": 128000,
+      "max_output_tokens": 8192,
+      "is_default": false,
+      "description": "로컬 환경에서 실행 가능한 오픈소스 모델입니다. 데이터 보안 및 커스터마이징에 유리합니다.",
+      "strengths": ["오프라인 사용", "빠른 응답(로컬 환경 최적화 시)", "특정 작업 फाइन-튜닝 가능"],
+      "availability": "available"
+    }
+    // ... more models
+  ]
+}`
   },
-  /* 2. 사용자 관리 */
+  /* 2. 사용자 관리 (인증 관련은 /api/auth, 프로필 등은 /api/users/:user_id) */
   {
     method: 'POST',
-    path: '/api/users/register',
+    path: '/api/users/register', // 이 경로는 /api/auth/register 등으로 변경될 수 있음 (라우트 업데이트 단계에서 결정)
     title: '회원가입',
-    desc: '새로운 사용자를 등록합니다.<br>Validation Rules: <ul><li>`username`: 3-30자, 영숫자 및 밑줄(_) 허용.</li><li>`email`: 유효한 이메일 형식, 최대 254자.</li><li>`password`: 최소 8자, 최대 128자.</li></ul>',
+    desc: '새로운 사용자를 등록합니다. (컨트롤러: authController)<br>Validation Rules: <ul><li>`username`: 3-30자, 영숫자 및 밑줄(_) 허용.</li><li>`email`: 유효한 이메일 형식, 최대 254자.</li><li>`password`: 최소 8자, 최대 128자.</li></ul>',
     params: [
       { name: 'username', type: 'text', label: '사용자명 (3-30자, 영숫자/_)', required: true },
       { name: 'email', type: 'email', label: '이메일 (최대 254자)', required: true },
       { name: 'password', type: 'password', label: '비밀번호 (8-128자)', required: true }
     ],
     exampleReq: `{\n  "username": "APItestUser",\n  "email": "API@example.com",\n  "password": "password123"\n}`,
-    exampleRes: `{\n  "user_id": "API_TEST_USER_ID",\n  "username": "APItest",\n  "email": "API@example.com",\n  "created_at": "YYYY-MM-DDTHH:mm:ss.sssZ"\n}`
+    exampleRes: `{
+  "status": "success",
+  "data": {
+    "user_id": "API_TEST_USER_ID",
+    "username": "APItestUser",
+    "email": "API@example.com",
+    "created_at": "YYYY-MM-DDTHH:mm:ss.sssZ"
+  }
+}`
   },
   {
     method: 'POST',
-    path: '/api/users/check-email',
+    path: '/api/users/check-email', // 이 경로는 /api/auth/check-email 등으로 변경될 수 있음
     title: '이메일 중복 확인',
     desc: '제공된 이메일 주소가 이미 시스템에 등록되어 있는지 확인합니다.<br>Validation Rules: <ul><li>`email`: 유효한 이메일 형식, 최대 254자.</li></ul>',
     params: [

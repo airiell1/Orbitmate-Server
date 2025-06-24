@@ -1,30 +1,10 @@
 const express = require("express");
-const {
-  registerUserController,
-  loginUserController,
-  getUserSettingsController,
-  updateUserSettingsController,
-  uploadProfileImageController,
-  deleteUserController,
-  getUserProfileController,
-  updateUserProfileController,
-  checkEmailExistsController, // 수정됨
-  getUserCustomizationController,
-  updateUserCustomizationController,
-  getUserLevelController,
-  addUserExperienceController,
-  getUserBadgesController,
-  toggleUserBadgeController,
-  getTranslationResourcesController,
-  updateUserLanguageController,
-  upgradeBadgeLevelController,
-  handleBugReportController,
-  handleFeedbackSubmissionController,
-  handleTestParticipationController,
-  getUserBadgeDetailsController,
-  upgradeSubscriptionBadgeController,
-  approveBadgeUpgradeController,
-} = require("../controllers/userController");
+const authController = require("../controllers/authController");
+const userProfileController = require("../controllers/userProfileController");
+const userSettingsController = require("../controllers/userSettingsController");
+const userActivityController = require("../controllers/userActivityController");
+// const translationController = require("../controllers/translationController"); // Will be in a separate router
+
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
@@ -42,110 +22,66 @@ const profileStorage = multer.diskStorage({
     cb(null, profileUploadDir);
   },
   filename: function (req, file, cb) {
-    // 사용자 ID와 타임스탬프를 조합하여 파일 이름 생성 (덮어쓰기 방지)
-    const user_id = req.params.user_id || "temp"; // user_id가 없는 경우 대비
+    const user_id = req.params.user_id || req.user?.user_id || "temp"; // 인증된 사용자 ID 또는 파라미터 사용
     cb(null, `${user_id}-${Date.now()}-${file.originalname}`);
   },
 });
 
 const upload = multer({ storage: profileStorage });
 
-// --- 인증 불필요 ---
-// 사용자 등록
-router.post("/register", registerUserController);
+// --- 인증 관련 라우트 (authController) ---
+router.post("/register", authController.registerUserController);
+router.post("/login", authController.loginUserController);
+router.post("/check-email", authController.checkEmailExistsController);
 
-// 이메일 중복 체크
-router.post("/check-email", checkEmailExists);
 
-// 사용자 로그인
-router.post("/login", loginUserController);
-
-// --- 인증 필요 --- (verifyToken 미들웨어 제거)
-// 사용자 설정 조회
-router.get("/:user_id/settings", getUserSettingsController);
-
-// 사용자 설정 업데이트
-router.put("/:user_id/settings", updateUserSettingsController);
-
-// 프로필 이미지 업로드
+// --- 사용자 프로필 관련 라우트 (userProfileController) ---
+// (주의: :user_id 파라미터를 사용하는 라우트는 인증 미들웨어 뒤에 오는 것이 일반적)
+// (MVP에서는 인증 미들웨어가 모든 라우트에 적용되지 않았을 수 있으므로, 우선 그대로 둠)
+router.get("/:user_id/profile", userProfileController.getUserProfileController);
+router.put("/:user_id/profile", userProfileController.updateUserProfileController);
 router.post(
   "/:user_id/profile/image",
-  upload.single("profile_image"),
-  uploadProfileImageController
+  upload.single("profile_image"), // multer 미들웨어는 해당 라우트에만 적용
+  userProfileController.uploadProfileImageController
 );
+// 사용자 삭제(회원 탈퇴)는 중요한 작업이므로, user_id를 명시적으로 받고, 강력한 인증/인가 필요
+router.delete("/:user_id", userProfileController.deleteUserController);
 
-// 사용자 프로필 조회
-router.get("/:user_id/profile", getUserProfileController);
 
-// 사용자 프로필 업데이트
-router.put("/:user_id/profile", updateUserProfileController);
+// --- 사용자 설정 관련 라우트 (userSettingsController) ---
+router.get("/:user_id/settings", userSettingsController.getUserSettingsController);
+router.put("/:user_id/settings", userSettingsController.updateUserSettingsController);
+router.put("/:user_id/language", userSettingsController.updateUserLanguageController);
 
-// 사용자 삭제 (회원 탈퇴)
-router.delete("/:user_id", deleteUserController);
 
-// =========================
-// 7. 프로필 꾸미기 API
-// =========================
+// --- 사용자 활동/참여 관련 라우트 (userActivityController) ---
+// 프로필 꾸미기
+router.get("/:user_id/customization", userActivityController.getUserCustomizationController);
+router.put("/:user_id/customization", userActivityController.updateUserCustomizationController);
 
-// 프로필 꾸미기 설정 조회
-router.get("/:user_id/customization", getUserCustomizationController);
+// 레벨 및 경험치
+router.get("/:user_id/level", userActivityController.getUserLevelController);
+router.post("/:user_id/experience", userActivityController.addUserExperienceController); // 관리자용 또는 특정 액션용
 
-// 프로필 꾸미기 설정 업데이트
-router.put("/:user_id/customization", updateUserCustomizationController);
+// 뱃지 시스템
+router.get("/:user_id/badges", userActivityController.getUserBadgesController);
+router.put("/:user_id/badges/:badge_id", userActivityController.toggleUserBadgeController);
+router.get("/:user_id/badge-details", userActivityController.getUserBadgeDetailsController); // 특정 뱃지 조회 또는 전체
+router.post("/:user_id/badges/upgrade", userActivityController.upgradeBadgeLevelController); // 개발/테스트용
 
-// =========================
-// 8. 레벨 및 경험치 API
-// =========================
+// 사용자 활동 (버그리포트, 피드백 등)
+router.post("/:user_id/bug-report", userActivityController.handleBugReportController);
+router.post("/:user_id/feedback", userActivityController.handleFeedbackSubmissionController);
+router.post("/:user_id/test-participation", userActivityController.handleTestParticipationController);
 
-// 사용자 레벨 정보 조회
-router.get("/:user_id/level", getUserLevelController);
+// 구독 관련 뱃지 (이 부분은 subscriptionController로 가는 것이 더 적절할 수 있으나, userActivity의 결과로 볼 수도 있음)
+router.post("/:user_id/subscription-badge", userActivityController.upgradeSubscriptionBadgeController);
+router.post("/:user_id/approve-badge", userActivityController.approveBadgeUpgradeController); // 관리자용
 
-// 사용자 경험치 추가 (관리자용)
-router.post("/:user_id/experience", addUserExperienceController);
 
-// =========================
-// 뱃지 시스템 API
-// =========================
+// 번역 리소스 조회 라우트는 여기서 제거하고, 별도의 translations.js 라우터 파일로 이동합니다.
+// router.get("/translations/:lang", translationController.getTranslationResourcesController);
 
-// 사용자 뱃지 목록 조회
-router.get("/:user_id/badges", getUserBadgesController);
-
-// 뱃지 착용/해제
-router.put("/:user_id/badges/:badge_id", toggleUserBadgeController);
-
-// =========================
-// 10. 다국어 지원 API
-// =========================
-
-// 번역 리소스 조회
-router.get("/translations/:lang", getTranslationResourcesController);
-
-// 사용자 언어 설정 업데이트
-router.put("/:user_id/language", updateUserLanguageController);
-
-// =========================
-// 11. 뱃지 레벨 시스템 API
-// =========================
-
-// 뱃지 상세 조회
-router.get("/:user_id/badge-details", getUserBadgeDetailsController);
-
-// 버그 제보 (승인 대기)
-router.post("/:user_id/bug-report", handleBugReportController);
-
-// 피드백 제출 (승인 대기)
-router.post("/:user_id/feedback", handleFeedbackSubmissionController);
-
-// 테스트 참여 (단순 뱃지)
-router.post("/:user_id/test-participation", handleTestParticipationController);
-
-// 구독 기간 뱃지 업그레이드
-router.post("/:user_id/subscription-badge", upgradeSubscriptionBadgeController);
-
-// 개발자 뱃지 승인 (개발/관리자용)
-router.post("/:user_id/approve-badge", approveBadgeUpgradeController);
-
-// 뱃지 레벨 직접 업그레이드 (개발/테스트용)
-router.post("/:user_id/badges/upgrade", upgradeBadgeLevelController);
 
 module.exports = router;
