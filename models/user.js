@@ -718,4 +718,7 @@ module.exports = {
   handleTestParticipation,
   upgradeSubscriptionBadge,
   approveBadgeUpgrade,
+  // createDefaultUserProfile, // 내부 헬퍼 함수이므로 export 불필요
+  grantUserBadge, // checkAndGrantBadges 등에서 사용되므로 export (또는 checkAndGrantBadges 내에서만 사용한다면 private으로)
+  // handleUserActivity // 내부 래퍼 함수들을 통해 호출되므로 직접 export 불필요
 };
