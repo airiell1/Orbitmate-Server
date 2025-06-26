@@ -42,29 +42,44 @@ async function searchWikipedia(query, limit = 10, language = "ko") {
       srsearch: query,
       srlimit: Math.min(limit * 2, 50), // 더 많이 가져와서 필터링
       srprop: "snippet|titlesnippet|size|wordcount|timestamp",
+      utf8: 1, // UTF-8 인코딩 명시
+      origin: "*" // CORS 허용
     };
+
+    console.log(`[searchModel] Request URL: ${searchUrl}`);
+    console.log(`[searchModel] Request params:`, searchParams);
 
     const searchResponse = await axios.get(searchUrl, {
       params: searchParams,
-      timeout: parseInt(process.env.WIKIPEDIA_REQUEST_TIMEOUT) || 5000,
+      timeout: parseInt(process.env.WIKIPEDIA_REQUEST_TIMEOUT) || 10000, // 타임아웃 증가
       headers: {
-        "User-Agent":
-          "Orbitmate/1.0 (https://orbitmate.com; contact@orbitmate.com)",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "Accept": "application/json",
+        "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br"
       },
+    });
+
+    console.log(`[searchModel] Wikipedia API response:`, {
+      url: searchResponse.config.url,
+      status: searchResponse.status,
+      query: searchResponse.data.query,
+      searchResultsCount: searchResponse.data.query?.search?.length || 0
     });
 
     const searchResults = searchResponse.data.query?.search || [];
 
     if (searchResults.length === 0) {
-      // 한국어에서 결과가 없으면 영어로 재시도
+      // 한국어에서 결과가 없으면 영어로 재시도 (원본 검색어 그대로)
       if (language === "ko") {
         const fallbackLanguage =
           process.env.WIKIPEDIA_FALLBACK_LANGUAGE || "en";
         console.log(
-          `[searchModel] No results in Korean, trying ${fallbackLanguage}`
+          `[searchModel] No results in Korean, trying ${fallbackLanguage} with original query`
         );
         return await searchWikipedia(query, limit, fallbackLanguage);
       }
+      console.log(`[searchModel] No results found for query: "${query}" in language: ${language}`);
       return [];
     }
 
@@ -84,14 +99,18 @@ async function searchWikipedia(query, limit = 10, language = "ko") {
       piprop: "thumbnail|original",
       pithumbsize: 300,
       inprop: "url",
+      utf8: 1,
+      origin: "*"
     };
 
     const detailsResponse = await axios.get(detailsUrl, {
       params: detailsParams,
-      timeout: parseInt(process.env.WIKIPEDIA_REQUEST_TIMEOUT) || 5000,
+      timeout: parseInt(process.env.WIKIPEDIA_REQUEST_TIMEOUT) || 10000,
       headers: {
-        "User-Agent":
-          "Orbitmate/1.0 (https://orbitmate.com; contact@orbitmate.com)",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "Accept": "application/json",
+        "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br"
       },
     });
 
@@ -153,7 +172,13 @@ async function searchWikipedia(query, limit = 10, language = "ko") {
     );
     return formattedResults;
   } catch (error) {
-    console.error(`[searchModel] Wikipedia API error:`, error.message);
+    console.error(`[searchModel] Wikipedia API error for "${query}" (${language}):`, {
+      message: error.message,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      url: error.config?.url,
+      params: error.config?.params
+    });
 
     // 네트워크 오류 시 캐시된 오래된 결과라도 반환 시도
     if (searchCache.has(cacheKey)) {
@@ -161,7 +186,19 @@ async function searchWikipedia(query, limit = 10, language = "ko") {
       return searchCache.get(cacheKey).data;
     }
 
-    throw error;
+    // 한국어에서 에러가 발생하면 영어로 재시도 (한 번만)
+    if (language === "ko") {
+      console.log(`[searchModel] Error in Korean, attempting English fallback`);
+      try {
+        return await searchWikipedia(query, limit, "en");
+      } catch (fallbackError) {
+        console.error(`[searchModel] Fallback to English also failed:`, fallbackError.message);
+      }
+    }
+
+    // 최종적으로 빈 배열 반환 (에러를 throw하지 않음)
+    console.log(`[searchModel] Returning empty results due to persistent errors`);
+    return [];
   }
 }
 

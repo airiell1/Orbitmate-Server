@@ -1,5 +1,39 @@
 const { toSnakeCaseObj } = require("./dbUtils");
-const { getHttpStatusByErrorCode } = require("./errorHandler"); // 순환 참조 가능성 주의, 필요시 이 함수 위치 변경
+
+// getHttpStatusByErrorCode 함수를 여기서 직접 정의하여 순환 참조 방지
+function getHttpStatusByErrorCode(errorCode) {
+  const statusMap = {
+    // 클라이언트 오류 (400 대)
+    INVALID_INPUT: 400,
+    INVALID_MESSAGE: 400,
+    INVALID_SESSION: 400,
+    INVALID_USER: 400,
+    UNIQUE_CONSTRAINT_VIOLATED: 400, // 중복 에러도 400으로 처리 (또는 409 Conflict)
+    FOREIGN_KEY_VIOLATION: 400,
+    NULL_VALUE_ERROR: 400,
+    VALUE_TOO_LARGE: 400,
+    SESSION_NOT_FOUND: 404,
+    MESSAGE_NOT_FOUND: 404,
+    USER_NOT_FOUND: 404,
+    RESOURCE_NOT_FOUND: 404, // 일반적인 Not Found
+    UNAUTHORIZED: 401,
+    FORBIDDEN: 403,
+    NO_TEAPOT_FOUND: 418, // Just for fun, if ever used
+
+    // 서버 오류 (500 대)
+    SERVER_ERROR: 500,
+    DATABASE_ERROR: 500,
+    DB_ERROR: 500, // DB 관련 일반 오류
+    DB_BIND_ERROR: 500,
+    AI_SERVICE_ERROR: 503, // 외부 서비스 문제
+    AI_RESPONSE_ERROR: 503,
+    MESSAGE_SAVE_FAILED: 500,
+    AI_MESSAGE_SAVE_FAILED: 500,
+    UNKNOWN_ERROR: 500, // 정의되지 않은 모든 에러
+  };
+
+  return statusMap[errorCode] || 500; // 기본값 500
+}
 
 /**
  * API 응답을 표준화하는 함수.

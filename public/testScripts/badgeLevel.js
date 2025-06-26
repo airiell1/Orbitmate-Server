@@ -2,9 +2,53 @@
 // 뱃지 레벨 시스템 테스트 함수들
 // =========================
 
-import { displayApiResponse, displayError } from './utils.js';
+// utils.js에서 함수 import (동적 import 사용)
+let updateApiResponse;
 
-const API_BASE_URL = 'http://localhost:8081/api';
+// 초기화 함수
+async function initBadgeLevel() {
+    try {
+        const utilsModule = await import('./utils.js');
+        updateApiResponse = utilsModule.updateApiResponse;
+    } catch (error) {
+        console.error('utils.js 로드 실패:', error);
+        // 대체 함수
+        updateApiResponse = (message) => {
+            console.log(message);
+            const responseDiv = document.getElementById('api-response');
+            if (responseDiv) {
+                responseDiv.innerHTML = `<pre>${message}</pre>`;
+            }
+        };
+    }
+}
+
+// 페이지 로드 시 초기화
+if (typeof window !== 'undefined') {
+    initBadgeLevel();
+}
+
+// 호환성을 위한 displayApiResponse 함수
+function displayApiResponse(title, data) {
+    const message = `${title}: ${JSON.stringify(data, null, 2)}`;
+    if (updateApiResponse) {
+        updateApiResponse(message);
+    } else {
+        console.log(message);
+    }
+}
+
+// 호환성을 위한 displayError 함수
+function displayError(title, error) {
+    const message = `${title} 오류: ${error.message || error}`;
+    if (updateApiResponse) {
+        updateApiResponse(message);
+    } else {
+        console.error(message);
+    }
+}
+
+const API_BASE_URL = 'http://localhost:3000/api'; // 포트를 3000으로 수정
 
 /**
  * 뱃지 상세 조회 테스트

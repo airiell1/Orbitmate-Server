@@ -5,211 +5,38 @@
 
 ---
 
+## [2025-06-26] 시스템 구조/운영/리팩토링 검증 요약 (자동화 보고서 기반)
+
+### 1. 구조/기능/명세 일치성
+- config, middleware, models, controllers, utils 폴더 전체가 SYSTEM_ARCHITECTURE.md 기준 100% 일치
+- ServiceFactory/Repository/Middleware/Provider 패턴, 트랜잭션/에러/응답 표준화, 관심사 분리 등 설계 원칙 준수
+- Oracle DB 구조, 주요 테이블/컬럼/관계, 트랜잭션/커넥션 관리, RESTful 엔드포인트, snake_case 응답, HTTP 상태코드, 에러코드 표준화 모두 일치
+
+### 2. 미세 리팩토링/개선 포인트 및 잠재적 에러
+- config: 환경변수 유효성, 안내 메시지, graceful degradation 등
+- middleware/models: connection 주입 일관성, autoCommit, 중복 로직, 에러코드 표준화 등
+- controllers: 유효성 검사/에러코드/응답 포맷 중복, guest 권한 처리, 파일 업로드 예외, 외부 API 장애 대응 등
+
+### 3. 컨트롤러/모델/미들웨어 상세 검증
+- 모든 컨트롤러는 ServiceFactory 패턴 기반, dataExtractor/validations/responseTransformer/errorHandler 일관성 유지
+- chat.js, user.js 등 모델은 connection 첫 인자, 트랜잭션/에러처리/주석/에러코드/autoCommit/withTransaction 패턴 일치
+- 미들웨어는 구독/권한/일일제한/파일업로드 제한 등 명세와 일치, 표준 에러코드(403, 429, 413 등) 사용
+
+### 4. 구조적 불일치 없음 (2025-06-25 기준)
+- SYSTEM_ARCHITECTURE.md 기준 구조/기능/명세 100% 일치
+- 모든 계층/패턴/핵심 기능이 설계 의도대로 구현됨
+- 미세 리팩토링/안정성 개선 여지 외 구조적 문제 없음
+
+### 5. 참고: 자동화 검증/분석 보고서 활용법
+- .github/orbitmate-검증-분석-리포트.md, .github/orbitmate-퍼블릭-이슈.md 참고
+- 구조/기능/명세 일치성, 미세 리팩토링 포인트, 잠재적 에러, 개선점 등 실무 적용에 유용
+
+---
+
 ## 1. 프로젝트 구조 및 주요 진입점
 
-- **서버 진입점**
-  - `server.js`: 단순한 모듈 진입점, app.js를 require하여 모듈로 내보냄
-  - `app.js`: 실제 서버 로직 - Express 앱 설정, 미들웨어 구성, 라우트 연결, DB 초기화 및 서버 시작
-
-- **DB/외부 연동 (config/)**
-  - `config/database.js`:
-    - Oracle DB 연결, 커넥션 풀 관리, Thick 모드(Instant Client) 지원
-    - 환경변수 기반 설정 (user, password, connectString)
-    - 주요 함수 및 내보내기:
-      - `initOracleClient()`: Oracle Instant Client 경로로 Thick 모드 초기화 (윈도우 환경 등에서 필수)
-      - `initializeDbPool()`: 커넥션 풀 생성 및 초기화
-      - `getConnection()`: 커넥션 획득 (풀에서)
-      - `oracledb`: oracledb 인스턴스 전체 내보내기 (트랜잭션, CLOB 등 활용)
-    - 참고: 커넥션 풀은 app.js/server.js에서 최초 1회만 초기화 필요. 각 모델/컨트롤러에서는 getConnection()으로 커넥션 획득 후 사용/반납
-- **데이터베이스 스키마**
-  - `sqldb.sql`: **통합 DB 초기화 스크립트** ✅ **2025-01-27 업데이트**
-    - 기본 스키마 + 구독 관리 + 레벨 시스템 + 다국어 지원 + 프로필 꾸미기 등 모든 기능 포함
-    - 한 번의 실행으로 완전한 DB 초기화 가능
-    - 포함된 테이블: users, chat_sessions, chat_messages, user_settings, user_profiles, attachments, subscription_tiers, user_subscriptions, user_badges, level_requirements, user_experience_log, user_items, message_edit_history, translation_resources
-    - 기본 데이터: 구독 등급 4단계, 레벨 시스템, 뱃지, 번역 리소스, guest 사용자 설정 포함
-  - `db_enhancement_backup.sql`: 백업 파일 (더 이상 사용하지 않음)
-
-  - `config/geminiapi.js`:
-    - Google AI Studio 연동, Gemini 2.0 Flash Exp 모델 사용
-    - **API 키 설정: `GEMINI_API_KEY` 환경변수 필요**
-    - 안전성 필터(괴롭힘/증오/성적/위험 콘텐츠), 스트림/캔버스 등 특수 모드 지원
-    - 주요 함수 및 내보내기:
-      - `getGeminiApiResponse(currentUserMessage, history, systemMessageText, specialModeType, streamResponseCallback, options)`: Google AI Studio에 대화 요청, 스트림/캔버스 등 특수 모드 지원
-      - `genAI`: GoogleGenerativeAI 인스턴스 (직접 모델 생성/설정 가능)
-      - `defaultModel`: 기본 모델 이름 ('gemini-2.0-flash-thinking-exp-01-21')
-    - 참고: specialModeType에 따라 systemPrompt가 자동 강화(캔버스/검색 등), 토큰 사용량 추적 기능 제공
-
-  - `config/vertexai.js`:
-    - Vertex AI 연동, Google Cloud Gemini 2.5 pro 모델 사용
-    - **리전 설정: `global` exp는 이 리전에서만 사용 가능
-    - 안전성 필터(증오/성적/위험/학대), 스트림/캔버스/검색 등 특수 모드 지원
-    - 주요 함수 및 내보내기:
-      - `getVertexAiApiResponse(currentUserMessage, history, systemMessageText, specialModeType, streamResponseCallback, options)`: Vertex AI에 대화 요청, 스트림/캔버스/검색 등 특수 모드 지원 (systemPrompt, specialModeType, stream 콜백, options 객체로 model_id_override, max_output_tokens_override 등 다양한 옵션 지원)
-      - `vertex_ai`: VertexAI 인스턴스 (직접 모델 생성/설정 가능)
-      - `generativeModel`: Gemini 2.5 pro 모델 인스턴스 (기본 설정)
-    - 참고: specialModeType에 따라 systemPrompt가 자동 강화(캔버스/검색 등), streamResponseCallback으로 스트리밍 응답 처리 가능
-
-- **AI 제공자 및 유틸리티 (utils/)**
-  - `utils/aiProvider.js`: AI 제공자 추상화 레이어
-    - **기본 provider: `'geminiapi'` (Google AI Studio)** - 2025년 6월 17일 vertexai에서 변경
-    - 주요 함수:
-      - `fetchChatCompletion(aiProvider, currentUserMessage, history, systemMessageText, specialModeType, streamResponseCallback, options)`: AI 제공자별 요청 라우팅
-    - Google AI Studio, Vertex AI, Ollama 간 통합 인터페이스 제공
-    - 옵션을 통한 모델별 설정 지원 (ollamaModel, vertexModelId, geminiModel, max_output_tokens_override 등)
-
-- **컨트롤러**
-  - `controllers/userController.js`: 사용자 회원가입, 로그인, 설정/프로필 조회·수정, 프로필 이미지 업로드, 회원 탈퇴 등 사용자 관련 API 처리
-    - 주요 함수:
-      - `registerUserController()`: 회원가입 (이미 등록된 이메일은 200으로 반환)
-      - `loginUserController()`: 로그인 (JWT 발급)
-      - `getUserSettingsController()`, `updateUserSettingsController()`: 사용자 설정 조회/수정 (테마, 언어, 폰트 크기, AI 모델 선호도 등)
-      - `getUserProfileController()`, `updateUserProfileController()`: 프로필 조회/수정
-      - `uploadProfileImageController()`: 프로필 이미지 업로드
-      - `deleteUserController()`: 회원 탈퇴
-      - `checkEmailExists()`: 이메일 중복 확인 API 처리
-  - `controllers/chatController.js`: 채팅 메시지 전송, AI 응답, 메시지 편집/삭제/리액션, 파일 업로드 등 채팅 관련 API 처리
-    - **기본 AI Provider: `'geminiapi'`, 테스트 사용자 ID: `'guest'`**
-    - **HTTP SSE 스트리밍**: WebSocket 제거, Server-Sent Events만 사용
-    - 주요 함수:
-      - `sendMessageController()`: 메시지 전송 및 AI 응답 처리 (aiProvider 추상화를 통한 HTTP SSE 스트리밍 지원)
-      - `editMessageController()`: 메시지 편집
-      - `addReactionController()`, `removeReactionController()`: 메시지 리액션 추가/제거
-      - `deleteMessageController()`: 메시지 삭제
-      - `uploadFile()`: 파일 업로드 및 첨부파일 DB 저장
-      - `getSessionMessagesController()`: 세션별 메시지 목록 조회 (CLOB 변환 포함)
-
-  - `controllers/sessionController.js`: 채팅 세션 생성/조회/수정/삭제 등 세션 관련 API 처리
-    - 주요 함수:
-      - `createSessionController()`: 세션 생성
-      - `getUserSessionsController()`: 사용자 세션 목록 조회
-      - `updateSessionController()`: 세션 정보 수정 (제목, 카테고리, 보관 여부)
-      - `getSessionMessagesController()`: 세션 메시지 목록 조회 (models/session.js의 getSessionMessages 호출)
-      - `deleteSessionController()`: 세션 삭제
-
-  - `controllers/aiInfoController.js`: AI 정보 조회 API 처리
-    - **기본 provider: `'vertexai'`로 설정됨**
-    - 주요 함수:
-      - `getModelsInfoController()`: 사용 가능한 AI 모델 목록 조회 (기본값으로 Vertex AI 설정)
-  - `controllers/searchController.js`: 검색 기능 관련 API 처리 (위키피디아 검색 등)
-    - 주요 함수:
-      - `searchWikipediaController()`: 위키피디아 검색 API 처리
-
-  - `controllers/subscriptionController.js`: 구독 관리 시스템 API 처리 **✅ 새로 추가됨**
-    - ** 시뮬레이션**: 실제 결제 없이 구독 상태 관리 시스템 구현
-    - 주요 함수:
-      - `getSubscriptionTiersController()`: 구독 등급 목록 조회
-      - `getUserSubscriptionController()`: 사용자 구독 정보 조회
-      - `updateUserSubscriptionController()`: 구독 업그레이드/다운그레이드
-      - `cancelUserSubscriptionController()`: 구독 취소
-      - `getUserSubscriptionHistoryController()`: 구독 이력 조회
-      - `checkFeatureAccessController()`: 기능 접근 권한 확인
-      - `checkDailyUsageController()`: 일일 사용량 확인
-      - `simulateSubscriptionUpgradeController()`: 구독 업그레이드 시뮬레이션
-      - `simulateSubscriptionRenewalController()`: 구독 갱신 시뮬레이션
-
-- **API 라우트**
-  - `routes/users.js`, `routes/chat.js`, `routes/sessions.js`, `routes/aiInfo.js`, `routes/search.js`, `routes/subscriptions.js` **✅ 구독 관리 라우트 추가됨**
-
-- **미들웨어**
-  - `middleware/auth.js`: JWT 인증 미들웨어 (학습용 최소 구현)
-  - `middleware/subscription.js`: 구독 관리 미들웨어 **✅ 새로 추가됨**
-    - ** 권한 체크**: 실제 결제 없이 구독 기반 기능 제한 시스템
-    - 주요 함수:
-      - `requireFeature(featureName)`: 특정 기능 접근 권한 체크 미들웨어
-      - `checkDailyLimit()`: 일일 AI 요청 사용량 제한 체크 미들웨어
-      - `requireTierLevel(minLevel)`: 최소 구독 등급 레벨 체크 미들웨어
-      - `checkFileUploadLimit(fileSize)`: 파일 업로드 크기 제한 체크 미들웨어
-    - 참고: 권한 부족 시 HTTP 403, 사용량 초과 시 HTTP 429 반환, 구독 업그레이드 안내 포함
-
-- **모델**
-  - `models/user.js`: 사용자 관련 DB 접근 함수 (회원가입, 로그인, 설정/프로필 조회·수정, 프로필 이미지, 경험치/레벨, 회원 탈퇴)
-    - 주요 함수:
-      - `registerUser(username, email, password)`: 회원가입, 비밀번호 해시(bcrypt), 중복 체크, 기본 설정/프로필 생성 및 트랜잭션 처리
-      - `loginUser(email, password)`: 로그인, 비밀번호 검증, 계정 활성화 체크, 로그인 시간 업데이트
-      - `getUserSettings(user_id)`, `updateUserSettings(user_id, settings)`: 사용자 설정 조회/수정 (테마, 언어, 폰트 크기, AI 모델 선호도 등)
-      - `getUserProfile(user_id)`, `updateUserProfile(user_id, profileData)`: 프로필 조회/수정 (닉네임, 소개, 생년월일, 성별 등)
-      - `updateUserProfileImage(user_id, profileImagePath)`: 프로필 이미지 경로 업데이트
-      - `addUserExperience(user_id, points)`: 경험치 추가 및 레벨업 처리 (레벨 테이블 기반 자동 계산)
-      - `deleteUser(user_id)`: 회원 탈퇴(계정 및 연관 데이터 완전 삭제, 트랜잭션 처리)
-      - `checkEmailExists(email)`: 이메일 중복 여부 확인 (true/false 반환)
-
-  - `models/chat.js`: 채팅 메시지, 첨부파일, CLOB 변환 등 채팅 관련 DB 접근 함수
-    - 주요 함수:
-      - `getChatHistoryFromDB(connection, sessionId, includeCurrentUserMessage)`: 세션별 대화 기록 조회 (Vertex AI 포맷으로 변환, CLOB 처리)
-      - `saveUserMessageToDB(connection, sessionId, user_id, message)`: 사용자 메시지 저장 (CLOB, sequence 기반 ID 생성)
-      - `saveAiMessageToDB(connection, sessionId, user_id, message)`: AI 메시지 저장 (CLOB, RETURNING으로 ID 반환)
-      - `saveAttachmentToDB(messageId, file)`: 첨부파일 정보 저장 (파일명, 경로, 크기, MIME 타입)
-      - `deleteUserMessageFromDB(messageId, user_id)`: 메시지 삭제 (soft delete 방식, 사용자 권한 체크)
-      - `getSessionMessagesForClient(sessionId)`: 세션 전체 메시지(첨부 포함) 조회 (클라이언트용 포맷, CLOB 자동 변환)
-      - `clobToString(clob)`: Oracle CLOB → 문자열 변환 유틸 (스트림 처리)
-
-  - `models/session.js`: 채팅 세션 생성/조회/수정/삭제 등 세션 관련 DB 접근 함수
-    - 주요 함수:
-      - `createChatSession(user_id, title, category)`: 세션 생성 (sequence 기반 ID, 기본값 설정)
-      - `getUserChatSessions(user_id)`: 사용자 세션 목록 조회 (생성일 역순, 보관 상태 포함)
-      - `updateChatSession(sessionId, updates)`: 세션 정보 수정 (제목, 카테고리, 보관 여부, 업데이트 시간 자동 갱신)
-      - `deleteChatSession(sessionId, user_id)`: 세션 삭제 (메시지/첨부파일/세션 완전 삭제, 트랜잭션 처리)
-      - `getSessionMessages(sessionId)`: 세션 메시지 목록 조회 (시간순 정렬, CLOB 변환)
-      - `getUserIdBySessionId(sessionId)`: 세션 ID로 사용자 ID 조회 (권한 체크용)
-
-  - `models/subscription.js`: 구독 관리 관련 DB 접근 함수 **✅ 새로 추가됨**
-    - ** 구독 시스템**: 실제 결제 검증 없이 구독 상태 관리에 집중
-    - 주요 함수:
-      - `getSubscriptionTiers()`: 구독 등급 목록 조회 (☄️ 코멧, 🪐 플래닛, ☀️ 스타, 🌌 갤럭시)
-      - `getUserSubscription(user_id)`: 사용자 구독 정보 조회 (없으면 무료 등급 자동 생성)
-      - `updateUserSubscription(user_id, tier_name, options)`: 구독 업그레이드/다운그레이드
-      - `cancelUserSubscription(user_id)`: 구독 취소 (무료 등급으로 다운그레이드)
-      - `getUserSubscriptionHistory(user_id)`: 구독 변경 이력 조회
-      - `checkUserFeatureAccess(user_id, feature_name)`: 기능 접근 권한 확인
-      - `checkDailyUsage(user_id)`: 일일 AI 요청 사용량 확인 및 제한 체크
-    - 참고: 구독 등급별 기능 제한 (AI 요청 횟수, 파일 업로드 크기, 사용 가능 기능) 자동 적용
-
-- **프론트엔드**
-  - `public/script.js`: 메인 채팅 프론트엔드 스크립트 (index.html용)
-    - **HTTP SSE 스트리밍**: WebSocket 제거, Server-Sent Events만 사용
-    - **Markdown 지원**: Marked.js와 Highlight.js를 활용한 AI 응답 Markdown 렌더링
-    - 주요 함수 및 기능:
-      - `initializeSession()`: 세션 초기화 및 자동 연결 (로컬 스토리지 기반 세션 복원)
-      - `addMessage(sender, text, messageId, isEdited)`: 채팅 메시지 UI 추가 (AI 메시지는 Markdown 렌더링)
-      - `sendMessage()`: 메시지 전송 및 AI 응답 처리 (HTTP SSE 스트리밍 지원, 스트리밍 완료 후 Markdown 변환)
-      - `parseMarkdown(text)`: Markdown 텍스트를 HTML로 변환 (코드 하이라이팅 포함)
-      - `renderMessageContent(content, isMarkdown)`: 메시지 내용 렌더링 (Markdown/일반 텍스트 선택)
-      - `refreshMessages()`: 서버에서 메시지 새로고침
-    - 전역 변수: currentSessionId, selectedAiProvider, selectedModelId, currentMaxOutputTokens, currentContextLimit
-
-  - `public/test.html`: API 테스트 페이지
-    - **기본 AI Provider: Gemini(vertexai) 선택됨**
-    - **Markdown 지원**: Marked.js와 Highlight.js 라이브러리 추가
-    - Gemini 선택 시 Ollama 모델 선택 및 양자화 옵션 자동 비활성화
-  - `public/testScript.js`: API 테스트 및 디버깅용 프론트엔드 스크립트 (test.html용)
-    - **HTTP SSE 스트리밍**: WebSocket 제거, Server-Sent Events만 사용
-    - **Markdown 지원**: 테스트 페이지의 AI 응답에 Markdown 렌더링 적용
-    - 모듈화 구조: testScripts/ 디렉토리의 개별 모듈을 import
-      - `testScripts/user.js`: 사용자 관련 API 테스트 (회원가입, 로그인, 프로필, 설정)
-      - `testScripts/session.js`: 세션 관련 API 테스트 (생성, 조회, 수정, 삭제)
-      - `testScripts/message.js`: 메시지 관련 API 테스트 (편집, 리액션, 삭제, 파일 업로드)      - `testScripts/search.js`: 검색 기능 API 테스트 (위키피디아, 네이버, 카카오)
-      - `testScripts/subscription.js`: 구독 관리 API 테스트 **✅ 새로 추가됨** (구독 등급, 업그레이드, 취소, 이력, 권한 확인, 시뮬레이션)
-      - `testScripts/chat.js`: 채팅 기능 (세션 초기화, 메시지 전송, 새로고침, Markdown 렌더링)
-        - **기본 AI Provider: `'geminiapi'`로 설정됨**
-        - Gemini UI 선택 시 `geminiapi` 사용 (`radio.value === 'gemini' ? 'geminiapi' : radio.value`)
-      - `testScripts/utils.js`: 공통 유틸리티 함수 (API 응답 표시, 에러 처리, Markdown 파싱)
-        - `parseMarkdown(text)`: Markdown 파싱 함수
-        - `renderMessageContent(content, isMarkdown)`: 메시지 내용 렌더링 함수
-    - 주요 역할: API 엔드포인트 테스트, 응답 데이터 검증, 서버 상태 점검
-    - **UI 최적화**: `toggleOllamaOptions()` 함수로 AI Provider 변경 시 Ollama 옵션 자동 비활성화/활성화
-
-  - `public/promptFeature.js`: 채팅 프롬프트(시스템 프롬프트) UI 기능
-    - 주요 기능:
-      - 프롬프트 버튼 및 옵션 패널 생성 (promptOptions 배열 기반)
-      - 프롬프트 선택 시 입력창 dataset에 저장 (data-system-prompt 속성)
-      - 다양한 역할 프롬프트 지원 (Orbitmate 2.5, mate-star, mate-search, 문학작가, 비즈니스 컨설턴트, 철학자 등)
-      - 채팅 입력 UX 개선 (프롬프트 토글 버튼, 드롭다운 패널)
-
-- **CSS 스타일링**
-  - `public/style.css`: 메인 스타일시트
-    - **Markdown 렌더링 스타일**: 코드 블록, 헤딩, 리스트, 테이블, 인용구 등 완전한 Markdown 요소 지원
-    - 코드 하이라이팅 스타일 (Highlight.js 연동)
-    - 반응형 디자인 및 현대적 UI/UX
+외부문서로 분리
+SYSTEM_ARCHITECTURE.md 참고
 
 ---
 
@@ -239,12 +66,236 @@
 
 ## 3. AI 메모 및 버그 트래킹
 
-- **작성 예시**
+---
+### [2025-06-26] 유틸리티 계층 구조/표준화/역할 상세 분석
+
+- **dbUtils.js**
+  - withTransaction: 트랜잭션 자동 관리(커밋/롤백/커넥션 close), 서비스 계층에서 DB 작업 래핑
+  - clobToString: Oracle CLOB/Stream을 안전하게 문자열로 변환
+  - toSnakeCaseObj, convertClobFields: DB 결과 snake_case 변환, CLOB 필드 일괄 변환
+
+- **apiResponse.js**
+  - standardizeApiResponse: 모든 API 응답을 statusCode/body 구조로 표준화, snake_case 일관성
+  - getHttpStatusByErrorCode: 에러코드별 HTTP 상태코드 매핑
+
+- **errorHandler.js**
+  - handleOracleError: Oracle/일반 에러를 표준화된 Error 객체(code/message/details)로 변환
+  - getHttpStatusByErrorCode: 에러코드별 HTTP 상태코드 반환(중복 정의, 통합 필요)
+
+- **validation.js**
+  - validateUserId, validateEmail, validateStringLength 등 공통 입력값 유효성 검사 함수 제공
+  - validateRequiredFields: 필수 필드 일괄 체크
+
+- **fileUtils.js**
+  - safeDeleteFile, safeDeleteMultipleFiles: 파일 안전 삭제(에러 무시 옵션)
+  - fileExists: 파일 존재 여부 확인
+  - 기타 파일 관련 유틸리티 함수
+
+- **serviceFactory.js/controllerFactory.js/modelFactory.js**
+  - createService, createController 등 팩토리 패턴으로 계층별 표준 래퍼 제공
+  - 트랜잭션, 전/후처리, 에러처리, 캐싱 등 옵션화
+
+---
+
+---
+### [2025-06-26] 서비스 계층 구조/표준화/역할 상세 분석
+
+- **공통 원칙**
+  - 모든 서비스 함수는 비즈니스 로직/트랜잭션 관리 담당, DB 작업은 모델 계층에 위임
+  - 트랜잭션은 반드시 utils/dbUtils.js의 withTransaction으로 관리, 콜백 내에서 모델 함수 호출
+  - 입력값 유효성 검증은 컨트롤러에서 1차 수행, 서비스에서는 비즈니스 규칙(권한, 중복 등) 검증
+  - 에러는 필요시 code/message를 가진 Error 객체로 throw, 모델에서 throw된 에러는 그대로 전달
+  - 외부 API 연동, 캐싱, 복합 데이터 가공 등도 서비스 계층에서 처리
+
+- **chatService.js**
+  - 채팅 메시지 전송/AI 응답/메시지 편집/리액션 등 채팅 관련 비즈니스 로직 담당
+  - 구독 일일 사용량 체크, AI provider/model 결정, 사용자 설정 반영 등 복합 로직 처리
+  - 모든 DB 작업은 withTransaction 내에서 모델 함수 호출로 일관
+
+- **sessionService.js**
+  - 채팅 세션 생성/조회/수정/삭제 등 세션 관련 비즈니스 로직 담당
+  - 트랜잭션 내에서 모델 함수 호출, 추가 데이터 가공/알림 등 확장 가능
+
+- **subscriptionService.js**
+  - 구독 등급/정보/업데이트/취소/이력/권한/사용량 등 구독 관련 비즈니스 로직 담당
+  - 한영 등급명 매핑, 무료 구독 자동 생성, 트랜잭션 일관성 보장
+
+- **userProfileService.js / userSettingsService.js**
+  - 사용자 프로필/설정/이미지 등 관리, 트랜잭션 내에서 모델 함수 호출
+  - 파일 시스템 작업은 컨트롤러에서, DB 경로 저장은 서비스에서 처리
+
+- **userActivityService.js**
+  - 경험치/레벨/뱃지/활동 로그 등 사용자 활동 관련 비즈니스 로직 담당
+  - 트랜잭션 내에서 모델 함수 호출, 프로필 자동 생성 등 예외 처리
+
+- **searchService.js / translationService.js**
+  - 외부 API(위키피디아, 날씨 등) 연동, 번역 리소스 관리 등
+  - 모델 함수 호출 및 에러 표준화, 미구현 기능은 FEATURE_NOT_IMPLEMENTED 에러 throw
+
+---
+
+---
+### [2025-06-26] 라우터 폴더 구조/표준화/역할 상세 분석
+
+- **공통 원칙**
+  - 모든 라우터는 express.Router() 기반, RESTful 경로 설계 원칙 준수
+  - 컨트롤러 계층만 호출, 비즈니스 로직/DB 접근 금지
+  - 인증/권한/구독 등 미들웨어는 필요한 엔드포인트에만 명확히 적용
+  - 파일 업로드 등 특수 기능은 multer 등 미들웨어로 분리
+  - 경로/함수명/컨트롤러명 일관성 유지, copilot-instructions.md와 상시 교차 점검
+
+- **chat.js**
+  - 채팅 세션/메시지/리액션/편집 등 채팅 관련 모든 엔드포인트 제공
+  - 파일 업로드(multer) 경로 분리, 업로드 디렉토리 자동 생성
+  - 구독 기능 제한(requireFeature) 등 미들웨어 적용
+  - 인증 미들웨어(verifyToken)는 현재 제거, 추후 필요시 재적용 가능
+
+- **sessions.js**
+  - 사용자별 채팅 세션 목록 조회 전용 라우트
+  - 인증 미들웨어(verifyToken) 제거, 단순화
+
+- **users.js**
+  - 회원가입/로그인/이메일 중복/프로필/설정/언어 등 사용자 관련 모든 엔드포인트 제공
+  - 프로필 이미지 업로드(multer) 경로 분리, 파일명에 user_id+timestamp 적용
+  - Phase별(핵심/확장/테스트)로 라우트 구분, 컨트롤러 함수 일관성 유지
+
+- **subscriptions.js**
+  - 구독 등급/정보/업데이트/취소/이력/권한/사용량 등 구독 관련 모든 엔드포인트 제공
+  - 시뮬레이션(업그레이드/갱신) 등 테스트용 엔드포인트 포함
+  - RESTful 경로 설계, 컨트롤러 함수와 1:1 매핑
+
+---
+
+---
+### [2025-06-26] 모델 계층 구조/표준화/역할 상세 분석
+
+- **공통 원칙**
+  - 모든 모델 함수는 첫 번째 인자로 반드시 connection 객체를 받음 (getConnection 직접 호출 금지)
+  - 트랜잭션/커밋/롤백/커넥션 close는 서비스 계층에서만 처리, 모델에서는 autoCommit: false 유지
+  - 에러 발생 시 utils/errorHandler.js의 handleOracleError로 표준화 후 throw
+  - DB 조회 결과는 snake_case 변환(toSnakeCaseObj) 후 반환, CLOB 필드는 clobToString 등으로 문자열 변환
+  - 입력값 검증/유효성 체크는 서비스 또는 컨트롤러에서 수행, 모델에서는 최소한의 DB 제약만 체크
+  - 모델 함수 내에서 console.log 등 직접 로깅 최소화, 필요시 중앙 로거 또는 에러핸들러 사용
+
+- **user.js**
+  - 회원가입/로그인/설정/프로필/레벨/뱃지/언어/번역 등 사용자 관련 모든 DB 작업 담당
+  - registerUser, loginUser 등은 입력값 검증, bcrypt 해싱, 중복 체크, 고정 ID 지원, 트랜잭션 일관성 보장
+  - 경험치/레벨/뱃지/활동 로그 등은 handleUserActivity 등 통합 함수로 관리, 래퍼 함수로 하위 호환성 유지
+  - 모든 에러는 표준화된 code/message로 throw, UNIQUE/NOT_FOUND/INVALID_INPUT 등 명확한 코드 사용
+  - CLOB, 날짜 등 특수 필드는 변환 후 반환, snake_case 일관성
+
+- **subscription.js**
+  - 구독 등급/정보/업데이트/취소/이력/권한/사용량 등 구독 관련 모든 DB 작업 담당
+  - getUserSubscription, updateUserSubscription 등은 트랜잭션 일관성, 무료 구독 자동 생성, 등급명 한영 매핑 지원
+  - features_included 등 JSON/CLOB 필드는 파싱 후 반환, tier 정보는 중첩 객체로 구조화
+  - 에러 발생 시 handleOracleError로 표준화, RESOURCE_NOT_FOUND 등 명확한 코드 사용
+
+- **session.js**
+  - 채팅 세션 생성/조회/수정/삭제, 메시지 목록, 세션-사용자 매핑 등 담당
+  - 테스트 환경 고정 ID 지원, 세션/메시지 동시 생성 및 정리, 트랜잭션 일관성 보장
+  - 모든 반환값은 snake_case, CLOB 메시지 변환, is_archived 등 boolean 변환
+  - 에러는 handleOracleError로 표준화, SESSION_NOT_FOUND 등 명확한 코드 사용
+
+- **chat.js**
+  - 채팅 메시지 CRUD, 히스토리, 편집, 리액션, AI 메시지 저장 등 담당
+  - 모든 함수는 connection 첫 인자, 트랜잭션/에러/autoCommit 패턴 일치
+  - 메시지 내용은 CLOB 변환, snake_case 일관성, 에러 표준화
+
+- **search.js**
+  - 위키피디아/날씨/위치 등 외부 API 연동 및 캐싱, 검색 결과 포맷팅, 캐시 관리 등 담당
+  - 메모리 캐시(Map) 기반, 캐시 만료/최대 크기/통계/삭제 등 유틸 제공
+  - 외부 API 장애 시 캐시된 데이터 우선 반환, 한영 자동 재시도, 에러 발생 시 빈 배열 반환(throw 최소화)
+  - 모든 함수는 async/await, 에러/로깅 표준화, 반환 포맷 일관성
+
+---
+---
+### [2025-06-26] 모델 계층 구조/표준화/역할 상세 분석
+
+- **공통 원칙**
+  - 모든 모델 함수는 첫 번째 인자로 반드시 connection 객체를 받음 (getConnection 직접 호출 금지)
+  - 트랜잭션/커밋/롤백/커넥션 close는 서비스 계층에서만 처리, 모델에서는 autoCommit: false 유지
+  - 에러 발생 시 utils/errorHandler.js의 handleOracleError로 표준화 후 throw
+  - DB 조회 결과는 snake_case 변환(toSnakeCaseObj) 후 반환, CLOB 필드는 clobToString 등으로 문자열 변환
+  - 입력값 검증/유효성 체크는 서비스 또는 컨트롤러에서 수행, 모델에서는 최소한의 DB 제약만 체크
+  - 모델 함수 내에서 console.log 등 직접 로깅 최소화, 필요시 중앙 로거 또는 에러핸들러 사용
+
+- **user.js**
+  - 회원가입/로그인/설정/프로필/레벨/뱃지/언어/번역 등 사용자 관련 모든 DB 작업 담당
+  - registerUser, loginUser 등은 입력값 검증, bcrypt 해싱, 중복 체크, 고정 ID 지원, 트랜잭션 일관성 보장
+  - 경험치/레벨/뱃지/활동 로그 등은 handleUserActivity 등 통합 함수로 관리, 래퍼 함수로 하위 호환성 유지
+  - 모든 에러는 표준화된 code/message로 throw, UNIQUE/NOT_FOUND/INVALID_INPUT 등 명확한 코드 사용
+  - CLOB, 날짜 등 특수 필드는 변환 후 반환, snake_case 일관성
+
+- **subscription.js**
+  - 구독 등급/정보/업데이트/취소/이력/권한/사용량 등 구독 관련 모든 DB 작업 담당
+  - getUserSubscription, updateUserSubscription 등은 트랜잭션 일관성, 무료 구독 자동 생성, 등급명 한영 매핑 지원
+  - features_included 등 JSON/CLOB 필드는 파싱 후 반환, tier 정보는 중첩 객체로 구조화
+  - 에러 발생 시 handleOracleError로 표준화, RESOURCE_NOT_FOUND 등 명확한 코드 사용
+
+- **session.js**
+  - 채팅 세션 생성/조회/수정/삭제, 메시지 목록, 세션-사용자 매핑 등 담당
+  - 테스트 환경 고정 ID 지원, 세션/메시지 동시 생성 및 정리, 트랜잭션 일관성 보장
+  - 모든 반환값은 snake_case, CLOB 메시지 변환, is_archived 등 boolean 변환
+  - 에러는 handleOracleError로 표준화, SESSION_NOT_FOUND 등 명확한 코드 사용
+
+- **chat.js**
+  - 채팅 메시지 CRUD, 히스토리, 편집, 리액션, AI 메시지 저장 등 담당
+  - 모든 함수는 connection 첫 인자, 트랜잭션/에러/autoCommit 패턴 일치
+  - 메시지 내용은 CLOB 변환, snake_case 일관성, 에러 표준화
+
+- **search.js**
+  - 위키피디아/날씨/위치 등 외부 API 연동 및 캐싱, 검색 결과 포맷팅, 캐시 관리 등 담당
+  - 메모리 캐시(Map) 기반, 캐시 만료/최대 크기/통계/삭제 등 유틸 제공
+  - 외부 API 장애 시 캐시된 데이터 우선 반환, 한영 자동 재시도, 에러 발생 시 빈 배열 반환(throw 최소화)
+  - 모든 함수는 async/await, 에러/로깅 표준화, 반환 포맷 일관성
+
+---
+
+---
+### [2025-06-26] 미들웨어 구조/표준화/역할 상세 분석
+
+- **auth.js (인증 미들웨어)**
+  - JWT 기반 인증 처리: `generateToken`, `verifyToken` 함수 제공
+  - 환경설정은 반드시 config/index.js에서 관리 (process.env 직접 사용 금지)
+  - 인증 실패/만료/유효성 오류 시 표준화된 에러코드(`UNAUTHORIZED`, `TOKEN_EXPIRED`, `INVALID_TOKEN`)로 next(error) 전달
+  - req.user에 인증된 사용자 정보(payload) 주입, 직접 res.status().json() 사용 금지
+
+- **logger.js (API 로깅 미들웨어)**
+  - 모든 API 요청/응답/에러를 파일(`logs/api.log`)과 콘솔에 표준 포맷으로 기록
+  - 요청/응답/에러/타임아웃/파일정리 등 전 과정 자동화
+  - 민감정보(비밀번호 등) 마스킹, JSON 변환 실패 시 안전 처리
+  - 에러는 중앙 에러 핸들러로 전달, 서버 시작 시 로깅 시스템 자동 초기화
+  - 7일 이상된 로그 파일 자동 삭제(정책화)
+
+- **subscription.js (구독/권한/제한 미들웨어)**
+  - 구독 등급별 기능 제한: `requireFeature`, `requireTierLevel` 등으로 세분화
+  - 일일 사용량 제한: `checkDailyLimit` 미들웨어에서 트랜잭션 일관성 보장
+  - 파일 업로드 크기 제한: `checkFileUploadLimit`에서 구독 등급별 허용 용량 체크, 초과 시 413 반환
+  - 모든 미들웨어는 트랜잭션 기반으로 DB 일관성 유지, req에 구독/사용량 정보 주입
+  - 권한 부족(403), 사용량 초과(429), 파일 초과(413) 등 표준 HTTP 상태코드 및 메시지 반환
+  - 에러 발생 시 콘솔/로그 기록 후 500 반환, 직접 res.status().json() 사용(에러 응답만 예외적 허용)
+
+---
+
   - 날짜, 문제/원인/해결책/상태 순으로 간결하게 기록
   - 예시:
     - `[2025-05-08] 긴 AI 응답 표시 문제: testScript.js에서 addMessage로 넘길 때 잘림 → 응답 요약 표시 및 전체 내용은 패널 안내로 개선 (프론트엔드)`
     - `[2025-05-08] CLOB 반환 오류: Oracle CLOB 스트림 → clobToString 유틸 추가로 해결 (백엔드)`
     - `[2025-05-09] API 응답 케이싱 불일치: Oracle DB 필드가 대문자로 반환되어 응답이 API 문서와 불일치 → standardizeApiResponse 유틸로 snake_case 통일, CLOB 자동 변환 추가 (백엔드)`
+
+---
+### [2025-06-26] 컨트롤러 리팩토링/표준화/통합 최신 반영
+
+- **ServiceFactory 기반 컨트롤러 구조 표준화**: 모든 주요 컨트롤러(chat, session, subscription, user 등)는 ServiceFactory 패턴 기반으로 통일, createController에서 withTransaction 중복 래핑 제거(트랜잭션은 서비스 계층에서만 관리)
+- **컨트롤러-서비스-모델 계층 분리**: 컨트롤러는 서비스 계층만 호출, 서비스에서 트랜잭션 관리, 모델은 connection 첫 인자 고정
+- **API 응답 표준화**: 모든 컨트롤러에서 utils/apiResponse.js의 standardizeApiResponse 사용, statusCode/body 구조로 응답, snake_case 일관성 유지
+- **에러 처리 일원화**: try-catch 후 next(error)로 중앙 에러 핸들러에 위임, 직접 res.status().json()으로 에러 응답 금지
+- **입력값 검증/에러코드/응답 포맷 중복 제거**: dataExtractor/validations/responseTransformer/errorHandler 패턴 일관 적용
+- **테스트/고정 ID 컨트롤러 분리**: registerUserController, loginUserController 등은 테스트 모드에서 직접 구현, 고정 ID 반환
+- **신규 기능 컨트롤러**: 프로필 꾸미기, 레벨 시스템, 메시지 편집, 다국어 지원 등 신규 API 컨트롤러 추가 및 표준화
+- **컨트롤러 내 디버깅 로그 개선**: AI provider 결정, 요청 파라미터, 스트리밍/DB 저장/Markdown 렌더링 성공여부 등 주요 상태 로그 추가
+
+---
 
 [2025-05-30] getConnection 함수 미정의 오류: chatController.js에서 config/database.js의 getConnection 함수를 import하지 않아서 발생 → import 문에 getConnection 추가 (해결)
 [2025-06-02] API 응답 형식 통일: standardizeApiResponse 함수를 원래 방식으로 복원 (단일 데이터 객체 반환), 검색 API는 createSearchApiResponse로 분리 (성공시 데이터 직접 반환, 실패시 에러 메시지 반환) (해결)
@@ -269,10 +320,125 @@
   - 다국어 지원: 번역 리소스 관리, 사용자별 언어 설정
   - 테스트 UI 추가: test.html에 모든 신규 기능 테스트 인터페이스 구현
 
-[2025-01-27] 뱃지 시스템 코드 간소화: handleBugReport, handleFeedbackSubmission, handleTestParticipation 3개 함수의 중복 로직을 handleUserActivity 통합 함수로 리팩토링 → 150줄 코드를 60줄로 축소, 유지보수성 크게 향상 (해결)
+[2025-01-27] 자동 API 테스트 시스템 완전 구현: 전체 API 엔드포인트 자동 테스트, 고정 ID 시스템 통합, 결과 내보내기/지우기 기능, 테스트 UI 완전 복구 (해결)
+  - public/testScripts/autoApiTest.js: 포괄적 자동 테스트 시스템 구현, 25개 주요 API 엔드포인트 테스트 자동화
+  - 고정 ID 시스템: email이 "API@example.com"일 때 user_id="API_TEST_USER_ID", session_id="API_TEST_SESSION_ID" 등 테스트용 고정값 사용
+  - 테스트 결과 관리: JSON 파일 내보내기, 결과 지우기, DOM 기반 실시간 결과 표시
+  - 오류 복구: Oracle NJS-044 파라미터 바인딩 오류 해결, ServiceFactory 이중 트랜잭션 래핑 제거
+  - UI 복구: public/test.html의 "전체 API 테스트 실행" 버튼 및 관련 컨트롤 완전 복구
+  - ES6 모듈 통합: testScript.js에서 동적 import로 autoApiTest.js 로드 및 이벤트 연결
+  - 테스트 커버리지: 사용자/세션/메시지/구독/검색/프로필/뱃지/번역 API 전 영역 포함
+  - 성공률 추적: 테스트 성공/실패 통계, 타임스탬프, 상세 오류 정보 제공
   - models/user.js: handleUserActivity 통합 함수 추가, 기존 3개 함수는 래퍼로 하위 호환성 유지
   - controllers/userController.js: handleUserActivityController 통합 컨트롤러 추가, 기존 3개 컨트롤러는 래퍼로 변경
   - 동일한 기능(경험치 지급, 활동 로그, 뱃지 처리)을 하나의 함수에서 activity_type으로 분기 처리하여 코드 중복 제거
+[2025-06-25] ServiceFactory 트랜잭션 중복 래핑 문제 재발 및 해결: utils/serviceFactory.js의 createController에서 withTransaction 중복 래핑으로 인한 NJS-044 Oracle 바인딩 에러 재발 → createController에서 withTransaction 제거하여 서비스 계층에서만 트랜잭션 관리하도록 재수정 (해결)
+  - 문제: createController에서 withTransaction → 서비스에서 withTransaction → 모델로 connection 전달 시 인자 순서가 바뀌어서 NJS-044 Oracle 바인딩 에러 발생
+  - 해결: createController에서 withTransaction 제거, 서비스 계층에서만 트랜잭션 관리하도록 재수정
+  - 영향: ServiceFactory 기반 컨트롤러의 모든 API (세션/메시지/구독 등) 정상 작동 복원
+[2025-06-25] 테스트 페이지 모듈 import 오류 해결: public/testScripts/utils.js에 displayApiResponse, displayError 함수가 없어서 badgeLevel.js에서 import 실패 → utils.js에 누락된 함수들 추가 (해결)
+  - 문제: badgeLevel.js에서 './utils.js'의 displayApiResponse, displayError 함수를 import하려 했으나 해당 함수들이 export되지 않음
+  - 해결: utils.js에 displayApiResponse, displayError 함수 추가 및 export
+  - 영향: 테스트 페이지의 모든 모듈 정상 작동 복원
+[2025-06-25] 고정 ID 시스템 구현 완료: API_TEST_USER_ID, API_TEST_SESSION_ID 등 테스트용 고정 ID 시스템 정상 작동 (해결)
+  - 문제: 회원가입/세션 생성 시 랜덤 ID 생성으로 테스트 일관성 부족
+  - 해결: utils/constants.js에 테스트 상수 정의, registerUserController/loginUserController를 직접 구현으로 수정하여 withTransaction 사용
+  - 결과: user_id="API_TEST_USER_ID", session_id="API_TEST_SESSION_ID" 고정 반환 확인
+  - 추가: NODE_ENV='test' 설정으로 테스트 모드 활성화, ServiceFactory 대신 직접 구현으로 connection 객체 문제 해결
+[YYYY-MM-DD] 코드베이스 리팩토링: 설정 관리 중앙화, DB 연결/트랜잭션 관리 개선, API 응답 및 에러 처리 표준화, 모델/컨트롤러 구조 개선 (진행중 - Jules)
+
+---
+## 중요: 코드베이스 리팩토링 관련 최신 지침 (YYYY-MM-DD 업데이트)
+
+이 프로젝트는 최근 주요 리팩토링을 거쳤습니다. 아래 지침을 반드시 숙지하고 코드를 수정해주십시오.
+
+### 1. 설정 관리 (`config/index.js`)
+
+- 모든 환경 변수 및 주요 설정은 `config/index.js` 파일을 통해 접근해야 합니다.
+- `process.env`를 코드베이스 다른 곳에서 직접 사용하지 마십시오.
+- 예시: `const config = require('../config'); const dbUser = config.database.user;`
+
+### 2. 데이터베이스 연결 및 트랜잭션 (`utils/dbUtils.js`의 `withTransaction`)
+
+- **모델 함수**:
+    - 모든 데이터베이스 작업을 수행하는 모델 함수는 첫 번째 인자로 `connection` 객체를 받아야 합니다.
+    - 모델 함수 내에서 `getConnection()`, `connection.close()`, `connection.commit()`, `connection.rollback()`을 직접 호출해서는 안 됩니다.
+    - SQL 실행 시 `autoCommit` 옵션은 `false`로 설정하거나, `withTransaction`의 기본 동작에 맡깁니다.
+- **서비스 함수**:
+    - 데이터베이스 트랜잭션이 필요한 비즈니스 로직은 서비스 함수 내에서 `utils/dbUtils.js`의 `withTransaction(async (connection) => { ... })` 유틸리티 함수로 감싸야 합니다.
+    - 이 콜백 함수 내에서 모델 함수를 호출할 때 `connection` 객체를 전달합니다.
+    - 여러 모델 함수 호출이나 데이터 가공 로직이 포함될 수 있습니다.
+- **컨트롤러 함수**:
+    - 컨트롤러는 서비스 계층의 함수를 호출합니다. `withTransaction`을 직접 사용하지 않습니다 (서비스 계층에서 처리).
+- 예시 (서비스 함수):
+  ```javascript
+  // services/someService.js
+  const { withTransaction } = require("../utils/dbUtils");
+  const myModel = require("../models/myModel");
+
+  async function doSomethingComplex(userId, dataToProcess) {
+    return await withTransaction(async (connection) => {
+      const item = await myModel.getItem(connection, dataToProcess.itemId);
+      if (!item) throw new Error("아이템을 찾을 수 없습니다.");
+      // ... (데이터 가공 및 추가 DB 작업) ...
+      await myModel.updateItem(connection, item.id, { processed: true });
+      await myModel.logAction(connection, userId, "PROCESS_ITEM", item.id);
+      return { success: true, processedItemId: item.id };
+    });
+  }
+  ```
+- 예시 (컨트롤러 함수):
+  ```javascript
+  // controllers/someController.js
+  const someService = require("../services/someService");
+  const { standardizeApiResponse } = require("../utils/apiResponse");
+
+  async function handleRequest(req, res, next) {
+    try {
+      const result = await someService.doSomethingComplex(req.user.id, req.body);
+      const apiResponse = standardizeApiResponse(result);
+      res.status(apiResponse.statusCode).json(apiResponse.body);
+    } catch (error) {
+      next(error); // 중앙 에러 핸들러로 전달
+    }
+  }
+  ```
+
+### 3. API 응답 형식 (`utils/apiResponse.js`)
+
+- 모든 컨트롤러의 API 응답은 `utils/apiResponse.js`의 `standardizeApiResponse(data, error = null)` 함수를 사용하여 생성해야 합니다.
+- 이 함수는 `{ statusCode, body }` 객체를 반환합니다.
+- 컨트롤러에서는 `res.status(apiResponse.statusCode).json(apiResponse.body);` 형태로 응답합니다.
+- 성공 시: `standardizeApiResponse(dataToReturn)` -> `{ statusCode: 2xx, body: { status: 'success', data: ... } }`
+- 에러 시: `standardizeApiResponse(null, errorObject)` -> `{ statusCode: 4xx/5xx, body: { status: 'error', error: { code, message, details } } }` (에러 객체는 `code`, `message`, `details` 속성을 가질 수 있음)
+
+### 4. 에러 처리 (`utils/errorHandler.js`)
+
+- **컨트롤러**:
+    - `try...catch` 블록을 사용하여 서비스 계층에서 발생할 수 있는 모든 에러를 포착해야 합니다.
+    - `catch` 블록에서는 받은 에러 객체를 그대로 `next(error)`를 호출하여 중앙 에러 핸들러로 전달합니다.
+    - 컨트롤러에서 직접 새로운 에러 객체를 생성하거나 `res.status().json()`으로 에러 응답을 보내지 마십시오 (입력값 검증 실패 시에는 컨트롤러에서 `INVALID_INPUT` 에러 객체 생성 후 `next(error)` 가능).
+- **서비스**:
+    - 비즈니스 로직 수행 중 발생하는 특정 에러 (예: "리소스를 찾을 수 없음", "권한 부족")는 `code`와 `message`를 가진 새로운 `Error` 객체를 생성하여 `throw` 합니다. 이 에러는 컨트롤러로 전파됩니다.
+    - 모델에서 throw된 DB 관련 에러는 그대로 다시 throw하거나, 필요시 서비스 특화 에러로 변환하여 throw 할 수 있습니다.
+- **모델**:
+    - DB 관련 에러 발생 시, `utils/errorHandler.js`의 `handleOracleError(oraError)` 함수를 사용하여 표준화된 에러 객체(Error 인스턴스에 `code`, `message`, `details` 포함)를 생성하여 `throw` 해야 합니다.
+    - 데이터 조회 결과가 없는 경우 등은 모델 레벨에서 에러를 throw 하거나 (예: `RESOURCE_NOT_FOUND`), null 또는 빈 배열을 반환하여 서비스 계층에서 처리하도록 할 수 있습니다 (일관된 방식 선택 필요 - 현재는 에러 throw 선호).
+- **중앙 에러 핸들러**:
+    - `app.js`에 등록된 `handleCentralError` 미들웨어가 `next(error)`로 전달된 모든 에러를 최종적으로 처리하고, `standardizeApiResponse`를 사용하여 클라이언트에 응답합니다.
+
+### 5. 로깅
+
+- 코드 내에서 직접 `console.log`, `console.warn`, `console.error` 사용을 최소화해주십시오.
+- 디버깅 목적의 로그는 개발 중에만 사용하고, 커밋 전에는 제거하거나 조건부 로깅으로 변경해주십시오.
+- 주요 에러 로깅은 중앙 에러 핸들러의 `logError` 함수를 통해 이루어집니다. (향후 별도 로거 도입 가능성 있음)
+
+### 6. CLOB 처리 (`utils/dbUtils.js`)
+- Oracle DB의 CLOB 데이터 타입은 `utils/dbUtils.js`의 `clobToString(clob)` 또는 `convertClobFields(data)` 함수를 사용하여 문자열로 변환해야 합니다.
+- 모델 함수에서 DB 조회 결과 중 CLOB 필드가 있다면, 이 유틸리티를 사용하여 적절히 변환 후 반환해주십시오.
+
+---
+(기존 내용은 여기에 이어짐)
 
 ---
 
@@ -328,7 +494,7 @@
     - 환경변수: `KAKAO_API_KEY`
   - 검색 결과 통합 및 중복 제거
 
-- [X] **OpenWeatherMap API 연동 (백엔드)**: 날씨 정보 위젯
+- [ ] **OpenWeatherMap API 연동 (백엔드)**: 날씨 정보 위젯
   - 현재 날씨 조회 API (`GET /api/widgets/weather/current`)
     - 무료 60회/분, 1000회/일 (충분한 용량)
     - 위치별 현재 날씨, 온도, 습도, 바람

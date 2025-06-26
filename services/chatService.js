@@ -3,6 +3,7 @@ const userModel = require("../models/user"); // For user settings, addUserExperi
 const subscriptionModel = require("../models/subscription"); // For checkDailyUsage
 const { fetchChatCompletion } = require("../utils/aiProvider");
 const { withTransaction } = require("../utils/dbUtils");
+const { oracledb } = require("../config/database"); // oracledb import 추가
 const config = require("../config");
 
 /**
@@ -195,8 +196,11 @@ async function upsertReactionService(messageId, reaction) {
 
         const result = await connection.execute(
             `UPDATE chat_messages SET reaction = :p_reaction WHERE message_id = :p_message_id`,
-            { p_reaction: reaction, p_message_id: messageId }
-            // autoCommit: false는 withTransaction에서 관리
+            { 
+                p_reaction: { val: reaction, type: oracledb.STRING }, 
+                p_message_id: { val: messageId, type: oracledb.STRING } 
+            },
+            { autoCommit: false }
         );
         if (result.rowsAffected === 0) {
             // 이 경우는 거의 없지만, 방어적으로
@@ -215,7 +219,8 @@ async function removeReactionService(messageId) {
     return await withTransaction(async (connection) => {
         const result = await connection.execute(
             `UPDATE chat_messages SET reaction = NULL WHERE message_id = :p_message_id`,
-            { p_message_id: messageId }
+            { p_message_id: { val: messageId, type: oracledb.STRING } },
+            { autoCommit: false }
         );
         // 삭제할 리액션이 없어도 성공으로 간주하거나, rowsAffected로 판단 가능
         return { message: "리액션이 성공적으로 제거되었습니다." };
@@ -284,12 +289,24 @@ async function uploadFileService(sessionId, userId, file, messageContent) {
 }
 
 /**
- * 세션의 모든 메시지 조회 서비스
+ * 세션의 모든 메시지 조회 서비스 (강화된 유효성 검증)
  */
-async function getSessionMessagesService(sessionId) {
-    return await withTransaction(async (connection) => {
-        return await chatModel.getSessionMessagesForClient(connection, sessionId);
-    });
+async function getSessionMessagesService(connection, sessionId) {
+    // 🔍 서비스 레벨에서 사전 검증
+    if (!sessionId || sessionId === 'undefined' || sessionId === 'null' || typeof sessionId !== 'string') {
+        console.error('[getSessionMessagesService] 잘못된 sessionId 파라미터:', {
+            sessionId,
+            type: typeof sessionId,
+            arguments: Array.from(arguments)
+        });
+        const error = new Error("세션 ID가 유효하지 않습니다.");
+        error.code = "INVALID_INPUT";
+        throw error;
+    }
+
+    console.log('[getSessionMessagesService] 실행:', { sessionId, type: typeof sessionId });
+
+    return await chatModel.getSessionMessagesForClient(connection, sessionId);
 }
 
 module.exports = {

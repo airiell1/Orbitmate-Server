@@ -367,11 +367,49 @@ document.addEventListener('DOMContentLoaded', function() {
     window.upgradeSubscriptionBadgeTest = upgradeSubscriptionBadgeTest;
     window.approveBadgeTest = approveBadgeTest;
 
-    // 뱃지 레벨 시스템 이벤트 리스너
-    document.getElementById('get-badge-details-button')?.addEventListener('click', getBadgeDetailsTest);
-    document.getElementById('submit-bug-report-button')?.addEventListener('click', submitBugReportTest);
-    document.getElementById('submit-feedback-button')?.addEventListener('click', submitFeedbackTest);
-    document.getElementById('test-participation-button')?.addEventListener('click', testParticipationTest);
-    document.getElementById('upgrade-subscription-badge-button')?.addEventListener('click', upgradeSubscriptionBadgeTest);
-    document.getElementById('approve-badge-button')?.addEventListener('click', approveBadgeTest);
+    // 자동 API 테스트 이벤트 리스너
+    document.getElementById('run-auto-api-test')?.addEventListener('click', async function() {
+        const button = this;
+        const originalText = button.textContent;
+        
+        try {
+            button.disabled = true;
+            button.textContent = '테스트 실행 중...';
+            
+            // autoApiTest.js에서 runAutoApiTest 함수 동적 import
+            const { runAutoApiTest } = await import('./testScripts/autoApiTest.js');
+            await runAutoApiTest();
+        } catch (error) {
+            console.error('자동 API 테스트 실행 중 오류:', error);
+            updateApiResponse('자동 API 테스트', false, `테스트 실행 중 오류가 발생했습니다: ${error.message}`);
+        } finally {
+            button.disabled = false;
+            button.textContent = originalText;
+        }
+    });
+
+    // 테스트 결과 내보내기 이벤트 리스너
+    document.getElementById('export-test-results')?.addEventListener('click', async function() {
+        try {
+            const { exportTestResults } = await import('./testScripts/autoApiTest.js');
+            exportTestResults();
+        } catch (error) {
+            console.error('테스트 결과 내보내기 중 오류:', error);
+            alert('테스트 결과를 내보내는 중 오류가 발생했습니다.');
+        }
+    });
+
+    // 테스트 결과 지우기 이벤트 리스너
+    document.getElementById('clear-test-results')?.addEventListener('click', async function() {
+        try {
+            const { clearTestResults } = await import('./testScripts/autoApiTest.js');
+            clearTestResults();
+        } catch (error) {
+            console.error('테스트 결과 지우기 중 오류:', error);
+            alert('테스트 결과를 지우는 중 오류가 발생했습니다.');
+        }
+    });
+
+    // 기존의 중복된 자동 API 테스트 코드 제거
+    // (파일 끝부분에 있던 중복 코드는 제거됨)
 });

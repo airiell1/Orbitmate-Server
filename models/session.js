@@ -2,6 +2,7 @@
 const { oracledb } = require("../config/database");
 const { clobToString, toSnakeCaseObj } = require("../utils/dbUtils"); // Import from dbUtils
 const { handleOracleError } = require("../utils/errorHandler");
+const { API_TEST_USER_ID, API_TEST_SESSION_ID, API_TEST_USER_MESSAGE_ID, API_TEST_AI_MESSAGE_ID } = require("../utils/constants");
 const config = require("../config"); // For NODE_ENV
 
 // 새 채팅 세션 생성
@@ -9,10 +10,10 @@ async function createChatSession(connection, user_id, title, category) {
   try {
     let sessionId;
     // 테스트 사용자 로직은 NODE_ENV를 확인하여 테스트 환경에서만 실행되도록 수정
-    if (config.nodeEnv === "test" && user_id === "API_TEST_USER_ID") {
-      const testSessionId = "API_TEST_SESSION_ID";
-      const testUserMsgId = "API_TEST_USER_MESSAGE_ID";
-      const testAiMsgId = "API_TEST_AI_MESSAGE_ID";
+    if (config.nodeEnv === "test" && user_id === API_TEST_USER_ID) {
+      const testSessionId = API_TEST_SESSION_ID;
+      const testUserMsgId = API_TEST_USER_MESSAGE_ID;
+      const testAiMsgId = API_TEST_AI_MESSAGE_ID;
 
       // 테스트 데이터 삭제 (이전 실행의 잔여 데이터 정리)
       await connection.execute(
@@ -67,6 +68,7 @@ async function createChatSession(connection, user_id, title, category) {
       );
       // commit은 withTransaction에서 처리
     } else {
+      // UUID 형태의 session_id를 자동 생성하여 반환
       const result = await connection.execute(
         `INSERT INTO chat_sessions (user_id, title, category) 
          VALUES (:user_id, :title, :category) 

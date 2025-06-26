@@ -7,17 +7,15 @@ const fs = require("fs"); // For file operations if needed by service, though ty
  * @param {string} userId - 사용자 ID
  * @returns {Promise<Object|null>} 사용자 프로필 정보 또는 null (사용자 없음)
  */
-async function getUserProfileService(userId) {
-  return await withTransaction(async (connection) => {
-    const userProfile = await userModel.getUserProfile(connection, userId);
-    if (!userProfile) {
-      // 모델에서 USER_NOT_FOUND 에러를 throw하므로, 서비스 레벨에서 추가적인 에러 처리는 불필요할 수 있음.
-      // 또는, 여기서 잡아서 다른 형태의 에러로 변환하거나 로깅 후 다시 throw 할 수 있음.
-      // 현재 모델은 에러를 throw하므로, 여기서는 그대로 전파되도록 둠.
-    }
-    // 추가적인 비즈니스 로직 (예: 특정 필드 가공, 다른 서비스 호출하여 정보 조합 등)이 있다면 여기서 수행
-    return userProfile;
-  });
+async function getUserProfileService(connection, userId) {
+  const userProfile = await userModel.getUserProfile(connection, userId);
+  if (!userProfile) {
+    // 모델에서 USER_NOT_FOUND 에러를 throw하므로, 서비스 레벨에서 추가적인 에러 처리는 불필요할 수 있음.
+    // 또는, 여기서 잡아서 다른 형태의 에러로 변환하거나 로깅 후 다시 throw 할 수 있음.
+    // 현재 모델은 에러를 throw하므로, 여기서는 그대로 전파되도록 둠.
+  }
+  // 추가적인 비즈니스 로직 (예: 특정 필드 가공, 다른 서비스 호출하여 정보 조합 등)이 있다면 여기서 수행
+  return userProfile;
 }
 
 /**
@@ -26,13 +24,11 @@ async function getUserProfileService(userId) {
  * @param {Object} profileData - 업데이트할 프로필 데이터
  * @returns {Promise<Object>} 업데이트된 프로필 정보
  */
-async function updateUserProfileService(userId, profileData) {
-  return await withTransaction(async (connection) => {
-    // 입력값 유효성 검사는 컨트롤러에서 수행되었거나, 여기서 추가적인 비즈니스 규칙 검증 가능
-    const updatedProfile = await userModel.updateUserProfile(connection, userId, profileData);
-    // 추가 로직 (예: 프로필 변경 알림 발송 등)
-    return updatedProfile;
-  });
+async function updateUserProfileService(connection, userId, profileData) {
+  // 입력값 유효성 검사는 컨트롤러에서 수행되었거나, 여기서 추가적인 비즈니스 규칙 검증 가능
+  const updatedProfile = await userModel.updateUserProfile(connection, userId, profileData);
+  // 추가 로직 (예: 프로필 변경 알림 발송 등)
+  return updatedProfile;
 }
 
 /**

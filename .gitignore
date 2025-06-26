@@ -10,6 +10,9 @@ my-precious-secret-key/
 # Uploads directory
 uploads/
 
+# Logs directory
+logs/
+
 # Ignore all .env files
 *.env
 # Ignore all .log files

@@ -1,5 +1,3 @@
-const { standardizeApiResponse } = require("./apiResponse"); // 순환 참조 가능성 주의
-
 /**
  * 공통 오류 처리 유틸리티
  */
@@ -41,6 +39,28 @@ function getHttpStatusByErrorCode(errorCode) {
 
 // Oracle 데이터베이스 오류를 처리하여 표준 에러 객체로 변환
 function handleOracleError(oraError) {
+  // bcrypt 오류인지 확인
+  if (oraError.message && oraError.message.includes("data and salt arguments required")) {
+    const error = new Error("비밀번호 해싱 중 오류가 발생했습니다. 입력값을 확인해주세요.");
+    error.code = "INVALID_INPUT";
+    error.details = {
+      originalMessage: oraError.message,
+      type: "bcrypt_error"
+    };
+    return error;
+  }
+  
+  // Node.js 일반 오류 (DB 오류가 아닌 경우)
+  if (!oraError.errorNum && oraError.message) {
+    const error = new Error(oraError.message);
+    error.code = "APPLICATION_ERROR";
+    error.details = {
+      originalMessage: oraError.message,
+      type: "general_error"
+    };
+    return error;
+  }
+
   let code = "DATABASE_ERROR";
   let message = "데이터베이스 작업 중 오류가 발생했습니다.";
 
@@ -137,11 +157,19 @@ function handleCentralError(err, req, res, next) {
     standardizedError = handleOracleError(err);
   }
 
-  // 표준화된 API 응답 생성
-  // standardizeApiResponse는 { statusCode, body }를 반환
-  const { statusCode, body } = standardizeApiResponse(null, standardizedError);
+  // 직접 에러 응답 생성 (순환 참조 방지)
+  const errorCode = standardizedError.code || "SERVER_ERROR";
+  const httpStatusCode = getHttpStatusByErrorCode(errorCode);
+  const responseBody = {
+    status: "error",
+    error: {
+      code: errorCode,
+      message: standardizedError.message || "알 수 없는 오류가 발생했습니다.",
+      details: standardizedError.details || null,
+    },
+  };
 
-  res.status(statusCode).json(body);
+  res.status(httpStatusCode).json(responseBody);
 }
 
 module.exports = {

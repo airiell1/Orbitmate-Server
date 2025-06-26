@@ -10,13 +10,13 @@ const {
   removeReactionController,
   getMessageEditHistoryController,
   requestAiReresponseController,
-  uploadFile
+  uploadFile,
+  getSessionMessagesController
 } = require('../controllers/chatController');
 const { 
   createSessionController, 
   updateSessionController, 
-  getSessionMessagesController,
-  deleteSessionController // 추가
+  deleteSessionController
 } = require('../controllers/sessionController');
 
 // 구독 관리 미들웨어 import

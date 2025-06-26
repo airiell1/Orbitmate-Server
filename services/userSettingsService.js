@@ -7,12 +7,10 @@ const config = require("../config"); // For supportedLanguages etc.
  * @param {string} userId - 사용자 ID
  * @returns {Promise<Object|null>} 사용자 설정 정보 또는 null (설정 없음)
  */
-async function getUserSettingsService(userId) {
-  return await withTransaction(async (connection) => {
-    const settings = await userModel.getUserSettings(connection, userId);
-    // 모델에서 RESOURCE_NOT_FOUND 에러를 throw 할 수 있음
-    return settings;
-  });
+async function getUserSettingsService(connection, userId) {
+  const settings = await userModel.getUserSettings(connection, userId);
+  // 모델에서 RESOURCE_NOT_FOUND 에러를 throw 할 수 있음
+  return settings;
 }
 
 /**
@@ -21,15 +19,13 @@ async function getUserSettingsService(userId) {
  * @param {Object} settingsData - 업데이트할 설정 데이터
  * @returns {Promise<Object>} 업데이트된 설정 정보
  */
-async function updateUserSettingsService(userId, settingsData) {
+async function updateUserSettingsService(connection, userId, settingsData) {
   // 입력값에 대한 상세 유효성 검사는 컨트롤러에서 수행하거나,
   // 서비스 계층에서 비즈니스 규칙에 따른 추가 검증을 수행할 수 있습니다.
   // 예: theme 값이 허용된 목록에 있는지, font_size가 특정 범위 내에 있는지 등.
   // 이 예제에서는 모델에서 RETURNING 절을 통해 업데이트된 값을 반환하므로, 별도 조회가 필요 없을 수 있습니다.
-  return await withTransaction(async (connection) => {
-    const updatedSettings = await userModel.updateUserSettings(connection, userId, settingsData);
-    return updatedSettings;
-  });
+  const updatedSettings = await userModel.updateUserSettings(connection, userId, settingsData);
+  return updatedSettings;
 }
 
 /**

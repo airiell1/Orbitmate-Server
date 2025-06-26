@@ -85,6 +85,14 @@ const config = {
       apiKey: process.env.KAKAO_API_KEY,
     },
   },
+
+  // User Settings Configuration
+  userSettings: {
+    allowedThemes: ['light', 'dark', 'auto'],
+    supportedLanguages: ['ko', 'en', 'ja', 'zh'],
+    fontSizeRange: { min: 10, max: 30 },
+    allowedAiProviders: ['geminiapi', 'vertexai', 'ollama'],
+  },
 };
 
 // 개발 환경에서는 일부 설정을 하드코딩하거나 기본값을 사용할 수 있도록 함

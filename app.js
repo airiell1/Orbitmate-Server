@@ -6,6 +6,8 @@ const fs = require('fs');
 require('dotenv').config(); // 환경 변수 로드
 
 const { initOracleClient, initializeDbPool } = require('./config/database'); // DB 관련 함수들 가져오기
+const { logApiRequest, logApiError, initializeLogger } = require('./middleware/logger'); // 로깅 미들웨어 추가
+
 const app = express();
 
 // ** 라우터 변수만 선언 (require는 나중에) **
@@ -27,6 +29,9 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
+
+// 🔥 중앙집중식 API 로깅 미들웨어 적용 (모든 라우트보다 먼저 설정)
+app.use('/api', logApiRequest);
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -91,9 +96,15 @@ async function startServer() {  try {
 
     // 중앙 에러 핸들링 미들웨어 등록 (모든 라우트 및 일반 미들웨어 뒤에 위치)
     const { handleCentralError } = require('./utils/errorHandler');
+    
+    // 🔥 API 에러 로깅 미들웨어 추가 (에러 핸들러보다 먼저)
+    app.use('/api', logApiError);
     app.use(handleCentralError);
 
     const port = process.env.PORT || 7777; // config.port를 사용하는 것이 더 일관적일 수 있음
+    
+    // 🔥 로깅 시스템 초기화
+    initializeLogger();
     
     // ** Express 서버 시작 **
     app.listen(port, () => {
@@ -107,13 +118,11 @@ async function startServer() {  try {
   }
 }
 
-// 테스트 환경이 아닐 때만 서버 시작 함수 호출
-if (process.env.NODE_ENV !== 'test') {
-  // startServer 함수 (async) 호출. 최상위에서는 await 대신 .catch()로 에러 처리.
-  startServer().catch(err => {
-      console.error('서버 시작 중 치명적인 오류 발생:', err);
-      process.exit(1); // 오류 발생 시 종료
-  });
-}
+// 서버 시작 함수 호출 (테스트 모드에서도 실행)
+// startServer 함수 (async) 호출. 최상위에서는 await 대신 .catch()로 에러 처리.
+startServer().catch(err => {
+    console.error('서버 시작 중 치명적인 오류 발생:', err);
+    process.exit(1); // 오류 발생 시 종료
+});
 
 module.exports = { app };

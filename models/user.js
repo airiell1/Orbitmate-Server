@@ -3,6 +3,7 @@ const bcrypt = require("bcrypt");
 const { oracledb } = require("../config/database");
 const { clobToString, convertClobFields, toSnakeCaseObj } = require("../utils/dbUtils");
 const { handleOracleError } = require("../utils/errorHandler");
+const { API_TEST_USER_ID } = require("../utils/constants");
 const config = require("../config"); // For NODE_ENV
 
 // Helper function to create default user profile, used internally
@@ -17,13 +18,44 @@ async function createDefaultUserProfile(connection, user_id) {
 
 
 // 사용자 등록 함수
-async function registerUser(connection, username, email, password) {
+async function registerUser(connection, user_id, username, email, password) {
   try {
-    const isTestUser = config.nodeEnv === 'test' && email === "API@example.com";
-    const testUserId = "API_TEST_USER_ID";
+    console.log('[registerUser] 시작:', { 
+      connection: !!connection,
+      user_id,
+      username, 
+      email, 
+      passwordLength: password?.length,
+      argumentsLength: arguments.length,
+      argumentsArray: Array.from(arguments).map((arg, i) => ({ index: i, type: typeof arg, value: i === 0 ? '(connection)' : arg }))
+    });
+    
+    // 입력값 검증
+    if (!username || !email || !password) {
+      const error = new Error("사용자명, 이메일, 비밀번호가 모두 필요합니다.");
+      error.code = "INVALID_INPUT";
+      throw error;
+    }
+
+    if (typeof password !== 'string' || password.trim() === '') {
+      const error = new Error("유효한 비밀번호를 입력해주세요.");
+      error.code = "INVALID_INPUT";
+      throw error;
+    }
 
     const saltRounds = 10;
-    const passwordHash = await bcrypt.hash(password, saltRounds);
+    let passwordHash;
+    
+    try {
+      console.log('[registerUser] bcrypt 해싱 시작...');
+      passwordHash = await bcrypt.hash(password.toString(), saltRounds);
+      console.log('[registerUser] bcrypt 해싱 완료');
+    } catch (bcryptError) {
+      console.error('[registerUser] bcrypt hash error:', bcryptError);
+      const error = new Error("비밀번호 해싱 중 오류가 발생했습니다.");
+      error.code = "INVALID_INPUT";
+      throw error;
+    }
 
     const emailCheck = await connection.execute(
       `SELECT user_id, username, email FROM users WHERE email = :email`,
@@ -36,28 +68,38 @@ async function registerUser(connection, username, email, password) {
       return { ...existingUser, already_registered: true };
     }
 
+    // user_id 결정: null이면 자동 생성, 아니면 고정값 사용
     let user_id_to_insert;
-    if (isTestUser) {
-      user_id_to_insert = testUserId;
-      const existingTestUser = await connection.execute(
+    const isFixedId = user_id !== null;
+    
+    if (isFixedId) {
+      // 고정 ID 사용 (API@example.com 등)
+      user_id_to_insert = user_id;
+      
+      // 기존 고정 ID 사용자가 있다면 삭제 후 새로 생성
+      const existingUser = await connection.execute(
         `SELECT user_id FROM users WHERE user_id = :user_id`,
-        { user_id: testUserId },
+        { user_id: user_id_to_insert },
         { outFormat: oracledb.OUT_FORMAT_OBJECT }
       );
-      if (existingTestUser.rows.length > 0) {
+      
+      if (existingUser.rows.length > 0) {
         await connection.execute(
           `DELETE FROM users WHERE user_id = :user_id`,
-          { user_id: testUserId },
+          { user_id: user_id_to_insert },
           { autoCommit: false }
         );
       }
+      
+      // 고정된 user_id로 사용자 생성
       await connection.execute(
         `INSERT INTO users (user_id, username, email, password_hash)
          VALUES (:user_id, :username, :email, :passwordHash)`,
-        { user_id: testUserId, username, email, passwordHash },
+        { user_id: user_id_to_insert, username, email, passwordHash },
         { autoCommit: false }
       );
     } else {
+      // 자동 ID 생성 (일반 사용자)
       const result = await connection.execute(
         `INSERT INTO users (username, email, password_hash)
          VALUES (:username, :email, :passwordHash)
@@ -85,11 +127,25 @@ async function registerUser(connection, username, email, password) {
       created_at: new Date().toISOString(), // Consider if DB should provide this
     };
   } catch (err) {
+    // bcrypt 오류 처리
+    if (err.code === "INVALID_INPUT") {
+      throw err; // 이미 처리된 입력값 오류는 그대로 전달
+    }
+    
+    // Oracle 고유 제약조건 위반 처리
     if (err.errorNum === 1 || (err.message && err.message.toLowerCase().includes("unique constraint")) && (err.message.toUpperCase().includes("EMAIL"))) {
       const customError = new Error("이미 등록된 이메일입니다.");
       customError.code = "UNIQUE_CONSTRAINT_VIOLATED";
       throw customError;
     }
+    
+    // 일반적인 bcrypt 오류 처리
+    if (err.message && err.message.includes("data and salt arguments required")) {
+      const customError = new Error("비밀번호 처리 중 오류가 발생했습니다.");
+      customError.code = "INVALID_INPUT";
+      throw customError;
+    }
+    
     throw handleOracleError(err);
   }
 }
@@ -615,7 +671,7 @@ async function grantUserBadge(connection, user_id, badge_type, badge_name, descr
         }
 
         const result = await connection.execute(
-            `INSERT INTO user_badges (user_id, badge_type, badge_name, badge_description, badge_icon, badge_color, badge_level, created_at, updated_at)
+            `INSERT INTO user_badges (user_id, badge_type, badge_name, badge_description, badge_icon, badge_color, badge_level, earned_at, updated_at)
              VALUES (:user_id, :badge_type, :badge_name, :description, :icon, :color, 1, SYSTIMESTAMP, SYSTIMESTAMP)
              RETURNING badge_id INTO :out_badge_id`,
             { user_id, badge_type, badge_name, description, icon, color, out_badge_id: {type: oracledb.STRING, dir: oracledb.BIND_OUT}},
@@ -653,10 +709,10 @@ async function checkAndGrantBadges(connection, user_id, action_type, metadata = 
 async function getUserBadges(connection, user_id) {
   try {
     const result = await connection.execute(
-      `SELECT badge_id, badge_type, badge_name, badge_description, badge_icon, badge_level, is_equipped, created_at, updated_at
+      `SELECT badge_id, badge_type, badge_name, badge_description, badge_icon, badge_level, is_equipped, earned_at, updated_at
        FROM user_badges
        WHERE user_id = :user_id
-       ORDER BY created_at DESC`,
+       ORDER BY earned_at DESC`,
       { user_id }, {outFormat: oracledb.OUT_FORMAT_OBJECT}
     );
     return result.rows.map(row => toSnakeCaseObj(row));
@@ -688,10 +744,309 @@ async function toggleUserBadge(connection, user_id, badge_id, is_equipped) {
   }
 }
 
-// 많은 함수들이 유사한 패턴으로 수정될 것입니다.
-// 대표적인 함수들 위주로 수정하고, 나머지는 생략합니다.
-// handleUserActivity, upgradeBadgeLevel, approveBadgeUpgrade 등도 connection을 인자로 받고,
-// 내부 DB 호출 시 autoCommit: false, 에러 처리 등을 적용해야 합니다.
+// 뱃지 레벨 업그레이드 함수
+async function upgradeBadgeLevel(connection, user_id, badge_name, action_reason = "") {
+  try {
+    const existingBadge = await connection.execute(
+      `SELECT badge_id, badge_level FROM user_badges WHERE user_id = :user_id AND badge_name = :badge_name`,
+      { user_id, badge_name }, { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+    
+    if (existingBadge.rows.length === 0) {
+      const error = new Error("업그레이드할 뱃지를 찾을 수 없습니다.");
+      error.code = "RESOURCE_NOT_FOUND";
+      throw error;
+    }
+
+    const currentLevel = existingBadge.rows[0].BADGE_LEVEL || 1;
+    const newLevel = currentLevel + 1;
+    const maxLevel = 10; // 최대 레벨 제한
+
+    if (newLevel > maxLevel) {
+      const error = new Error(`뱃지가 이미 최대 레벨(${maxLevel})에 도달했습니다.`);
+      error.code = "MAX_LEVEL_REACHED";
+      throw error;
+    }
+
+    await connection.execute(
+      `UPDATE user_badges 
+       SET badge_level = :newLevel, updated_at = SYSTIMESTAMP 
+       WHERE user_id = :user_id AND badge_name = :badge_name`,
+      { newLevel, user_id, badge_name }, { autoCommit: false }
+    );
+
+    // 경험치 지급 (뱃지 레벨업 시)
+    const expPoints = newLevel * 50; // 레벨에 비례한 경험치
+    await addUserExperience(connection, user_id, expPoints, "badge_upgrade", `${badge_name} 뱃지 ${newLevel}레벨 달성`);
+
+    return {
+      success: true,
+      badge_name,
+      old_level: currentLevel,
+      new_level: newLevel,
+      experience_earned: expPoints,
+      message: `${badge_name} 뱃지가 ${newLevel}레벨로 업그레이드되었습니다.`
+    };
+  } catch (error) {
+    if (error.code === "RESOURCE_NOT_FOUND" || error.code === "MAX_LEVEL_REACHED") throw error;
+    throw handleOracleError(error);
+  }
+}
+
+// 구독 뱃지 업그레이드 함수
+async function upgradeSubscriptionBadge(connection, user_id, tier_name, months_count = 1) {
+  try {
+    const badge_name = `${tier_name} 구독자`;
+    const badgeTypes = {
+      "코멧": { icon: "☄️", color: "#9E9E9E" },
+      "플래닛": { icon: "🪐", color: "#2196F3" },
+      "스타": { icon: "☀️", color: "#FF9800" },
+      "갤럭시": { icon: "🌌", color: "#9C27B0" }
+    };
+
+    const badgeInfo = badgeTypes[tier_name];
+    if (!badgeInfo) {
+      const error = new Error("유효하지 않은 구독 등급입니다.");
+      error.code = "INVALID_INPUT";
+      throw error;
+    }
+
+    // 기존 구독 뱃지 확인
+    const existingBadge = await connection.execute(
+      `SELECT badge_id, badge_level FROM user_badges 
+       WHERE user_id = :user_id AND badge_name = :badge_name`,
+      { user_id, badge_name }, { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    if (existingBadge.rows.length > 0) {
+      // 기존 뱃지 레벨 업그레이드
+      const currentLevel = existingBadge.rows[0].BADGE_LEVEL || 1;
+      const newLevel = currentLevel + months_count;
+      
+      await connection.execute(
+        `UPDATE user_badges 
+         SET badge_level = :newLevel, updated_at = SYSTIMESTAMP 
+         WHERE user_id = :user_id AND badge_name = :badge_name`,
+        { newLevel, user_id, badge_name }, { autoCommit: false }
+      );
+
+      return {
+        success: true,
+        badge_name,
+        old_level: currentLevel,
+        new_level: newLevel,
+        message: `${badge_name} 뱃지가 ${newLevel}레벨로 업그레이드되었습니다.`
+      };
+    } else {
+      // 새 구독 뱃지 생성
+      const newBadge = await grantUserBadge(
+        connection, user_id, "premium", badge_name,
+        `${tier_name} 구독 서비스 이용자`, badgeInfo.icon, badgeInfo.color
+      );
+
+      if (newBadge && months_count > 1) {
+        await connection.execute(
+          `UPDATE user_badges 
+           SET badge_level = :level, updated_at = SYSTIMESTAMP 
+           WHERE badge_id = :badge_id`,
+          { level: months_count, badge_id: newBadge.badge_id }, { autoCommit: false }
+        );
+      }
+
+      return {
+        success: true,
+        badge_name,
+        new_level: months_count,
+        message: `${badge_name} 뱃지를 획득했습니다!`
+      };
+    }
+  } catch (error) {
+    if (error.code === "INVALID_INPUT") throw error;
+    throw handleOracleError(error);
+  }
+}
+
+// 뱃지 승인 함수 (관리자용)
+async function approveBadgeUpgrade(connection, user_id, badge_name, reason = "관리자 승인") {
+  try {
+    const existingBadge = await connection.execute(
+      `SELECT badge_id, badge_level FROM user_badges 
+       WHERE user_id = :user_id AND badge_name = :badge_name`,
+      { user_id, badge_name }, { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    if (existingBadge.rows.length === 0) {
+      // 뱃지가 없으면 새로 생성
+      const newBadge = await grantUserBadge(
+        connection, user_id, "special", badge_name,
+        reason, "🏆", "#FFD700"
+      );
+      
+      return {
+        success: true,
+        badge_name,
+        new_badge: true,
+        message: `${badge_name} 뱃지가 승인되어 지급되었습니다.`
+      };
+    } else {
+      // 기존 뱃지 레벨 업그레이드
+      const currentLevel = existingBadge.rows[0].BADGE_LEVEL || 1;
+      const newLevel = currentLevel + 1;
+      
+      await connection.execute(
+        `UPDATE user_badges 
+         SET badge_level = :newLevel, updated_at = SYSTIMESTAMP 
+         WHERE user_id = :user_id AND badge_name = :badge_name`,
+        { newLevel, user_id, badge_name }, { autoCommit: false }
+      );
+
+      return {
+        success: true,
+        badge_name,
+        old_level: currentLevel,
+        new_level: newLevel,
+        message: `${badge_name} 뱃지가 승인되어 ${newLevel}레벨로 업그레이드되었습니다.`
+      };
+    }
+  } catch (error) {
+    throw handleOracleError(error);
+  }
+}
+
+// 통합 사용자 활동 처리 함수 (리팩토링된 중앙 함수)
+async function handleUserActivity(connection, user_id, activity_type, activity_data = {}) {
+  try {
+    const { description, severity, feedback_type, test_type, details } = activity_data;
+    let experience_points = 0;
+    let badge_earned = null;
+    let activity_message = "";
+
+    switch (activity_type) {
+      case "bug_report":
+        // 버그 제보 처리
+        const severityPoints = { low: 10, medium: 20, high: 30, critical: 50 };
+        experience_points = severityPoints[severity] || 20;
+        activity_message = `버그 제보를 해주셔서 감사합니다 (심각도: ${severity})`;
+        
+        // 버그 제보 뱃지 체크 및 업그레이드
+        const bugBadge = await checkAndUpdateActivityBadge(
+          connection, user_id, "버그 헌터", "bug_report", 
+          "버그를 발견하고 제보한 사용자", "🐛", "#FF5722"
+        );
+        if (bugBadge) badge_earned = bugBadge;
+        break;
+
+      case "feedback_submission":
+        // 피드백 제출 처리
+        const feedbackPoints = { suggestion: 15, compliment: 10, complaint: 20, general: 12 };
+        experience_points = feedbackPoints[feedback_type] || 12;
+        activity_message = `소중한 피드백을 제출해주셔서 감사합니다 (유형: ${feedback_type})`;
+        
+        // 피드백 뱃지 체크 및 업그레이드
+        const feedbackBadge = await checkAndUpdateActivityBadge(
+          connection, user_id, "피드백 제공자", "feedback", 
+          "서비스 개선을 위한 피드백을 제공한 사용자", "💬", "#4CAF50"
+        );
+        if (feedbackBadge) badge_earned = feedbackBadge;
+        break;
+
+      case "test_participation":
+        // 테스트 참여 처리
+        const testPoints = { alpha: 30, beta: 25, preview: 20 };
+        experience_points = testPoints[test_type] || 25;
+        activity_message = `${test_type.toUpperCase()} 테스트에 참여해주셔서 감사합니다`;
+        
+        // 테스터 뱃지 체크 및 업그레이드
+        const testerBadge = await checkAndUpdateActivityBadge(
+          connection, user_id, "베타 테스터", "testing", 
+          "신기능 테스트에 참여한 사용자", "🧪", "#9C27B0"
+        );
+        if (testerBadge) badge_earned = testerBadge;
+        break;
+
+      default:
+        const error = new Error(`지원하지 않는 활동 유형입니다: ${activity_type}`);
+        error.code = "INVALID_INPUT";
+        throw error;
+    }
+
+    // 경험치 지급
+    if (experience_points > 0) {
+      await addUserExperience(connection, user_id, experience_points, activity_type, activity_message);
+    }
+
+    return {
+      success: true,
+      activity_type,
+      experience_earned: experience_points,
+      badge_earned,
+      message: activity_message
+    };
+
+  } catch (error) {
+    if (error.code === "INVALID_INPUT") throw error;
+    throw handleOracleError(error);
+  }
+}
+
+// 활동 뱃지 체크 및 업데이트 헬퍼 함수
+async function checkAndUpdateActivityBadge(connection, user_id, badge_name, activity_type, description, icon, color) {
+  try {
+    const existingBadge = await connection.execute(
+      `SELECT badge_id, badge_level FROM user_badges 
+       WHERE user_id = :user_id AND badge_name = :badge_name`,
+      { user_id, badge_name }, { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    if (existingBadge.rows.length === 0) {
+      // 새 뱃지 생성
+      return await grantUserBadge(connection, user_id, "achievement", badge_name, description, icon, color);
+    } else {
+      // 기존 뱃지 레벨 업그레이드 (활동 횟수에 따라)
+      const currentLevel = existingBadge.rows[0].BADGE_LEVEL || 1;
+      const newLevel = currentLevel + 1;
+      
+      await connection.execute(
+        `UPDATE user_badges 
+         SET badge_level = :newLevel, updated_at = SYSTIMESTAMP 
+         WHERE user_id = :user_id AND badge_name = :badge_name`,
+        { newLevel, user_id, badge_name }, { autoCommit: false }
+      );
+
+      return {
+        badge_id: existingBadge.rows[0].BADGE_ID,
+        badge_name,
+        old_level: currentLevel,
+        new_level: newLevel,
+        upgraded: true
+      };
+    }
+  } catch (error) {
+    throw handleOracleError(error);
+  }
+}
+
+// 래퍼 함수들 (하위 호환성 유지)
+async function handleBugReport(connection, user_id, bug_description, severity = "medium") {
+  return await handleUserActivity(connection, user_id, "bug_report", {
+    description: bug_description,
+    severity: severity
+  });
+}
+
+async function handleFeedbackSubmission(connection, user_id, feedback_content, feedback_type = "general") {
+  return await handleUserActivity(connection, user_id, "feedback_submission", {
+    description: feedback_content,
+    feedback_type: feedback_type
+  });
+}
+
+async function handleTestParticipation(connection, user_id, test_type, test_details = "") {
+  return await handleUserActivity(connection, user_id, "test_participation", {
+    test_type: test_type,
+    details: test_details
+  });
+}
 
 module.exports = {
   registerUser,
@@ -718,7 +1073,6 @@ module.exports = {
   handleTestParticipation,
   upgradeSubscriptionBadge,
   approveBadgeUpgrade,
-  // createDefaultUserProfile, // 내부 헬퍼 함수이므로 export 불필요
-  grantUserBadge, // checkAndGrantBadges 등에서 사용되므로 export (또는 checkAndGrantBadges 내에서만 사용한다면 private으로)
-  // handleUserActivity // 내부 래퍼 함수들을 통해 호출되므로 직접 export 불필요
+  grantUserBadge,
+  handleUserActivity
 };

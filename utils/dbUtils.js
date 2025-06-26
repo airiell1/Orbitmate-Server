@@ -1,6 +1,38 @@
 const { oracledb, getConnection } = require("../config/database"); // oracledb import 추가
 
 /**
+ * 트랜잭션을 자동으로 관리하는 헬퍼 함수
+ * @param {Function} callback - 실행할 콜백 함수 (connection을 매개변수로 받음)
+ * @returns {Promise<any>} 콜백 함수의 반환값
+ */
+async function withTransaction(callback) {
+  let connection;
+  try {
+    connection = await getConnection();
+    const result = await callback(connection);
+    await connection.commit();
+    return result;
+  } catch (err) {
+    if (connection) {
+      try {
+        await connection.rollback();
+      } catch (rollbackError) {
+        console.error("Rollback failed:", rollbackError);
+      }
+    }
+    throw err;
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+      } catch (closeError) {
+        console.error("Failed to close connection:", closeError);
+      }
+    }
+  }
+}
+
+/**
  * Oracle CLOB 또는 Node.js 스트림을 문자열로 변환하는 안정적인 함수.
  * models/chat.js에서 가져와 범용적으로 사용할 수 있도록 수정.
  * @param {oracledb.Lob | ReadableStream | string | null | undefined} clob - CLOB 객체, 스트림 또는 이미 문자열.
@@ -125,34 +157,5 @@ module.exports = {
   clobToString,
   convertClobFields,
   toSnakeCaseObj,
-  withTransaction, // Add this
+  withTransaction,
 };
-
-async function withTransaction(callback) {
-  let connection;
-  try {
-    connection = await getConnection(); // Assumes getConnection is correctly imported
-    const result = await callback(connection);
-    await connection.commit();
-    return result;
-  } catch (err) {
-    if (connection) {
-      try {
-        await connection.rollback();
-      } catch (rollbackError) {
-        // Log or handle rollback error, but prioritize original error
-        console.error("Rollback failed:", rollbackError); // Or use a proper logger
-      }
-    }
-    throw err; // Re-throw the original error
-  } finally {
-    if (connection) {
-      try {
-        await connection.close();
-      } catch (closeError) {
-        // Log or handle close error
-        console.error("Failed to close connection:", closeError); // Or use a proper logger
-      }
-    }
-  }
-}

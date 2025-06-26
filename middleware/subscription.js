@@ -1,11 +1,12 @@
 // middleware/subscription.js
+const { withTransaction } = require("../utils/dbUtils");
 const {
   getUserSubscription,
   checkDailyUsage,
 } = require("../models/subscription");
 
 /**
- * 기능 접근 권한 체크 미들웨어
+ * 🔒 기능 접근 권한 체크 미들웨어 (트랜잭션 일관성 적용)
  * @param {string} requiredFeature - 필요한 기능명
  * @returns {Function} 미들웨어 함수
  */
@@ -18,7 +19,10 @@ function requireFeature(requiredFeature) {
         `[subscriptionMiddleware] Checking feature access: ${requiredFeature} for user: ${user_id}`
       );
 
-      const subscription = await getUserSubscription(user_id);
+      // 🔄 트랜잭션으로 일관성 보장
+      const subscription = await withTransaction(async (connection) => {
+        return await getUserSubscription(connection, user_id);
+      });
 
       if (!subscription.data || !subscription.data.tier) {
         return res.status(403).json({
@@ -58,7 +62,7 @@ function requireFeature(requiredFeature) {
 }
 
 /**
- * 일일 사용량 제한 체크 미들웨어
+ * 📊 일일 사용량 제한 체크 미들웨어 (트랜잭션 일관성 적용)
  * @returns {Function} 미들웨어 함수
  */
 function checkDailyLimit() {
@@ -70,7 +74,10 @@ function checkDailyLimit() {
         `[subscriptionMiddleware] Checking daily usage limit for user: ${user_id}`
       );
 
-      const usage = await checkDailyUsage(user_id);
+      // 🔄 트랜잭션으로 일관성 보장
+      const usage = await withTransaction(async (connection) => {
+        return await checkDailyUsage(connection, user_id);
+      });
 
       if (!usage.data.can_make_request) {
         return res.status(429).json({

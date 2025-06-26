@@ -1,130 +1,207 @@
 // controllers/searchController.js
-const { searchWikipedia, getWeatherByIP } = require("../models/search");
+const {
+  createController,
+  createExternalApiController
+} = require("../utils/serviceFactory");
+const searchService = require("../services/searchService");
 const { standardizeApiResponse } = require("../utils/apiResponse");
-const config = require("../config"); // 설정값 사용을 위해 추가
+const config = require("../config");
+
+// =========================
+// 🔍 검색 기능 (Search Functions)
+// =========================
 
 /**
- * 위키피디아 검색 컨트롤러
+ * 위키피디아 검색 컨트롤러 - ServiceFactory 패턴 적용
  * GET /api/search/wikipedia?q=검색어&limit=10&language=ko
  */
-async function searchWikipediaController(req, res, next) { // next 추가
-  try {
-    const { q: query, limit = config.wikipedia.maxResults, language = config.wikipedia.defaultLanguage } = req.query;
-
-    if (!query || query.trim().length === 0) {
-      const err = new Error("Search query is required.");
-      err.code = "INVALID_INPUT";
-      err.details = "Query parameter 'q' cannot be empty.";
-      return next(err);
-    }
-    if (query.length > 500) { // 예시: 최대 길이 제한
-      const err = new Error("Search query is too long (max 500 characters).");
-      err.code = "INVALID_INPUT";
-      return next(err);
-    }
-
-    const limitNum = parseInt(limit, 10);
-    if (isNaN(limitNum) || limitNum < 1 || limitNum > 50) { // 최대 50개로 제한
-      const err = new Error("Limit must be a number between 1 and 50.");
-      err.code = "INVALID_INPUT";
-      return next(err);
-    }
-
-    // 언어 코드 유효성 검사 (config 또는 별도 유틸리티에서 관리 가능)
-    const validLanguages = config.wikipedia.supportedLanguages || ["ko", "en", "ja", "zh", "fr", "de", "es", "ru"];
-    if (!validLanguages.includes(language)) {
-      const err = new Error(`Unsupported language: ${language}. Supported: ${validLanguages.join(", ")}`);
-      err.code = "INVALID_INPUT";
-      return next(err);
-    }
-
-    // console.log 제거 또는 logger 사용
-    const results = await searchWikipedia(query, limitNum, language);
-
-    const responsePayload = {
+const searchWikipediaController = createExternalApiController(
+  searchService.searchWikipediaService,
+  {
+    dataExtractor: (req) => {
+      const { q: query, limit = config.wikipedia.maxResults, language = config.wikipedia.defaultLanguage } = req.query;
+      const limitNum = parseInt(limit, 10);
+      return [query, limitNum, language];
+    },
+    validations: [
+      (req) => {
+        const { q, query, limit, language } = req.query;
+        
+        // q 또는 query 파라미터 중 하나는 필수
+        const searchQuery = q || query;
+        if (!searchQuery || searchQuery.trim().length === 0) {
+          const err = new Error("Search query is required.");
+          err.code = "INVALID_INPUT";
+          err.details = "Query parameter 'q' or 'query' cannot be empty.";
+          throw err;
+        }
+        
+        // 쿼리 길이 제한
+        if (searchQuery.length > 500) {
+          const err = new Error("Search query is too long (max 500 characters).");
+          err.code = "INVALID_INPUT";
+          throw err;
+        }
+        
+        // req.query에 정규화된 query 설정
+        req.query.q = searchQuery;
+        
+        // 제한 개수 유효성 검사
+        const limitNum = parseInt(limit, 10);
+        if (limit && (isNaN(limitNum) || limitNum < 1 || limitNum > 50)) {
+          const err = new Error("Limit must be a number between 1 and 50.");
+          err.code = "INVALID_INPUT";
+          throw err;
+        }
+        
+        // 언어 코드 유효성 검사
+        const validLanguages = config.wikipedia.supportedLanguages || ["ko", "en", "ja", "zh", "fr", "de", "es", "ru"];
+        if (language && !validLanguages.includes(language)) {
+          const err = new Error(`Unsupported language: ${language}. Supported: ${validLanguages.join(", ")}`);
+          err.code = "INVALID_INPUT";
+          throw err;
+        }
+      }
+    ],
+    responseTransformer: (results, req) => {
+      const { q: query, limit, language = config.wikipedia.defaultLanguage } = req.query;
+      const limitNum = parseInt(limit, 10) || config.wikipedia.maxResults;
+      
+      return {
         query: query,
         language: language,
         limit: limitNum,
         results: results,
         total_found: results.length,
         message: "Wikipedia search completed successfully"
-    };
-    const apiResponse = standardizeApiResponse(responsePayload);
-    res.status(apiResponse.statusCode).json(apiResponse.body);
-
-  } catch (error) {
-    // 모델에서 발생한 특정 에러 코드(예: TIMEOUT, SERVICE_UNAVAILABLE)를 그대로 사용하거나,
-    // 여기서 새로운 에러 코드로 매핑할 수 있음.
-    // 중앙 에러 핸들러가 HTTP 상태 코드를 결정하므로, 여기서는 에러 객체만 잘 전달.
-    error.code = error.code || "EXTERNAL_API_ERROR"; // 기본 외부 API 에러 코드
-    if (error.message.includes("timeout")) error.code = "REQUEST_TIMEOUT";
-    if (error.code === "ENOTFOUND" || error.code === "ECONNREFUSED") error.code = "SERVICE_UNAVAILABLE";
-
-    next(error); // 중앙 에러 핸들러로 전달
+      };
+    },
+    errorHandler: async (error, req, res, next) => {
+      // 외부 API 에러 특별 처리
+      error.code = error.code || "EXTERNAL_API_ERROR";
+      if (error.message.includes("timeout")) error.code = "REQUEST_TIMEOUT";
+      if (error.code === "ENOTFOUND" || error.code === "ECONNREFUSED") error.code = "SERVICE_UNAVAILABLE";
+      throw error;
+    },
+    errorContext: 'wikipedia_search'
   }
-}
+);
 
 /**
- * 날씨 검색 컨트롤러 - IP 기반 위치 자동 감지
+ * 날씨 검색 컨트롤러 - ServiceFactory 패턴 적용
  * GET /api/search/weather?units=metric&lang=ko
  */
-async function searchWeatherController(req, res, next) { // next 추가
-  try {
-    const { units = "metric", lang = (config.weather.supportedLanguages?.includes(req.query.lang) ? req.query.lang : 'ko'), city, lat, lon } = req.query;
-
-    const clientIP = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip;
-
-    const validUnits = ["metric", "imperial", "standard"]; // OpenWeatherMap은 'kelvin' 대신 'standard'
-    if (!validUnits.includes(units)) {
-      const err = new Error(`Invalid units: ${units}. Supported: ${validUnits.join(", ")}`);
-      err.code = "INVALID_INPUT";
-      return next(err);
-    }
-
-    // 언어 코드 유효성 검사 (config 또는 별도 유틸리티에서 관리 가능)
-    // const validWeatherLanguages = config.weather.supportedLanguages || ["ko", "en", "ja", "zh", "fr", "de", "es", "ru"];
-    // if (!validWeatherLanguages.includes(lang)) {
-    //   const err = new Error(`Unsupported language for weather: ${lang}. Supported: ${validWeatherLanguages.join(", ")}`);
-    //   err.code = "INVALID_INPUT";
-    //   return next(err);
-    // } // 위에서 기본값 처리로 변경
-
-    if (lat && lon) {
-      const latitude = parseFloat(lat);
-      const longitude = parseFloat(lon);
-      if (isNaN(latitude) || isNaN(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
-        const err = new Error("Invalid coordinates. Latitude must be between -90 and 90, longitude between -180 and 180.");
-        err.code = "INVALID_INPUT";
-        return next(err);
+const searchWeatherController = createController(
+  searchService.getWeatherByIPService,
+  {
+    dataExtractor: (req) => {
+      const clientIP = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip;
+      return [clientIP];
+    },
+    validations: [
+      (req) => {
+        const { units, lang, lat, lon } = req.query;
+        
+        // 단위 유효성 검사
+        const validUnits = ["metric", "imperial", "standard"];
+        if (units && !validUnits.includes(units)) {
+          const err = new Error(`Invalid units: ${units}. Supported: ${validUnits.join(", ")}`);
+          err.code = "INVALID_INPUT";
+          throw err;
+        }
+        
+        // 좌표 유효성 검사
+        if (lat && lon) {
+          const latitude = parseFloat(lat);
+          const longitude = parseFloat(lon);
+          if (isNaN(latitude) || isNaN(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+            const err = new Error("Invalid coordinates. Latitude must be between -90 and 90, longitude between -180 and 180.");
+            err.code = "INVALID_INPUT";
+            throw err;
+          }
+        }
       }
-    }
-
-    const weatherData = await getWeatherByIP(clientIP, { units, lang, city, lat, lon });
-
-    const responsePayload = {
+    ],
+    responseTransformer: (weatherData, req) => {
+      const { units = "metric", lang = 'ko' } = req.query;
+      
+      return {
         location: weatherData.location,
         current: weatherData.current,
-        forecast: weatherData.forecast, // 모델에서 이미 필요한 만큼 가공되었다고 가정
+        forecast: weatherData.forecast,
         units: units,
         language: lang,
         timestamp: new Date().toISOString(),
-        ip_detected_info: weatherData.ip_detected, // 필드명 변경 또는 유지
+        ip_detected_info: weatherData.ip_detected,
         message: "Weather data retrieved successfully"
-    };
-    const apiResponse = standardizeApiResponse(responsePayload);
-    res.status(apiResponse.statusCode).json(apiResponse.body);
-
-  } catch (error) {
-    // 모델에서 발생한 특정 에러 코드(예: LOCATION_NOT_FOUND, INVALID_API_KEY)를 그대로 사용.
-    error.code = error.code || "EXTERNAL_API_ERROR";
-    if (error.message.includes("timeout")) error.code = "REQUEST_TIMEOUT";
-    if (error.code === "ENOTFOUND" || error.code === "ECONNREFUSED") error.code = "SERVICE_UNAVAILABLE";
-
-    next(error);
+      };
+    },
+    errorHandler: async (error, req, res, next) => {
+      // 날씨 API 에러 특별 처리
+      error.code = error.code || "EXTERNAL_API_ERROR";
+      if (error.message.includes("timeout")) error.code = "REQUEST_TIMEOUT";
+      if (error.code === "ENOTFOUND" || error.code === "ECONNREFUSED") error.code = "SERVICE_UNAVAILABLE";
+      throw error;
+    },
+    errorContext: 'weather_search'
   }
-}
+);
+
+/**
+ * 뉴스 검색 컨트롤러 - ServiceFactory 패턴 적용
+ * GET /api/search/news?q=검색어&limit=10
+ */
+const searchNewsController = createController(
+  searchService.searchNewsService,
+  {
+    dataExtractor: (req) => {
+      const { q: query, limit = 10 } = req.query;
+      const options = { limit: parseInt(limit, 10) };
+      return [query, options];
+    },
+    validations: [
+      (req) => {
+        const { q: query } = req.query;
+        if (!query || query.trim().length === 0) {
+          const err = new Error("Search query is required.");
+          err.code = "INVALID_INPUT";
+          throw err;
+        }
+      }
+    ],
+    errorContext: 'news_search'
+  }
+);
+
+/**
+ * 일반 검색 컨트롤러 - ServiceFactory 패턴 적용
+ * GET /api/search/general?q=검색어&type=web
+ */
+const generalSearchController = createController(
+  searchService.generalSearchService,
+  {
+    dataExtractor: (req) => {
+      const { q: query, type = 'web', limit = 10 } = req.query;
+      const options = { type, limit: parseInt(limit, 10) };
+      return [query, options];
+    },
+    validations: [
+      (req) => {
+        const { q: query } = req.query;
+        if (!query || query.trim().length === 0) {
+          const err = new Error("Search query is required.");
+          err.code = "INVALID_INPUT";
+          throw err;
+        }
+      }
+    ],
+    errorContext: 'general_search'
+  }
+);
 
 module.exports = {
   searchWikipediaController,
   searchWeatherController,
+  searchNewsController,
+  generalSearchController,
 };
