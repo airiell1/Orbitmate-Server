@@ -372,10 +372,11 @@ const getSessionMessagesController = createReadController(
             if (!session_id || session_id === 'undefined' || session_id === 'null') {
               const err = new Error("세션 ID가 제공되지 않았습니다.");
               err.code = "INVALID_INPUT";
-              throw err;
+              return err;
             }
+            return null;
           },
-          () => validateSessionId(session_id),
+          () => validateSessionId(req),
           () => validateStringLength(session_id, "session_id", 1, 100)
         ]);
       }

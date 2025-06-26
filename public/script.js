@@ -368,6 +368,7 @@ async function sendMessage() {
     try {
         const requestBody = {
             message: originalMessageText,
+            user_id: GUEST_USER_ID,
             systemPrompt: systemPromptToSend,
             max_output_tokens_override: currentMaxOutputTokens,
             context_message_limit: currentContextLimit
@@ -475,15 +476,34 @@ async function sendMessage() {
                         continue;
                     }
 
-                    // [DONE] 신호 처리
-                    if (data === '[DONE]') {
-                        console.log('[메인 페이지 SSE] 완료 신호 수신');
-                        break;
-                    }
-
                     try {
                         const chunkData = JSON.parse(data);
                         console.log('[메인 페이지 SSE] 파싱된 데이터:', { eventType, data: chunkData });
+
+                        // 완료 신호 처리
+                        if (chunkData.done === true) {
+                            console.log('[메인 페이지 SSE] 완료 신호 수신');
+                            continue; // 다음 데이터를 기다림 (최종 응답)
+                        }
+
+                        // done 신호 후 첫 번째 데이터를 최종 응답으로 처리
+                        if (!eventType && (chunkData.message_id || chunkData.user_message_id || chunkData.ai_message_id)) {
+                            console.log('[메인 페이지 SSE] 최종 응답 수신:', chunkData);
+                            
+                            // 최종 응답 처리 (메시지 ID 업데이트 등)
+                            if (chunkData.user_message_id && userMessageElement) {
+                                userMessageElement.dataset.messageId = chunkData.user_message_id;
+                                if (!userMessageElement.querySelector('.message-actions')) {
+                                    addMessageActions(userMessageElement, chunkData.user_message_id, 'user');
+                                }
+                            }
+                            
+                            if (chunkData.ai_message_id && aiMessageElement) {
+                                aiMessageElement.dataset.messageId = chunkData.ai_message_id;
+                            }
+                            
+                            break; // 스트리밍 완료
+                        }
 
                         // 이벤트 타입별 처리
                         if (eventType === 'ids' && chunkData.userMessageId) {
@@ -559,8 +579,8 @@ async function sendMessage() {
                         }
                     } catch (e) {
                         console.error('[메인 페이지 SSE] 청크 파싱 오류:', e, '원본 데이터:', data);
-                        // 파싱 실패 시에도 텍스트로 표시
-                        if (data && typeof data === 'string' && data !== '[DONE]') {
+                        // 파싱 실패 시에도 텍스트로 표시 (JSON이 아닌 경우)
+                        if (data && typeof data === 'string') {
                             if (isFirstChunk && aiContentSpan) {
                                 aiContentSpan.innerHTML = 'AI: ' + data;
                                 isFirstChunk = false;

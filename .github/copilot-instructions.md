@@ -345,7 +345,29 @@ SYSTEM_ARCHITECTURE.md 참고
   - 해결: utils/constants.js에 테스트 상수 정의, registerUserController/loginUserController를 직접 구현으로 수정하여 withTransaction 사용
   - 결과: user_id="API_TEST_USER_ID", session_id="API_TEST_SESSION_ID" 고정 반환 확인
   - 추가: NODE_ENV='test' 설정으로 테스트 모드 활성화, ServiceFactory 대신 직접 구현으로 connection 객체 문제 해결
-[YYYY-MM-DD] 코드베이스 리팩토링: 설정 관리 중앙화, DB 연결/트랜잭션 관리 개선, API 응답 및 에러 처리 표준화, 모델/컨트롤러 구조 개선 (진행중 - Jules)
+[2025-06-26] 유효성 검사 중복 정의 및 'undefined' 세션 ID 오류 해결: utils/validation.js에서 validateBatch, validateSessionId 함수 중복 정의 제거 및 개선 (해결)
+  - 문제: validateBatch 함수가 두 번 정의되어 충돌 발생, validateSessionId도 중복 정의로 혼란 야기
+  - 문제: URL에서 'undefined' 문자열이 세션 ID로 전달되어 "세션 ID가 제공되지 않았습니다" 에러 반복 발생
+  - 문제: 영어/한국어 에러 메시지 혼재로 일관성 부족
+  - 해결: validateBatch 함수 통합, validateSessionId/validateMessageId/validateUserAccess/validateFileType 함수 개선
+  - 해결: 'undefined', 'null' 문자열 명시적 체크 추가, 한국어 에러 메시지 통일
+  - 해결: req 객체와 일반 값 모두 처리 가능하도록 유연한 함수 구조로 개선
+  - 영향: chatController.js의 모든 유효성 검사 안정화, 프론트엔드에서 undefined 전달 시에도 명확한 에러 메시지 제공
+[2025-06-26] SSE 스트리밍 응답 형식 불일치 해결: [DONE] 문자열을 JSON 형태로 통일 (해결)
+  - 문제: SSE 스트리밍에서 완료 신호만 `data: [DONE]` 문자열로 전송되어 다른 JSON 이벤트와 일관성 부족
+  - 문제: 프론트엔드에서 JSON 파싱 시도 후 문자열 체크하는 이중 로직으로 코드 복잡성 증가
+  - 해결: utils/serviceFactory.js에서 `data: [DONE]`을 `data: {"done":true}`로 변경
+  - 해결: script.js와 testScripts/chat.js에서 `data === '[DONE]'` 체크를 `chunkData.done === true` JSON 파싱으로 통일
+  - 해결: 파싱 실패 예외 처리에서 `data !== '[DONE]'` 조건 제거하여 로직 단순화
+  - 영향: SSE 스트리밍의 모든 이벤트가 JSON 형태로 통일, 클라이언트 처리 로직 일관성 향상
+
+[2025-06-26] API 명세서 응답 형식 표준화: 모든 API 응답을 {status, data/error} 구조로 통일 (해결)
+  - 문제: API 명세서에서 일부 응답이 구 형식({message: ...})으로 표기되어 실제 응답과 불일치
+  - 문제: SSE 스트리밍 응답 형식에 대한 명세 부족으로 개발자 혼란 야기
+  - 해결: public/api_docs.js에서 모든 성공 응답을 {status: "success", data: {...}} 형식으로 통일
+  - 해결: SSE 스트리밍 응답 형식 상세 설명 추가 (이벤트 타입, 완료 신호, 최종 응답 등)
+  - 해결: 채팅 메시지 전송 API에 일반 응답과 SSE 스트리밍 응답 예시 모두 포함
+  - 영향: API 문서와 실제 응답 형식 완전 일치, 개발 시 혼란 제거
 
 ---
 ## 중요: 코드베이스 리팩토링 관련 최신 지침 (YYYY-MM-DD 업데이트)

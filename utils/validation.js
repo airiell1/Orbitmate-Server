@@ -143,13 +143,29 @@ function runValidations(validations) {
 }
 
 // 세션 ID 유효성 검사
-function validateSessionId(req) {
-  const { session_id } = req.params;
-  if (!session_id || typeof session_id !== "string" || session_id.trim() === "" || session_id.length > 36) {
-    const error = new Error("세션 ID는 필수이며 최대 36자입니다.");
+function validateSessionId(sessionIdOrReq, fieldName = 'Session ID') {
+  let sessionId;
+  
+  // req 객체인지 확인하고 params에서 추출
+  if (sessionIdOrReq && typeof sessionIdOrReq === 'object' && sessionIdOrReq.params) {
+    sessionId = sessionIdOrReq.params.session_id;
+  } else {
+    sessionId = sessionIdOrReq;
+  }
+  
+  if (!sessionId || typeof sessionId !== 'string' || sessionId.trim() === '' || sessionId === 'undefined' || sessionId === 'null') {
+    const error = new Error(`${fieldName}는 필수이며 유효한 문자열이어야 합니다.`);
     error.code = "INVALID_INPUT";
     return error;
   }
+  
+  // UUID는 36자, 일반 ID는 3-100자 허용
+  if (sessionId.length < 3 || sessionId.length > 100) {
+    const error = new Error(`${fieldName}는 3자에서 100자 사이여야 합니다.`);
+    error.code = "INVALID_INPUT";
+    return error;
+  }
+  
   return null;
 }
 
@@ -200,17 +216,6 @@ function validateFileType(file) {
   return null;
 }
 
-// 배치 유효성 검사 함수 (validateBatch)
-function validateBatch(validationFunctions) {
-  for (const validationFn of validationFunctions) {
-    const error = validationFn();
-    if (error) {
-      throw error; // 첫 번째 에러에서 즉시 중단
-    }
-  }
-  return null; // 모든 검사 통과
-}
-
 // 배치 유효성 검사 실행
 function validateBatch(validators) {
   if (!Array.isArray(validators)) {
@@ -219,67 +224,114 @@ function validateBatch(validators) {
   
   for (const validator of validators) {
     if (typeof validator === 'function') {
-      validator(); // 유효성 검사 함수 실행 (에러 시 throw)
+      const error = validator();
+      if (error) {
+        throw error; // 첫 번째 에러에서 즉시 중단
+      }
     }
   }
-}
-
-// 세션 ID 유효성 검사
-function validateSessionId(sessionId, fieldName = 'Session ID') {
-  if (!sessionId || typeof sessionId !== 'string' || sessionId.trim() === '') {
-    const error = new Error(`${fieldName} is required and must be a non-empty string.`);
-    error.code = "INVALID_INPUT";
-    throw error;
-  }
-  
-  // UUID는 36자, 일반 ID는 3-50자 허용
-  if (sessionId.length < 3 || sessionId.length > 100) {
-    const error = new Error(`${fieldName} must be between 3 and 100 characters.`);
-    error.code = "INVALID_INPUT";
-    throw error;
-  }
+  return null; // 모든 검사 통과
 }
 
 // 메시지 ID 유효성 검사
-function validateMessageId(messageId, fieldName = 'Message ID') {
-  if (!messageId || typeof messageId !== 'string' || messageId.trim() === '') {
-    const error = new Error(`${fieldName} is required and must be a non-empty string.`);
-    error.code = "INVALID_INPUT";
-    throw error;
+function validateMessageId(messageIdOrReq, fieldName = 'Message ID') {
+  let messageId;
+  
+  // req 객체인지 확인하고 params에서 추출
+  if (messageIdOrReq && typeof messageIdOrReq === 'object' && messageIdOrReq.params) {
+    messageId = messageIdOrReq.params.message_id;
+  } else {
+    messageId = messageIdOrReq;
   }
   
-  if (messageId.length < 3 || messageId.length > 50) {
-    const error = new Error(`${fieldName} must be between 3 and 50 characters.`);
+  if (!messageId || typeof messageId !== 'string' || messageId.trim() === '' || messageId === 'undefined' || messageId === 'null') {
+    const error = new Error(`${fieldName}는 필수이며 유효한 문자열이어야 합니다.`);
     error.code = "INVALID_INPUT";
-    throw error;
+    return error;
   }
+  
+  if (messageId.length < 3 || messageId.length > 100) {
+    const error = new Error(`${fieldName}는 3자에서 100자 사이여야 합니다.`);
+    error.code = "INVALID_INPUT";
+    return error;
+  }
+  
+  return null;
 }
 
 // 사용자 접근 권한 검사
-function validateUserAccess(userId, sessionUserId, fieldName = 'User access') {
-  if (userId !== sessionUserId) {
-    const error = new Error(`${fieldName}: You don't have permission to access this resource.`);
-    error.code = "FORBIDDEN";
-    throw error;
+function validateUserAccess(userIdOrReq, sessionUserId = null, fieldName = 'User access') {
+  let userId;
+  
+  // req 객체인지 확인하고 user에서 추출
+  if (userIdOrReq && typeof userIdOrReq === 'object' && userIdOrReq.user) {
+    userId = userIdOrReq.user.user_id || "guest";
+  } else if (userIdOrReq && typeof userIdOrReq === 'object' && userIdOrReq.params) {
+    userId = userIdOrReq.params.user_id;
+  } else {
+    userId = userIdOrReq;
   }
+  
+  if (!userId) {
+    const error = new Error("사용자 인증이 필요합니다.");
+    error.code = "UNAUTHORIZED";
+    return error;
+  }
+  
+  if (sessionUserId && userId !== sessionUserId) {
+    const error = new Error(`${fieldName}: 이 리소스에 접근할 권한이 없습니다.`);
+    error.code = "FORBIDDEN";
+    return error;
+  }
+  
+  return null;
 }
 
 // 파일 타입 유효성 검사
-function validateFileType(filename, allowedTypes = [], fieldName = 'File type') {
-  if (!filename || typeof filename !== 'string') {
-    const error = new Error(`${fieldName}: Filename is required.`);
-    error.code = "INVALID_INPUT";
-    throw error;
+function validateFileType(fileOrFilename, allowedTypes = [], fieldName = 'File type') {
+  let filename, mimetype;
+  
+  // file 객체인지 확인
+  if (fileOrFilename && typeof fileOrFilename === 'object') {
+    filename = fileOrFilename.originalname || fileOrFilename.filename;
+    mimetype = fileOrFilename.mimetype;
+  } else {
+    filename = fileOrFilename;
   }
   
+  if (!filename || typeof filename !== 'string') {
+    const error = new Error(`${fieldName}: 파일명이 필요합니다.`);
+    error.code = "INVALID_INPUT";
+    return error;
+  }
+  
+  // MIME 타입 검사 (파일 객체인 경우)
+  if (mimetype) {
+    const allowedMimeTypes = [
+      'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+      'text/plain', 'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    ];
+    
+    if (!allowedMimeTypes.includes(mimetype)) {
+      const error = new Error(`지원하지 않는 파일 형식입니다. 허용되는 형식: 이미지(jpg, png, gif, webp), 텍스트(txt), PDF, Word, Excel`);
+      error.code = "INVALID_FILE_TYPE";
+      return error;
+    }
+  }
+  
+  // 확장자 검사 (allowedTypes가 제공된 경우)
   if (allowedTypes.length > 0) {
     const extension = filename.toLowerCase().split('.').pop();
     if (!allowedTypes.includes(extension)) {
-      const error = new Error(`${fieldName}: Only ${allowedTypes.join(', ')} files are allowed.`);
+      const error = new Error(`${fieldName}: ${allowedTypes.join(', ')} 파일만 허용됩니다.`);
       error.code = "INVALID_INPUT";
-      throw error;
+      return error;
     }
   }
+  
+  return null;
 }
 
 /**

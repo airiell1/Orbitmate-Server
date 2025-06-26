@@ -689,14 +689,14 @@ function createStreamController(serviceFunction, options = {}) {
 
       // 스트림 종료
       if (streamType === 'sse') {
-        res.write(`data: [DONE]\n\n`);
+        res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
       }
       
       // 최종 응답 전송
       if (responseTransformer) {
         const transformedResult = responseTransformer(result, req);
         if (streamType === 'sse') {
-          res.write(`data: ${JSON.stringify({ final: transformedResult })}\n\n`);
+          res.write(`data: ${JSON.stringify(transformedResult)}\n\n`);
         } else {
           res.json(transformedResult);
         }

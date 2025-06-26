@@ -1,13 +1,29 @@
 /*
   General API Information:
-  Error Responses: All API error responses now follow a standard format:
+  
+  Success Responses: All successful API responses follow a standard format:
   {
+    "status": "success",
+    "data": { ... actual response data ... }
+  }
+  
+  Error Responses: All API error responses follow a standard format:
+  {
+    "status": "error",
     "error": {
       "code": "ERROR_CODE_IN_SNAKE_CASE",
-      "message": "A descriptive error message."
+      "message": "A descriptive error message.",
+      "details": null | { ... additional error details ... }
     }
   }
-  All keys in the response, including error responses, are in snake_case.
+  
+  SSE Streaming Responses: When special_mode_type is "stream", responses use Server-Sent Events:
+  - Content-Type: text/event-stream
+  - Events include: ids, ai_message_id, message (with delta content)
+  - Completion signal: {"done": true}
+  - Final result: Standard success response format with complete data
+  
+  All keys in responses, including error responses, are in snake_case.
 */
 const apis = [
   {
@@ -259,20 +275,71 @@ const apis = [
     method: 'POST',
     path: '/api/chat/sessions/:session_id/messages',
     title: '채팅 메시지 전송',
-    desc: '특정 채팅 세션에 새 메시지를 전송하고 AI의 응답을 받습니다.<br>Validation Rules: <ul><li>`session_id` (URL param): 필수, 유효한 UUID 형식, 최대 36자.</li><li>`message` (body): 필수, 1-4000자 사이의 문자열.</li><li>`system_prompt` (body): 선택, 0-2000자 사이의 문자열.</li><li>`special_mode_type` (body): 선택, \'stream\' 또는 \'canvas\' 중 하나여야 합니다.</li></ul><br>Optional overrides:<ul><li>`ai_provider_override`: (string) "vertexai" 또는 "ollama". 제공될 경우 빈 문자열이 아니어야 합니다.</li><li>`model_id_override`: (string) 특정 모델 ID. 제공될 경우 빈 문자열이 아니어야 합니다.</li><li>`user_message_token_count`: (integer >= 0) 사용자 메시지의 토큰 수.</li><li>`max_output_tokens_override`: (integer > 0) AI 응답의 최대 토큰 수 재정의.</li><li>`context_message_limit`: (integer >= 0) 컨텍스트에 포함할 과거 메시지 수 (0은 컨텍스트 없음).</li></ul>',
+    desc: '특정 채팅 세션에 새 메시지를 전송하고 AI의 응답을 받습니다.<br>Validation Rules: <ul><li>`session_id` (URL param): 필수, 유효한 UUID 형식, 최대 36자.</li><li>`message` (body): 필수, 1-4000자 사이의 문자열.</li><li>`system_prompt` (body): 선택, 0-2000자 사이의 문자열.</li><li>`special_mode_type` (body): 선택, \'stream\' 또는 \'canvas\' 중 하나여야 합니다.</li></ul><br>Optional overrides:<ul><li>`ai_provider_override`: (string) "vertexai", "geminiapi" 또는 "ollama". 제공될 경우 빈 문자열이 아니어야 합니다.</li><li>`model_id_override`: (string) 특정 모델 ID. 제공될 경우 빈 문자열이 아니어야 합니다.</li><li>`user_message_token_count`: (integer >= 0) 사용자 메시지의 토큰 수.</li><li>`max_output_tokens_override`: (integer > 0) AI 응답의 최대 토큰 수 재정의.</li><li>`context_message_limit`: (integer >= 0) 컨텍스트에 포함할 과거 메시지 수 (0은 컨텍스트 없음).</li></ul><span class="api-desc-note">special_mode_type이 "stream"이면 SSE 스트리밍 응답, "canvas"면 이미지 생성 등 특수 모드 지원.</span>',
     params: [
       { name: 'session_id', type: 'text', label: '세션 ID (최대 36자)', required: true, inPath: true, default: 'API_TEST_SESSION_ID' },
       { name: 'message', type: 'text', label: '메시지 (1-4000자)', required: true },
       { name: 'system_prompt', type: 'text', label: '시스템 프롬프트 (0-2000자)', required: false },
       { name: 'special_mode_type', type: 'text', label: '특수 모드 (stream/canvas)', required: false },
-      { name: 'ai_provider_override', type: 'text', label: 'AI 제공자 재정의 (vertexai/ollama, 선택)', required: false },
+      { name: 'ai_provider_override', type: 'text', label: 'AI 제공자 재정의 (vertexai/geminiapi/ollama, 선택)', required: false },
       { name: 'model_id_override', type: 'text', label: 'AI 모델 ID 재정의 (선택)', required: false },
       { name: 'user_message_token_count', type: 'number', label: '사용자 메시지 토큰 수 (선택, 정수 >= 0)', required: false },
       { name: 'max_output_tokens_override', type: 'number', label: '최대 출력 토큰 재정의 (선택, 양의 정수 > 0)', required: false },
       { name: 'context_message_limit', type: 'number', label: '컨텍스트 메시지 제한 (선택, 0 이상 정수)', required: false }
     ],
-    exampleReq:  `{\n  "message": "안녕하세요! 오늘 날씨에 대해 알려주세요.",\n  "system_prompt": "AI는 친절하게 답변합니다.",\n  "special_mode_type": "stream",\n  "ai_provider_override": "geminiapi",\n  "model_id_override": "gemini-2.0-flash-thinking-exp-01-21",\n  "user_message_token_count": 15,\n  "max_output_tokens_override": 500,\n  "context_message_limit": 10\n}`,
-    exampleRes:  `{\n  "user_message_id": "API_TEST_USER_MESSAGE_ID",\n  "ai_message_id": "API_TEST_AI_MESSAGE_ID",\n  "message": "안녕하세요! 오늘 날씨는 맑고 화창합니다.",\n  "created_at": "YYYY-MM-DDTHH:mm:ss.sssZ",\n  "ai_message_token_count": 25,\n  "ai_provider": "vertexai",\n  "model_id": "gemini-2.0-flash-thinking-exp-01-21"\n}`
+    exampleReq:  `{
+  "message": "안녕하세요! 오늘 날씨에 대해 알려주세요.",
+  "system_prompt": "AI는 친절하게 답변합니다.",
+  "special_mode_type": "stream",
+  "ai_provider_override": "geminiapi",
+  "model_id_override": "gemini-2.0-flash-thinking-exp-01-21",
+  "user_message_token_count": 15,
+  "max_output_tokens_override": 500,
+  "context_message_limit": 10
+}`,
+    exampleRes: `일반 응답:
+{
+  "status": "success",
+  "data": {
+    "user_message_id": "API_TEST_USER_MESSAGE_ID",
+    "ai_message_id": "API_TEST_AI_MESSAGE_ID",
+    "message": "안녕하세요! 오늘 날씨는 맑고 화창합니다.",
+    "created_at": "YYYY-MM-DDTHH:mm:ss.sssZ",
+    "ai_message_token_count": 25,
+    "ai_provider": "geminiapi",
+    "model_id": "gemini-2.0-flash-thinking-exp-01-21"
+  }
+}
+
+SSE 스트리밍 응답 (special_mode_type: "stream"):
+Content-Type: text/event-stream
+
+event: ids
+data: {"userMessageId": "user-msg-id"}
+
+event: ai_message_id
+data: {"aiMessageId": "ai-msg-id"}
+
+event: message
+data: {"delta": "안녕하세요!"}
+
+event: message
+data: {"delta": " 오늘 날씨는"}
+
+data: {"done": true}
+
+data: {
+  "status": "success",
+  "data": {
+    "user_message_id": "user-msg-id",
+    "ai_message_id": "ai-msg-id",
+    "message": "안녕하세요! 오늘 날씨는 맑고 화창합니다.",
+    "created_at": "YYYY-MM-DDTHH:mm:ss.sssZ",
+    "ai_message_token_count": 25,
+    "ai_provider": "geminiapi",
+    "model_id": "gemini-2.0-flash-thinking-exp-01-21"
+  }
+}`
   },
   {
     method: 'PUT',
@@ -283,8 +350,20 @@ const apis = [
       { name: 'message_id', type: 'text', label: '메시지 ID (최대 36자)', required: true, inPath: true },
       { name: 'content', type: 'text', label: '수정할 내용 (1-4000자)', required: true }
     ],
-    exampleReq:  `{\n  "content": "이것은 수정된 메시지입니다."\n}`,
-    exampleRes:  `{\n  "message": "메시지가 성공적으로 수정되었습니다.",\n  "updatedMessage": { ... }\n}`
+    exampleReq:  `{
+  "content": "이것은 수정된 메시지입니다."
+}`,
+    exampleRes:  `{
+  "status": "success",
+  "data": {
+    "message": "메시지가 성공적으로 수정되었습니다.",
+    "updated_message": {
+      "message_id": "msg-id",
+      "content": "이것은 수정된 메시지입니다.",
+      "updated_at": "YYYY-MM-DDTHH:mm:ss.sssZ"
+    }
+  }
+}`
   },
   {
     method: 'DELETE',
@@ -295,7 +374,12 @@ const apis = [
       { name: 'message_id', type: 'text', label: '메시지 ID (최대 36자)', required: true, inPath: true }
     ],
     exampleReq: '',
-    exampleRes:  ` {\n  "message": "메시지가 성공적으로 삭제되었습니다."\n}`
+    exampleRes:  `{
+  "status": "success",
+  "data": {
+    "message": "메시지가 성공적으로 삭제되었습니다."
+  }
+}`
   },
   {
     method: 'POST',
@@ -306,8 +390,16 @@ const apis = [
       { name: 'message_id', type: 'text', label: '메시지 ID (최대 36자)', required: true, inPath: true },
       { name: 'reaction', type: 'text', label: '리액션 (1-10자)', required: true }
     ],
-    exampleReq:  `{\n  "reaction": "🎉"\n}`,
-    exampleRes:  ` {\n  "message": "리액션이 성공적으로 추가/수정되었습니다.",\n  "reaction": "👍"\n}`
+    exampleReq:  `{
+  "reaction": "🎉"
+}`,
+    exampleRes:  `{
+  "status": "success",
+  "data": {
+    "message": "리액션이 성공적으로 추가/수정되었습니다.",
+    "reaction": "👍"
+  }
+}`
   },
   {
     method: 'DELETE',
@@ -318,7 +410,12 @@ const apis = [
       { name: 'message_id', type: 'text', label: '메시지 ID (최대 36자)', required: true, inPath: true }
     ],
     exampleReq: '',
-    exampleRes:  ` {\n  "message": "리액션이 성공적으로 제거되었습니다."\n}`
+    exampleRes:  `{
+  "status": "success",
+  "data": {
+    "message": "리액션이 성공적으로 제거되었습니다."
+  }
+}`
   },
   /* 5. 파일 업로드 */
   {
@@ -330,7 +427,8 @@ const apis = [
       { name: 'session_id', type: 'text', label: '세션 ID (최대 36자)', required: true, inPath: true },
       { name: 'file', type: 'file', label: '업로드 파일 (다양한 타입 허용, max 5MB)', required: true },
       { name: 'user_id', type: 'text', label: '사용자 ID (최대 36자)', required: false }
-    ],    exampleReq: '(multipart/form-data: file=파일 선택, user_id=USER123)',    exampleRes:  ` {\n  "message": "파일이 성공적으로 업로드되었습니다.",\n  "fileMessage": { ... }\n}`  },
+    ],    exampleReq: '(multipart/form-data: file=파일 선택, user_id=USER123)',
+    exampleRes:  `{\n  "status": "success",\n  "data": {\n    "message": "파일이 성공적으로 업로드되었습니다.",\n    "file_message": {\n      "message_id": "file-msg-id",\n      "file_name": "document.pdf",\n      "file_size": 1024000,\n      "file_path": "/uploads/session-id/document.pdf"\n    }\n  }\n}`  },
   
   /* 뱃지 레벨 시스템 */
   {
@@ -344,26 +442,29 @@ const apis = [
     ],
     exampleReq: '',
     exampleRes: `{
-  "total_badges": 3,
-  "badges_by_type": {
-    "special": [
-      {
-        "badge_id": "badge123",
-        "badge_name": "버그 헌터",
-        "badge_description": "세 번째 버그 제보! 진정한 버그 헌터로 성장하고 있습니다",
-        "badge_icon": "🛠️",
-        "badge_color": "#795548",
-        "badge_level": 3,
-        "is_equipped": 1,
-        "earned_at": "2025-01-27T10:00:00.000Z",
-        "updated_at": "2025-01-27T15:30:00.000Z"
-      }
-    ],
-    "achievement": [],
-    "premium": [],
-    "activity": []
-  },
-  "all_badges": [...]
+  "status": "success",
+  "data": {
+    "total_badges": 3,
+    "badges_by_type": {
+      "special": [
+        {
+          "badge_id": "badge123",
+          "badge_name": "버그 헌터",
+          "badge_description": "세 번째 버그 제보! 진정한 버그 헌터로 성장하고 있습니다",
+          "badge_icon": "🛠️",
+          "badge_color": "#795548",
+          "badge_level": 3,
+          "is_equipped": 1,
+          "earned_at": "2025-01-27T10:00:00.000Z",
+          "updated_at": "2025-01-27T15:30:00.000Z"
+        }
+      ],
+      "achievement": [],
+      "premium": [],
+      "activity": []
+    },
+    "all_badges": [...]
+  }
 }`
   },  {
     method: 'POST',
@@ -386,11 +487,13 @@ const apis = [
   "actual_behavior": "동일한 메시지가 2-3번 중복 전송됨"
 }`,
     exampleRes: `{
-  "success": true,
-  "message": "버그 제보가 접수되었습니다. 개발팀 검토 후 뱃지가 지급됩니다.",
-  "status": "pending_review",
-  "exp_reward": 5,
-  "note": "개발자 승인 후 버그 헌터 뱃지 레벨이 증가합니다."
+  "status": "success",
+  "data": {
+    "message": "버그 제보가 접수되었습니다. 개발팀 검토 후 뱃지가 지급됩니다.",
+    "report_status": "pending_review",
+    "exp_reward": 5,
+    "note": "개발자 승인 후 버그 헌터 뱃지 레벨이 증가합니다."
+  }
 }`
   },
   {
@@ -412,11 +515,13 @@ const apis = [
   "suggestion": "다크 모드 옵션이 있으면 더 좋을 것 같습니다"
 }`,
     exampleRes: `{
-  "success": true,
-  "message": "피드백이 제출되었습니다. 개발팀 검토 후 뱃지가 지급됩니다.",
-  "status": "pending_review",
-  "exp_reward": 3,
-  "note": "개발자 승인 후 피드백 전문가 뱃지 레벨이 증가합니다."
+  "status": "success",
+  "data": {
+    "message": "피드백이 제출되었습니다. 개발팀 검토 후 뱃지가 지급됩니다.",
+    "feedback_status": "pending_review",
+    "exp_reward": 3,
+    "note": "개발자 승인 후 피드백 전문가 뱃지 레벨이 증가합니다."
+  }
 }`
   },
   {
@@ -434,18 +539,20 @@ const apis = [
   "months_count": 6
 }`,
     exampleRes: `{
-  "success": true,
-  "message": "플래닛 구독자 뱃지가 레벨 4로 업그레이드되었습니다!",
-  "badge_upgrade": {
-    "badge_name": "플래닛 구독자",
-    "old_level": 3,
-    "new_level": 4,
-    "description": "플래닛 6개월 구독! 오랜 기간 함께해주셔서 감사합니다",
-    "icon": "🏡",
-    "exp_reward": 40
-  },
-  "months_count": 6,
-  "tier_name": "planet"
+  "status": "success",
+  "data": {
+    "message": "플래닛 구독자 뱃지가 레벨 4로 업그레이드되었습니다!",
+    "badge_upgrade": {
+      "badge_name": "플래닛 구독자",
+      "old_level": 3,
+      "new_level": 4,
+      "description": "플래닛 6개월 구독! 오랜 기간 함께해주셔서 감사합니다",
+      "icon": "🏡",
+      "exp_reward": 40
+    },
+    "months_count": 6,
+    "tier_name": "planet"
+  }
 }`
   },
   {
@@ -463,18 +570,20 @@ const apis = [
   "reason": "중요한 버그 발견으로 서비스 안정성 크게 향상"
 }`,
     exampleRes: `{
-  "success": true,
-  "message": "버그 헌터 뱃지 레벨이 승인되었습니다!",
-  "badge_upgrade": {
-    "badge_name": "버그 헌터",
-    "old_level": 2,
-    "new_level": 3,
-    "description": "세 번째 버그 제보! 진정한 버그 헌터로 성장하고 있습니다",
-    "icon": "�️",
-    "exp_reward": 30
-  },
-  "bonus_exp": 25,
-  "approved_by": "developer"
+  "status": "success",
+  "data": {
+    "message": "버그 헌터 뱃지 레벨이 승인되었습니다!",
+    "badge_upgrade": {
+      "badge_name": "버그 헌터",
+      "old_level": 2,
+      "new_level": 3,
+      "description": "세 번째 버그 제보! 진정한 버그 헌터로 성장하고 있습니다",
+      "icon": "🛡️",
+      "exp_reward": 30
+    },
+    "bonus_exp": 25,
+    "approved_by": "developer"
+  }
 }`
   },
   {
@@ -494,18 +603,20 @@ const apis = [
   "completion_status": "완료"
 }`,
     exampleRes: `{
-  "success": true,
-  "message": "beta 테스트 참여가 기록되었습니다. 감사합니다!",
-  "badge_upgrade": {
-    "success": true,
-    "badge_name": "베타 테스터",
-    "old_level": 1,
-    "new_level": 2,
-    "description": "베타 테스트 2단계! 사용자 관점에서 소중한 피드백을 제공하고 있습니다",
-    "icon": "🎯",
+  "status": "success",
+  "data": {
+    "message": "beta 테스트 참여가 기록되었습니다. 감사합니다!",
+    "badge_upgrade": {
+      "success": true,
+      "badge_name": "베타 테스터",
+      "old_level": 1,
+      "new_level": 2,
+      "description": "베타 테스트 2단계! 사용자 관점에서 소중한 피드백을 제공하고 있습니다",
+      "icon": "🎯",
+      "exp_reward": 20
+    },
     "exp_reward": 20
-  },
-  "exp_reward": 20
+  }
 }`
   },
   {
@@ -523,14 +634,16 @@ const apis = [
   "action_reason": "특별 기여 인정"
 }`,
     exampleRes: `{
-  "success": true,
-  "badge_name": "버그 헌터",
-  "old_level": 3,
-  "new_level": 4,
-  "description": "네 번째 버그 제보! 전문적인 테스터의 면모를 보이고 있습니다",
-  "icon": "🎯",
-  "exp_reward": 40,
-  "action_reason": "특별 기여 인정"
+  "status": "success",
+  "data": {
+    "badge_name": "버그 헌터",
+    "old_level": 3,
+    "new_level": 4,
+    "description": "네 번째 버그 제보! 전문적인 테스터의 면모를 보이고 있습니다",
+    "icon": "🎯",
+    "exp_reward": 40,
+    "action_reason": "특별 기여 인정"
+  }
 }`
   },
   
@@ -547,19 +660,22 @@ const apis = [
     ],
     exampleReq: '?q=대한민국&limit=5&language=ko',
     exampleRes: `{
-  "query": "대한민국",
-  "language": "ko", 
-  "limit": 5,
-  "results": [
-    {
-      "title": "대한민국",
-      "snippet": "대한민국은 동아시아의 한반도 남부에 위치한 공화국이다...",
-      "url": "https://ko.wikipedia.org/wiki/대한민국",
-      "thumbnail": "https://upload.wikimedia.org/...",
-      "page_id": "123456"
-    }
-  ],
-  "total_found": 1
+  "status": "success",
+  "data": {
+    "query": "대한민국",
+    "language": "ko", 
+    "limit": 5,
+    "results": [
+      {
+        "title": "대한민국",
+        "snippet": "대한민국은 동아시아의 한반도 남부에 위치한 공화국이다...",
+        "url": "https://ko.wikipedia.org/wiki/대한민국",
+        "thumbnail": "https://upload.wikimedia.org/...",
+        "page_id": "123456"
+      }
+    ],
+    "total_found": 1
+  }
 }`
   },
   
@@ -577,59 +693,62 @@ const apis = [
     ],
     exampleReq: '?units=metric&lang=ko (IP 기반 자동 감지)',
     exampleRes: `{
-  "location": {
-    "name": "Seoul",
-    "country": "KR",
-    "coordinates": {
-      "latitude": 37.5665,
-      "longitude": 126.978
-    },
-    "timezone": 32400
-  },
-  "current": {
-    "temperature": 15,
-    "feels_like": 13,
-    "description": "맑음",
-    "main": "Clear",
-    "icon": "01d",
-    "humidity": 65,
-    "pressure": 1015,
-    "visibility": 10000,
-    "wind": {
-      "speed": 3.2,
-      "direction": 180
-    },
-    "clouds": 10,
-    "sunrise": "2025-06-19T05:30:00.000Z",
-    "sunset": "2025-06-19T10:45:00.000Z",
-    "timestamp": "2025-06-19T08:00:00.000Z"
-  },
-  "forecast": [
-    {
-      "datetime": "2025-06-19T09:00:00.000Z",
-      "temperature": {
-        "current": 17,
-        "min": 15,
-        "max": 18
+  "status": "success",
+  "data": {
+    "location": {
+      "name": "Seoul",
+      "country": "KR",
+      "coordinates": {
+        "latitude": 37.5665,
+        "longitude": 126.978
       },
-      "description": "구름 조금",
-      "icon": "02d",
-      "humidity": 60,
-      "wind_speed": 2.8,
-      "clouds": 25,
-      "rain": 0
+      "timezone": 32400
+    },
+    "current": {
+      "temperature": 15,
+      "feels_like": 13,
+      "description": "맑음",
+      "main": "Clear",
+      "icon": "01d",
+      "humidity": 65,
+      "pressure": 1015,
+      "visibility": 10000,
+      "wind": {
+        "speed": 3.2,
+        "direction": 180
+      },
+      "clouds": 10,
+      "sunrise": "2025-06-19T05:30:00.000Z",
+      "sunset": "2025-06-19T10:45:00.000Z",
+      "timestamp": "2025-06-19T08:00:00.000Z"
+    },
+    "forecast": [
+      {
+        "datetime": "2025-06-19T09:00:00.000Z",
+        "temperature": {
+          "current": 17,
+          "min": 15,
+          "max": 18
+        },
+        "description": "구름 조금",
+        "icon": "02d",
+        "humidity": 60,
+        "wind_speed": 2.8,
+        "clouds": 25,
+        "rain": 0
+      }
+    ],
+    "units": "metric",
+    "language": "ko",
+    "timestamp": "2025-06-19T08:00:00.000Z",
+    "ip_detected": {
+      "ip": "123.45.67.89",
+      "detected_city": "Seoul",
+      "detected_country": "South Korea",
+      "is_local_ip": false,
+      "used_fallback": false
     }
-  ],
-  "units": "metric",
-  "language": "ko",
-  "timestamp": "2025-06-19T08:00:00.000Z",
-  "ip_detected": {
-    "ip": "123.45.67.89",
-    "detected_city": "Seoul",
-    "detected_country": "South Korea",
-    "is_local_ip": false,
-    "used_fallback": false
-    }
+  }
 }`
   },
   
@@ -641,36 +760,39 @@ const apis = [
     desc: '사용 가능한 모든 구독 등급 목록을 반환합니다. 각 등급의 이름, 가격, 제한사항, 기능 등을 포함합니다.',
     params: [],
     exampleReq: '',
-    exampleRes: `[
-  {
-    "tier_id": 1,
-    "tier_name": "코멧",
-    "tier_emoji": "☄️",
-    "price_monthly": 0,
-    "price_yearly": 0,
-    "max_sessions_per_day": 10,
-    "max_messages_per_session": 50,
-    "max_file_upload_mb": 5,
-    "ai_model_access": ["geminiapi"],
-    "features": ["basic_chat", "file_upload"],
-    "is_active": true,
-    "created_at": "2025-01-27T00:00:00.000Z"
-  },
-  {
-    "tier_id": 2,
-    "tier_name": "플래닛",
-    "tier_emoji": "🪐",
-    "price_monthly": 15000,
-    "price_yearly": 150000,
-    "max_sessions_per_day": 100,
-    "max_messages_per_session": 200,
-    "max_file_upload_mb": 20,
-    "ai_model_access": ["geminiapi", "vertexai"],
-    "features": ["basic_chat", "file_upload", "priority_support"],
-    "is_active": true,
-    "created_at": "2025-01-27T00:00:00.000Z"
-  }
-]`
+    exampleRes: `{
+  "status": "success",
+  "data": [
+    {
+      "tier_id": 1,
+      "tier_name": "코멧",
+      "tier_emoji": "☄️",
+      "price_monthly": 0,
+      "price_yearly": 0,
+      "max_sessions_per_day": 10,
+      "max_messages_per_session": 50,
+      "max_file_upload_mb": 5,
+      "ai_model_access": ["geminiapi"],
+      "features": ["basic_chat", "file_upload"],
+      "is_active": true,
+      "created_at": "2025-01-27T00:00:00.000Z"
+    },
+    {
+      "tier_id": 2,
+      "tier_name": "플래닛",
+      "tier_emoji": "🪐",
+      "price_monthly": 15000,
+      "price_yearly": 150000,
+      "max_sessions_per_day": 100,
+      "max_messages_per_session": 200,
+      "max_file_upload_mb": 20,
+      "ai_model_access": ["geminiapi", "vertexai"],
+      "features": ["basic_chat", "file_upload", "priority_support"],
+      "is_active": true,
+      "created_at": "2025-01-27T00:00:00.000Z"
+    }
+  ]
+}`
   },
   {
     method: 'GET',
@@ -681,20 +803,23 @@ const apis = [
     ],
     exampleReq: '',
     exampleRes: `{
-  "subscription_id": "SUB123456789",
-  "user_id": "guest",
-  "tier_id": 1,
-  "tier_name": "코멧",
-  "tier_emoji": "☄️",
-  "subscription_status": "active",
-  "start_date": "2025-01-27T00:00:00.000Z",
-  "end_date": null,
-  "auto_renewal": true,
-  "payment_method": null,
-  "last_payment_date": null,
-  "next_payment_date": null,
-  "created_at": "2025-01-27T00:00:00.000Z",
-  "updated_at": "2025-01-27T00:00:00.000Z"
+  "status": "success",
+  "data": {
+    "subscription_id": "SUB123456789",
+    "user_id": "guest",
+    "tier_id": 1,
+    "tier_name": "코멧",
+    "tier_emoji": "☄️",
+    "subscription_status": "active",
+    "start_date": "2025-01-27T00:00:00.000Z",
+    "end_date": null,
+    "auto_renewal": true,
+    "payment_method": null,
+    "last_payment_date": null,
+    "next_payment_date": null,
+    "created_at": "2025-01-27T00:00:00.000Z",
+    "updated_at": "2025-01-27T00:00:00.000Z"
+  }
 }`
   },
   {
@@ -715,19 +840,22 @@ const apis = [
   "auto_renewal": true
 }`,
     exampleRes: `{
-  "subscription_id": "SUB123456789",
-  "user_id": "guest",
-  "tier_id": 2,
-  "tier_name": "플래닛",
-  "tier_emoji": "🪐",
-  "subscription_status": "active",
-  "start_date": "2025-01-27T00:00:00.000Z",
-  "end_date": "2025-02-27T00:00:00.000Z",
-  "auto_renewal": true,
-  "payment_method": "credit_card",
-  "last_payment_date": "2025-01-27T00:00:00.000Z",
-  "next_payment_date": "2025-02-27T00:00:00.000Z",
-  "updated_at": "2025-01-27T10:30:00.000Z"
+  "status": "success",
+  "data": {
+    "subscription_id": "SUB123456789",
+    "user_id": "guest",
+    "tier_id": 2,
+    "tier_name": "플래닛",
+    "tier_emoji": "🪐",
+    "subscription_status": "active",
+    "start_date": "2025-01-27T00:00:00.000Z",
+    "end_date": "2025-02-27T00:00:00.000Z",
+    "auto_renewal": true,
+    "payment_method": "credit_card",
+    "last_payment_date": "2025-01-27T00:00:00.000Z",
+    "next_payment_date": "2025-02-27T00:00:00.000Z",
+    "updated_at": "2025-01-27T10:30:00.000Z"
+  }
 }`
   },
   {
@@ -744,11 +872,14 @@ const apis = [
   "reason": "서비스 불만족"
 }`,
     exampleRes: `{
-  "message": "구독이 성공적으로 취소되었습니다.",
-  "subscription_id": "SUB123456789",
-  "cancellation_date": "2025-01-27T10:30:00.000Z",
-  "service_end_date": "2025-02-27T00:00:00.000Z",
-  "immediate_cancellation": false
+  "status": "success",
+  "data": {
+    "message": "구독이 성공적으로 취소되었습니다.",
+    "subscription_id": "SUB123456789",
+    "cancellation_date": "2025-01-27T10:30:00.000Z",
+    "service_end_date": "2025-02-27T00:00:00.000Z",
+    "immediate_cancellation": false
+  }
 }`
   },
   {
@@ -762,21 +893,24 @@ const apis = [
       { name: 'offset', type: 'number', label: '조회 시작 위치 (optional)', required: false }
     ],
     exampleReq: '',
-    exampleRes: `[
-  {
-    "history_id": "HIST123456789",
-    "subscription_id": "SUB123456789",
-    "user_id": "guest",
-    "action_type": "upgrade",
-    "old_tier_id": 1,
-    "old_tier_name": "코멧",
-    "new_tier_id": 2,
-    "new_tier_name": "플래닛",
-    "amount_paid": 15000,
-    "payment_method": "credit_card",
-    "created_at": "2025-01-27T10:30:00.000Z"
-  }
-]`
+    exampleRes: `{
+  "status": "success",
+  "data": [
+    {
+      "history_id": "HIST123456789",
+      "subscription_id": "SUB123456789",
+      "user_id": "guest",
+      "action_type": "upgrade",
+      "old_tier_id": 1,
+      "old_tier_name": "코멧",
+      "new_tier_id": 2,
+      "new_tier_name": "플래닛",
+      "amount_paid": 15000,
+      "payment_method": "credit_card",
+      "created_at": "2025-01-27T10:30:00.000Z"
+    }
+  ]
+}`
   },
   {
     method: 'GET',
@@ -789,11 +923,14 @@ const apis = [
     ],
     exampleReq: '',
     exampleRes: `{
-  "feature_name": "premium_ai",
-  "has_access": true,
-  "tier_name": "플래닛",
-  "tier_emoji": "🪐",
-  "reason": "현재 구독 등급에서 지원하는 기능입니다."
+  "status": "success",
+  "data": {
+    "feature_name": "premium_ai",
+    "has_access": true,
+    "tier_name": "플래닛",
+    "tier_emoji": "🪐",
+    "reason": "현재 구독 등급에서 지원하는 기능입니다."
+  }
 }`
   },
   {
@@ -806,18 +943,21 @@ const apis = [
     ],
     exampleReq: '',
     exampleRes: `{
-  "user_id": "guest",
-  "tier_name": "플래닛",
-  "tier_emoji": "🪐",
-  "usage_date": "2025-01-27",
-  "sessions_today": 5,
-  "max_sessions_per_day": 100,
-  "messages_today": 45,
-  "max_messages_per_session": 200,
-  "file_uploads_today": 2,
-  "max_file_upload_mb": 20,
-  "remaining_sessions": 95,
-  "usage_percentage": 5.0
+  "status": "success",
+  "data": {
+    "user_id": "guest",
+    "tier_name": "플래닛",
+    "tier_emoji": "🪐",
+    "usage_date": "2025-01-27",
+    "sessions_today": 5,
+    "max_sessions_per_day": 100,
+    "messages_today": 45,
+    "max_messages_per_session": 200,
+    "file_uploads_today": 2,
+    "max_file_upload_mb": 20,
+    "remaining_sessions": 95,
+    "usage_percentage": 5.0
+  }
 }`
   },
   {
@@ -832,35 +972,38 @@ const apis = [
     exampleReq: `{
   "tier_name": "planet",
   "simulation_type": "upgrade"
-}`,exampleRes: `{
-  "message": "Subscription upgrade simulation completed",
-  "simulation": {
-    "user_id": "API_TEST_USER_ID",
-    "current_tier": {
-      "tier_id": 1,
-      "tier_name": "free",
-      "tier_display_name": "☄️ 코멧",
-      "tier_emoji": "☄️",
-      "monthly_price": 0,
-      "yearly_price": 0,
-      "tier_level": 1
-    },
-    "target_tier": {
-      "tier_id": 3,
-      "tier_name": "star",
-      "tier_display_name": "☀️ 스타",
-      "tier_emoji": "☀️",
-      "monthly_price": 150000,
-      "yearly_price": 1500000,
-      "tier_level": 3
-    },
-    "upgrade_type": "upgrade",
-    "estimated_monthly_cost": 150000,
-    "estimated_yearly_cost": 1500000,
-    "new_features": ["premium_ai", "priority_support", "advanced_analytics"],
-    "payment_simulation": true,
-    "can_proceed": true,
-    "simulation_timestamp": "2025-01-27T10:30:00.000Z"
+}`,    exampleRes: `{
+  "status": "success",
+  "data": {
+    "message": "Subscription upgrade simulation completed",
+    "simulation": {
+      "user_id": "API_TEST_USER_ID",
+      "current_tier": {
+        "tier_id": 1,
+        "tier_name": "free",
+        "tier_display_name": "☄️ 코멧",
+        "tier_emoji": "☄️",
+        "monthly_price": 0,
+        "yearly_price": 0,
+        "tier_level": 1
+      },
+      "target_tier": {
+        "tier_id": 3,
+        "tier_name": "star",
+        "tier_display_name": "☀️ 스타",
+        "tier_emoji": "☀️",
+        "monthly_price": 150000,
+        "yearly_price": 1500000,
+        "tier_level": 3
+      },
+      "upgrade_type": "upgrade",
+      "estimated_monthly_cost": 150000,
+      "estimated_yearly_cost": 1500000,
+      "new_features": ["premium_ai", "priority_support", "advanced_analytics"],
+      "payment_simulation": true,
+      "can_proceed": true,
+      "simulation_timestamp": "2025-01-27T10:30:00.000Z"
+    }
   }
 }`
   },
@@ -878,31 +1021,34 @@ const apis = [
   "renewal_period": "monthly",
   "apply_discount": true
 }`,    exampleRes: `{
-  "message": "Subscription renewal simulation completed",
-  "simulation": {
-    "user_id": "API_TEST_USER_ID",
-    "current_subscription": {
-      "subscription_id": 123,
-      "tier": {
-        "tier_id": 2,
-        "tier_name": "planet",
-        "tier_display_name": "🪐 플래닛",
-        "tier_emoji": "🪐",
-        "monthly_price": 15000,
-        "yearly_price": 150000,
-        "tier_level": 2
+  "status": "success",
+  "data": {
+    "message": "Subscription renewal simulation completed",
+    "simulation": {
+      "user_id": "API_TEST_USER_ID",
+      "current_subscription": {
+        "subscription_id": 123,
+        "tier": {
+          "tier_id": 2,
+          "tier_name": "planet",
+          "tier_display_name": "🪐 플래닛",
+          "tier_emoji": "🪐",
+          "monthly_price": 15000,
+          "yearly_price": 150000,
+          "tier_level": 2
+        },
+        "auto_renewal": true
       },
-      "auto_renewal": true
-    },
-    "renewal_period": "monthly",
-    "renewal_date": "2025-02-27T10:30:00.000Z",
-    "base_price": 15000,
-    "discount_applied": true,
-    "discount_amount": 1500,
-    "final_price": 13500,
-    "auto_renewal": true,
-    "payment_simulation": true,
-    "simulation_timestamp": "2025-01-27T10:30:00.000Z"
+      "renewal_period": "monthly",
+      "renewal_date": "2025-02-27T10:30:00.000Z",
+      "base_price": 15000,
+      "discount_applied": true,
+      "discount_amount": 1500,
+      "final_price": 13500,
+      "auto_renewal": true,
+      "payment_simulation": true,
+      "simulation_timestamp": "2025-01-27T10:30:00.000Z"
+    }
   }
 }`
   }

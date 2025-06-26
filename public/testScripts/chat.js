@@ -194,6 +194,7 @@ export async function sendMessage() {
 
         const requestBody = {
             message: messageText,
+            user_id: GUEST_USER_ID,
             ai_provider_override: selectedAiProvider,
             model_id_override: selectedAiProvider === 'ollama' ? selectedOllamaModel : undefined,
             specialModeType: specialModeType
@@ -274,15 +275,15 @@ export async function sendMessage() {
                         continue;
                     }
                     
-                    // [DONE] 신호 처리
-                    if (data === '[DONE]') {
-                        console.log('[SSE 스트리밍] 완료 신호 수신');
-                        break;
-                    }
-                    
                     try {
                         const chunkData = JSON.parse(data);
                         console.log('[SSE 스트리밍] 파싱된 데이터:', { eventType, data: chunkData });
+                        
+                        // 완료 신호 처리
+                        if (chunkData.done === true) {
+                            console.log('[SSE 스트리밍] 완료 신호 수신');
+                            break;
+                        }
                         
                         // 이벤트 타입별 처리
                         if (eventType === 'ids' && chunkData.userMessageId) {
@@ -350,8 +351,8 @@ export async function sendMessage() {
                         }
                     } catch (e) {
                         console.error('[SSE 스트리밍] 청크 파싱 오류:', e, '원본 데이터:', data);
-                        // 파싱 실패 시에도 텍스트로 표시
-                        if (data && typeof data === 'string' && data !== '[DONE]') {
+                        // 파싱 실패 시에도 텍스트로 표시 (JSON이 아닌 경우)
+                        if (data && typeof data === 'string') {
                             console.log('[SSE 스트리밍] 파싱 실패, 원본 텍스트로 표시:', data);
                             if (isFirstChunk) {
                                 aiMessageContentSpan.textContent = '';
