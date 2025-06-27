@@ -1,6 +1,7 @@
 const userModel = require("../models/user");
 const { withTransaction } = require("../utils/dbUtils");
 const config = require("../config");
+const feedbackService = require("./feedbackService"); // 새로운 피드백 서비스 추가
 
 // --- 프로필 꾸미기 ---
 /**
@@ -135,30 +136,41 @@ async function approveBadgeUpgradeService(userId, badgeName, reason = "개발자
 // 여기서는 해당 모델 함수들이 connection을 받는다고 가정.
 
 /**
- * 버그 리포트 처리 서비스
+ * 버그 리포트 처리 서비스 (새로운 피드백 시스템 사용)
  * @param {string} userId - 사용자 ID
  * @param {string} bugDescription - 버그 설명
  * @param {string} [severity="medium"] - 심각도
  * @returns {Promise<Object>} 처리 결과
  */
 async function handleBugReportService(userId, bugDescription, severity = 'medium') {
-    return await withTransaction(async (connection) => {
-        // userModel.handleBugReport는 connection을 받도록 수정되었다고 가정
-        return await userModel.handleBugReport(connection, userId, bugDescription, severity);
-    });
+    // 새로운 피드백 시스템 사용
+    const bugData = {
+        title: "사용자 제보 버그",
+        description: bugDescription,
+        severity: severity,
+        category: 'general'
+    };
+    
+    return await feedbackService.createBugReportService(userId, bugData);
 }
 
 /**
- * 피드백 제출 처리 서비스
+ * 피드백 제출 처리 서비스 (새로운 피드백 시스템 사용)
  * @param {string} userId - 사용자 ID
  * @param {string} feedbackContent - 피드백 내용
  * @param {string} [feedbackType="general"] - 피드백 유형
  * @returns {Promise<Object>} 처리 결과
  */
 async function handleFeedbackSubmissionService(userId, feedbackContent, feedbackType = 'general') {
-    return await withTransaction(async (connection) => {
-        return await userModel.handleFeedbackSubmission(connection, userId, feedbackContent, feedbackType);
-    });
+    // 새로운 피드백 시스템 사용
+    const feedbackData = {
+        title: "사용자 피드백",
+        content: feedbackContent,
+        feedbackType: feedbackType,
+        category: 'general'
+    };
+    
+    return await feedbackService.createFeedbackService(userId, feedbackData);
 }
 
 /**

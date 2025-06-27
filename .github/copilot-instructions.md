@@ -1,3 +1,4 @@
+``````instructions
 # Orbitmate Copilot Instructions
 
 이 문서는 Orbitmate 프로젝트 운영 가이드, 구조 요약, 버그 트래킹, 작업 목록을 포함합니다.
@@ -387,7 +388,7 @@ SYSTEM_ARCHITECTURE.md 참고
     - 모델 함수 내에서 `getConnection()`, `connection.close()`, `connection.commit()`, `connection.rollback()`을 직접 호출해서는 안 됩니다.
     - SQL 실행 시 `autoCommit` 옵션은 `false`로 설정하거나, `withTransaction`의 기본 동작에 맡깁니다.
 - **서비스 함수**:
-    - 데이터베이스 트랜잭션이 필요한 비즈니스 로직은 서비스 함수 내에서 `utils/dbUtils.js`의 `withTransaction(async (connection) => { ... })` 유틸리티 함수로 감싸야 합니다.
+    - 데이터베이스 트랜잭션이 필요한 비즈니스 로직은 서비스 함수 내에서 `utils/dbUtils`의 `withTransaction(async (connection) => { ... })` 유틸리티 함수로 감싸야 합니다.
     - 이 콜백 함수 내에서 모델 함수를 호출할 때 `connection` 객체를 전달합니다.
     - 여러 모델 함수 호출이나 데이터 가공 로직이 포함될 수 있습니다.
 - **컨트롤러 함수**:
@@ -737,7 +738,6 @@ SYSTEM_ARCHITECTURE.md 참고
 
 #### 1순위 (즉시 구현 가능 - 무료, 무제한)
 1. **위키피디아 API 연동** - ✅ **완료** (무료, 무제한, 간단한 구현)
-   - 검색 결과를 AI 답변에 참조 자료로 활용 가능
    - 교육적 가치가 높은 백과사전 정보 제공
 
 #### 2순위 (개발자 등록 필요, 무료 한도 내)
@@ -888,5 +888,34 @@ SYSTEM_ARCHITECTURE.md 참고
 - **렌더링 시점**: AI 메시지 추가 시 및 스트리밍 완료 후
 - **CSS 스타일**: 헤딩, 코드 블록, 테이블, 인용구, 리스트 등 완전 지원
 - **에러 처리**: 라이브러리 로드 실패 시 일반 텍스트로 대체
+
+---
+### [2025-06-27] 메시지 편집 API 버그 수정: 
+  - 문제 1: chatController.js에서 content 필드명 불일치 (validation은 content, dataExtractor는 new_content) → dataExtractor를 content로 통일
+  - 문제 2: models/chat.js에서 존재하지 않는 is_deleted 컬럼 사용으로 ORA-00904 오류 → SQL 쿼리에서 is_deleted 조건 제거
+  - 문제 3: dataExtractor에서 undefined content에 대한 trim() 호출 → null/undefined 체크 추가
+  - 결과: PUT /api/chat/messages/:message_id API 정상 작동 복원 (해결)
+
+---
+### [2025-06-27] chatController.js user_id 접근 오류 및 스트리밍 에러 처리 버그 수정:
+  - 문제 1: sendMessageController의 dataExtractor에서 req.user.user_id 접근 시 req.user가 undefined인 경우 TypeError 발생
+  - 문제 2: req.body가 undefined일 때 messageData.message 접근 시 오류 발생
+  - 문제 3: 스트리밍 중 에러 발생 시 이미 전송된 헤더에 대해 다시 헤더 설정 시도로 "Cannot set headers after they are sent" 오류 발생
+  - 해결 1: utils/constants.js에 GUEST_USER_ID 상수 정의 및 export, chatController.js에서 req.user?.user_id || GUEST_USER_ID 패턴 사용
+  - 해결 2: dataExtractor에서 req.body || {} 기본값 사용, validations에서도 messageData = req.body || {} 적용
+  - 해결 3: utils/serviceFactory.js의 createStreamController에서 res.headersSent 체크 후 이미 헤더가 전송된 경우 SSE로 에러 응답 전송 후 종료
+  - 결과: POST /api/chat/sessions/:session_id/messages API의 TypeError 및 헤더 중복 전송 오류 완전 해결 (해결)
+
+---
+### [2025-06-27] API 문서 업데이트: 최근 버그 수정 및 새로운 기능 반영
+  - 일반 정보 섹션 업데이트: 캔버스 모드, 게스트 사용자 지원, 최근 버그 수정 사항 추가
+  - 채팅 메시지 전송 API: 캔버스 모드 HTML/CSS/JS 추출 기능, 게스트 사용자 지원, 스트리밍 에러 처리 개선 명시
+  - 메시지 편집 API: content 필드 안전 처리, edit_reason 파라미터 추가, 게스트 사용자 지원 명시
+  - 새로운 API 추가: 메시지 편집 기록 조회 (GET /api/chat/messages/:message_id/history), AI 재응답 요청 (POST /api/chat/sessions/:session_id/messages/:message_id/reresponse)
+  - 세션 메시지 목록 조회 API: 'undefined'/'null' 문자열 체크, 강화된 유효성 검사 명시
+  - 파일 업로드 API: 경로 수정 (upload로 변경), 구독 등급별 파일 크기 제한, 자동 파일 정리 기능 명시
+  - 캔버스 모드 응답 예시 추가: canvas_html, canvas_css, canvas_js 필드 포함된 응답 형식
+  - 모든 API 응답 형식 표준화: {status: "success/error", data/error: ...} 구조 일관성 유지
+  - 결과: API 문서가 실제 구현과 완전히 일치, 최근 버그 수정 및 기능 개선 사항 모두 반영 (해결)
 
 ---

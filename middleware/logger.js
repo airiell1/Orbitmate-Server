@@ -42,12 +42,52 @@ function safeStringify(data) {
         if (typeof data === 'string') return data;
         if (data === null || data === undefined) return '';
         
-        // 비밀번호 등 민감한 정보 마스킹
+        // 민감한 정보 마스킹 처리
         const sanitized = JSON.parse(JSON.stringify(data));
-        if (sanitized.password) sanitized.password = '***';
-        if (sanitized.new_password) sanitized.new_password = '***';
-        if (sanitized.old_password) sanitized.old_password = '***';
         
+        // 재귀적으로 객체 내부의 민감한 정보 마스킹
+        function maskSensitiveData(obj) {
+            if (typeof obj !== 'object' || obj === null) return obj;
+            
+            for (const key in obj) {
+                if (obj.hasOwnProperty(key)) {
+                    const lowerKey = key.toLowerCase();
+                    
+                    // 비밀번호 관련 필드
+                    if (lowerKey.includes('password') || 
+                        lowerKey.includes('passwd') || 
+                        lowerKey.includes('pwd')) {
+                        obj[key] = '***';
+                    }
+                    // 토큰 관련 필드
+                    else if (lowerKey.includes('token') || 
+                             lowerKey.includes('jwt') || 
+                             lowerKey.includes('auth') ||
+                             lowerKey.includes('bearer')) {
+                        obj[key] = '***';
+                    }
+                    // API 키 관련 필드
+                    else if (lowerKey.includes('secret') || 
+                             lowerKey.includes('credential')) {
+                        obj[key] = '***';
+                    }
+                    // 개인정보 관련 필드
+                    else if (lowerKey.includes('ssn') || 
+                             lowerKey.includes('social') || 
+                             lowerKey.includes('credit') ||
+                             lowerKey.includes('card')) {
+                        obj[key] = '***';
+                    }
+                    // 중첩된 객체나 배열 처리
+                    else if (typeof obj[key] === 'object' && obj[key] !== null) {
+                        maskSensitiveData(obj[key]);
+                    }
+                }
+            }
+            return obj;
+        }
+        
+        maskSensitiveData(sanitized);
         return JSON.stringify(sanitized);
     } catch (error) {
         return '[JSON 변환 실패]';

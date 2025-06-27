@@ -733,10 +733,9 @@ async function getWeatherByLocation(params) {
 
     // 좌표로 날씨 조회
     const weatherData = await getWeatherByCoordinates(
-      coords.lat,
-      coords.lon,
-      units,
-      lang
+      coords.latitude,
+      coords.longitude,
+      { units, lang }
     );
 
     return {

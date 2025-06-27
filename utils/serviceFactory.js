@@ -696,20 +696,53 @@ function createStreamController(serviceFunction, options = {}) {
       if (responseTransformer) {
         const transformedResult = responseTransformer(result, req);
         if (streamType === 'sse') {
-          res.write(`data: ${JSON.stringify(transformedResult)}\n\n`);
+          // SSE 스트리밍에서도 표준 응답 형식 사용
+          const apiResponse = standardizeApiResponse(transformedResult);
+          res.write(`data: ${JSON.stringify(apiResponse.body)}\n\n`);
         } else {
-          res.json(transformedResult);
+          const apiResponse = standardizeApiResponse(transformedResult);
+          res.json(apiResponse.body);
+        }
+      } else {
+        // responseTransformer가 없을 때도 표준 응답 형식 사용
+        if (streamType === 'sse') {
+          const apiResponse = standardizeApiResponse(result);
+          res.write(`data: ${JSON.stringify(apiResponse.body)}\n\n`);
+        } else {
+          const apiResponse = standardizeApiResponse(result);
+          res.json(apiResponse.body);
         }
       }
 
       res.end();
 
     } catch (error) {
-      if (errorHandler) {
-        await errorHandler(error, req, res, next);
+      console.error('[ServiceFactory] createStreamController 에러:', error);
+      
+      // 스트리밍 중에 에러가 발생한 경우
+      if (res.headersSent) {
+        // 이미 헤더가 전송된 경우, SSE로 에러 메시지 전송 후 종료
+        try {
+          if (streamType === 'sse') {
+            const errorResponse = standardizeApiResponse(null, {
+              code: error.code || 'SERVER_ERROR',
+              message: error.message || '서버 오류가 발생했습니다.',
+              details: error.details || null
+            });
+            res.write(`data: ${JSON.stringify(errorResponse.body)}\n\n`);
+          }
+          res.end();
+        } catch (endError) {
+          console.error('[ServiceFactory] 스트리밍 에러 응답 전송 실패:', endError);
+        }
       } else {
-        error.context = errorContext;
-        next(error);
+        // 헤더가 아직 전송되지 않은 경우, 일반적인 에러 처리
+        if (errorHandler) {
+          await errorHandler(error, req, res, next);
+        } else {
+          error.context = errorContext;
+          next(error);
+        }
       }
     }
   };

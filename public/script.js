@@ -144,17 +144,19 @@ async function initializeSession() {
             let errorMessage;
             try {
                 const errorData = await response.json();
-                errorMessage = errorData.error || `HTTP 오류! 상태: ${response.status}`;
+                errorMessage = errorData.error?.message || errorData.error || `HTTP 오류! 상태: ${response.status}`;
             } catch (e) {
                 errorMessage = `HTTP 오류! 상태: ${response.status}, 응답을 파싱할 수 없습니다.`;
             }
             throw new Error(errorMessage);
         }
         
-        const data = await response.json();
-        if (!data || !data.session_id) {
+        const result = await response.json();
+        if (!result || result.status !== 'success' || !result.data || !result.data.session_id) {
             throw new Error('서버 응답에 세션 ID가 없습니다.');
-        }        currentSessionId = data.session_id;
+        }
+        
+        currentSessionId = result.data.session_id;
         console.log('새 게스트 세션 생성됨:', currentSessionId);
         
         // 세션 ID 저장
@@ -278,7 +280,7 @@ async function saveEdit(messageId, newContent, messageElement) {
             throw new Error(`메시지 편집 실패: ${errorData.error || response.statusText || '알 수 없는 서버 오류'}`);
         }
 
-        const data = await response.json();
+        const result = await response.json();
         
         // 메시지 내용 업데이트
         messageElement.classList.remove('editing');
@@ -486,38 +488,41 @@ async function sendMessage() {
                             continue; // 다음 데이터를 기다림 (최종 응답)
                         }
 
+                        // 새로운 응답 형식에서 데이터 추출
+                        const actualData = chunkData.status === 'success' && chunkData.data ? chunkData.data : chunkData;
+
                         // done 신호 후 첫 번째 데이터를 최종 응답으로 처리
-                        if (!eventType && (chunkData.message_id || chunkData.user_message_id || chunkData.ai_message_id)) {
-                            console.log('[메인 페이지 SSE] 최종 응답 수신:', chunkData);
+                        if (!eventType && (actualData.message_id || actualData.user_message_id || actualData.ai_message_id)) {
+                            console.log('[메인 페이지 SSE] 최종 응답 수신:', actualData);
                             
                             // 최종 응답 처리 (메시지 ID 업데이트 등)
-                            if (chunkData.user_message_id && userMessageElement) {
-                                userMessageElement.dataset.messageId = chunkData.user_message_id;
+                            if (actualData.user_message_id && userMessageElement) {
+                                userMessageElement.dataset.messageId = actualData.user_message_id;
                                 if (!userMessageElement.querySelector('.message-actions')) {
-                                    addMessageActions(userMessageElement, chunkData.user_message_id, 'user');
+                                    addMessageActions(userMessageElement, actualData.user_message_id, 'user');
                                 }
                             }
                             
-                            if (chunkData.ai_message_id && aiMessageElement) {
-                                aiMessageElement.dataset.messageId = chunkData.ai_message_id;
+                            if (actualData.ai_message_id && aiMessageElement) {
+                                aiMessageElement.dataset.messageId = actualData.ai_message_id;
                             }
                             
                             break; // 스트리밍 완료
                         }
 
                         // 이벤트 타입별 처리
-                        if (eventType === 'ids' && chunkData.userMessageId) {
-                            console.log('[메인 페이지 SSE] 사용자 메시지 ID 수신:', chunkData.userMessageId);
-                            userMessageIdForStream = chunkData.userMessageId;
+                        if (eventType === 'ids' && actualData.userMessageId) {
+                            console.log('[메인 페이지 SSE] 사용자 메시지 ID 수신:', actualData.userMessageId);
+                            userMessageIdForStream = actualData.userMessageId;
                             if (userMessageElement) {
                                 userMessageElement.dataset.messageId = userMessageIdForStream;
                                 if (!userMessageElement.querySelector('.message-actions')) {
                                     addMessageActions(userMessageElement, userMessageIdForStream, 'user');
                                 }
                             }
-                        } else if (eventType === 'ai_message_id' && chunkData.aiMessageId) {
-                            console.log('[메인 페이지 SSE] AI 메시지 ID 수신:', chunkData.aiMessageId);
-                            aiMessageId = chunkData.aiMessageId;
+                        } else if (eventType === 'ai_message_id' && actualData.aiMessageId) {
+                            console.log('[메인 페이지 SSE] AI 메시지 ID 수신:', actualData.aiMessageId);
+                            aiMessageId = actualData.aiMessageId;
                             if (aiMessageElement) {
                                 aiMessageElement.dataset.messageId = aiMessageId;
                             }                        } else if (eventType === 'end') {
@@ -542,9 +547,9 @@ async function sendMessage() {
                                 }
                             }
                             break;
-                        } else if (eventType === 'message' || (!eventType && chunkData.delta)) {
+                        } else if (eventType === 'message' || (!eventType && actualData.delta)) {
                             // 메시지 데이터 처리 (delta 또는 직접 텍스트)
-                            const deltaText = chunkData.delta || chunkData.text || chunkData.content || chunkData.chunk || '';
+                            const deltaText = actualData.delta || actualData.text || actualData.content || actualData.chunk || '';
                             
 
                             if (deltaText) {
@@ -596,17 +601,20 @@ async function sendMessage() {
         } else {
             // 일반 응답 처리
             const responseData = await response.json();
-            if (userMessageElement && responseData.user_message_id) {
-                userMessageElement.dataset.messageId = responseData.user_message_id;
+            // 새 응답 형식에 맞게 데이터 추출
+            const actualData = responseData.status === 'success' ? responseData.data : responseData;
+            
+            if (userMessageElement && actualData.user_message_id) {
+                userMessageElement.dataset.messageId = actualData.user_message_id;
                 // 사용자 메시지 전송 성공 후 버튼 추가
-                addMessageActions(userMessageElement, responseData.user_message_id, 'user'); // Removed text
+                addMessageActions(userMessageElement, actualData.user_message_id, 'user'); // Removed text
             }
-            const aiMessageElement = addMessage('ai', responseData.message, responseData.ai_message_id);
+            const aiMessageElement = addMessage('ai', actualData.message, actualData.ai_message_id);
              // Display AI token count if available
-            if (responseData.ai_message_token_count !== undefined && responseData.ai_message_token_count !== null) {
+            if (actualData.ai_message_token_count !== undefined && actualData.ai_message_token_count !== null) {
                 const lastAiTokensSpan = document.getElementById('last-ai-tokens');
                 if (lastAiTokensSpan) {
-                    lastAiTokensSpan.textContent = responseData.ai_message_token_count;
+                    lastAiTokensSpan.textContent = actualData.ai_message_token_count;
                 }
             } else {
                  const lastAiTokensSpan = document.getElementById('last-ai-tokens');

@@ -10,6 +10,9 @@ const API_TEST_SESSION_ID = "API_TEST_SESSION_ID";
 const API_TEST_USER_MESSAGE_ID = "API_TEST_USER_MESSAGE_ID";
 const API_TEST_AI_MESSAGE_ID = "API_TEST_AI_MESSAGE_ID";
 
+// 게스트 사용자 ID
+const GUEST_USER_ID = "guest";
+
 // =========================
 // 🏆 구독 관련 상수
 // =========================
@@ -155,6 +158,9 @@ module.exports = {
   API_TEST_SESSION_ID,
   API_TEST_USER_MESSAGE_ID,
   API_TEST_AI_MESSAGE_ID,
+  
+  // 게스트 사용자
+  GUEST_USER_ID,
   
   // 구독 관련
   SUBSCRIPTION_TIERS,

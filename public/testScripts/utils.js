@@ -67,7 +67,8 @@ export function addMessageActions(messageElement, messageId, sender) {
                         body: JSON.stringify({ content: newContent.trim() })
                     });
                     const data = await response.json();
-                    updateApiResponse(data);
+                    const actualData = data.status === 'success' ? data.data : data;
+                    updateApiResponse(actualData);
                     
                     if (response.ok) {
                         // 메시지 내용 업데이트
@@ -104,13 +105,14 @@ export function addMessageActions(messageElement, messageId, sender) {
                     method: 'DELETE'
                 });
                 const data = await response.json();
-                updateApiResponse(data);
+                const actualData = data.status === 'success' ? data.data : data;
+                updateApiResponse(actualData);
                 
                 if (response.ok) {
                     // UI에서 메시지 제거
                     messageElement.remove();
                 } else {
-                    alert(`삭제 실패: ${data.error?.message || '알 수 없는 오류'}`);
+                    alert(`삭제 실패: ${actualData.error?.message || '알 수 없는 오류'}`);
                 }
             } catch (error) {
                 updateApiResponse({ error: { message: error.message } });
@@ -134,7 +136,8 @@ export function addMessageActions(messageElement, messageId, sender) {
                     body: JSON.stringify({ reaction: reaction.trim() })
                 });
                 const data = await response.json();
-                updateApiResponse(data);
+                const actualData = data.status === 'success' ? data.data : data;
+                updateApiResponse(actualData);
                 
                 if (response.ok) {
                     // 리액션 표시 업데이트

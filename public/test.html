@@ -761,6 +761,58 @@
           <button id="get-cache-stats-button">캐시 통계</button>
         </div>
       </div>
+
+      <!-- 🐛 버그 제보 및 피드백 테스트 -->
+      <div class="test-section">
+        <h3>🐛 버그 제보 및 피드백 시스템</h3>
+
+        <h4>버그 제보</h4>
+        <div>
+          <button id="create-bug-report-button">버그 제보 생성</button>
+          <button id="get-user-bug-reports-button">내 버그 제보 목록</button>
+          <button id="get-all-bug-reports-button">전체 버그 제보 목록</button>
+        </div>
+
+        <h4>피드백 제출</h4>
+        <div>
+          <button id="create-feedback-button">일반 피드백 제출</button>
+          <button id="create-feature-request-button">기능 요청 제출</button>
+          <button id="get-user-feedbacks-button">내 피드백 목록</button>
+          <button id="get-all-feedbacks-button">전체 피드백 목록</button>
+        </div>
+
+        <h4>피드백 관리</h4>
+        <div>
+          <input
+            type="text"
+            id="feedback-id-input"
+            placeholder="피드백 ID"
+          />
+          <button id="vote-feedback-button">피드백 추천</button>
+          <button id="update-feedback-button">피드백 상태 업데이트</button>
+        </div>
+
+        <h4>관리자 기능</h4>
+        <div>
+          <input
+            type="text"
+            id="bug-report-id-input"
+            placeholder="버그 제보 ID"
+          />
+          <button id="update-bug-report-button">버그 제보 상태 업데이트</button>
+        </div>
+
+        <h4>통계 조회</h4>
+        <div>
+          <button id="get-bug-statistics-button">버그 제보 통계</button>
+          <button id="get-feedback-statistics-button">피드백 통계</button>
+        </div>
+
+        <h4>전체 테스트</h4>
+        <div>
+          <button id="test-feedback-system-complete-button">피드백 시스템 전체 테스트</button>
+        </div>
+      </div>
     </div>
     <div class="footer">
       <p>© 2025 Orbitmate - API 테스트 도구 (HTTP SSE 스트리밍)</p>

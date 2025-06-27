@@ -18,6 +18,7 @@ const {
   validateUserAccess,
   validateFileType 
 } = require("../utils/validation");
+const { GUEST_USER_ID } = require("../utils/constants");
 const { validateFileSizeByTier, cleanupFailedUploads } = require("../utils/fileUtils");
 const config = require("../config");
 
@@ -34,8 +35,8 @@ const sendMessageController = createStreamController(
   {
     dataExtractor: (req) => {
       const { session_id } = req.params;
-      const messageData = req.body;
-      const user_id = req.user ? req.user.user_id : "guest";
+      const messageData = req.body || {};
+      const user_id = req.user?.user_id || GUEST_USER_ID;
       const clientIp = req.ip || req.connection.remoteAddress || "127.0.0.1";
       
       return [session_id, user_id, messageData, clientIp];
@@ -43,7 +44,7 @@ const sendMessageController = createStreamController(
     validations: [
       (req) => {
         const { session_id } = req.params;
-        const messageData = req.body;
+        const messageData = req.body || {};
         
         // 🔍 배치 유효성 검사 사용
         return validateBatch([
@@ -108,17 +109,20 @@ const editMessageController = createUpdateController(
   {
     dataExtractor: (req) => {
       const { message_id } = req.params;
-      const { new_content, edit_reason } = req.body;
+      const { content, edit_reason } = req.body;
       const user_id = req.user ? req.user.user_id : (req.body.user_id || "guest");
       
-      return [message_id, user_id, new_content.trim(), edit_reason];
+      // content가 undefined인 경우 빈 문자열로 처리하여 trim() 에러 방지
+      const safeContent = content || '';
+      
+      return [message_id, user_id, safeContent.trim(), edit_reason];
     },
     validations: [
       (req) => {
         const { message_id } = req.params;
-        const { new_content } = req.body;
+        const { content } = req.body;
         
-        if (!message_id || !new_content || typeof new_content !== "string" || new_content.trim().length === 0) {
+        if (!message_id || !content || typeof content !== "string" || content.trim().length === 0) {
           const err = new Error("메시지 ID와 새로운 내용(비어있지 않은 문자열)이 필요합니다.");
           err.code = "INVALID_INPUT";
           throw err;

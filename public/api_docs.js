@@ -23,6 +23,18 @@
   - Completion signal: {"done": true}
   - Final result: Standard success response format with complete data
   
+  Canvas Mode: When special_mode_type is "canvas", AI responses containing HTML/CSS/JS code blocks 
+  will have additional fields extracted: canvas_html, canvas_css, canvas_js
+  
+  Guest User Support: APIs support guest users without authentication. When req.user is undefined,
+  the system automatically uses GUEST_USER_ID = "guest"
+  
+  Recent Bug Fixes (2025-06-27):
+  - Fixed message editing API: content field validation, null safety, guest user support
+  - Fixed chat message sending: req.user undefined handling, req.body safety checks  
+  - Fixed SSE streaming: improved error handling when headers already sent
+  - Enhanced session message retrieval: 'undefined'/'null' string validation
+  
   All keys in responses, including error responses, are in snake_case.
 */
 const apis = [
@@ -263,19 +275,38 @@ const apis = [
     method: 'GET',
     path: '/api/chat/sessions/:session_id/messages',
     title: '세션 메시지 목록 조회',
-    desc: '특정 채팅 세션의 모든 메시지 목록을 조회합니다.<br>Validation Rules: <ul><li>`session_id` (URL param): 필수, 최대 36자.</li></ul>',
+    desc: '특정 채팅 세션의 모든 메시지 목록을 조회합니다.<br>Validation Rules: <ul><li>`session_id` (URL param): 필수, 최대 100자. \'undefined\' 또는 \'null\' 문자열 체크 포함.</li></ul><br><span class="api-desc-note">⚠️ 최근 버그 수정: undefined/null 문자열 명시적 체크, 강화된 유효성 검사</span>',
     params: [
-      { name: 'session_id', type: 'text', label: '세션 ID (최대 36자)', required: true, inPath: true }
+      { name: 'session_id', type: 'text', label: '세션 ID (최대 100자)', required: true, inPath: true }
     ],
     exampleReq: '',
-    exampleRes:  ` [{ "message_id": "메시지 ID", "message_content": "내용", ... }]`
+    exampleRes:  `{
+  "status": "success",
+  "data": [
+    {
+      "message_id": "msg-id-1",
+      "message_content": "안녕하세요!",
+      "message_type": "user",
+      "created_at": "YYYY-MM-DDTHH:mm:ss.sssZ",
+      "user_id": "user-id"
+    },
+    {
+      "message_id": "msg-id-2", 
+      "message_content": "안녕하세요! 무엇을 도와드릴까요?",
+      "message_type": "ai",
+      "created_at": "YYYY-MM-DDTHH:mm:ss.sssZ",
+      "ai_provider": "geminiapi",
+      "model_id": "gemini-2.0-flash-thinking-exp-01-21"
+    }
+  ]
+}`
   },
   /* 4. 채팅 메시지 관리 */
   {
     method: 'POST',
     path: '/api/chat/sessions/:session_id/messages',
     title: '채팅 메시지 전송',
-    desc: '특정 채팅 세션에 새 메시지를 전송하고 AI의 응답을 받습니다.<br>Validation Rules: <ul><li>`session_id` (URL param): 필수, 유효한 UUID 형식, 최대 36자.</li><li>`message` (body): 필수, 1-4000자 사이의 문자열.</li><li>`system_prompt` (body): 선택, 0-2000자 사이의 문자열.</li><li>`special_mode_type` (body): 선택, \'stream\' 또는 \'canvas\' 중 하나여야 합니다.</li></ul><br>Optional overrides:<ul><li>`ai_provider_override`: (string) "vertexai", "geminiapi" 또는 "ollama". 제공될 경우 빈 문자열이 아니어야 합니다.</li><li>`model_id_override`: (string) 특정 모델 ID. 제공될 경우 빈 문자열이 아니어야 합니다.</li><li>`user_message_token_count`: (integer >= 0) 사용자 메시지의 토큰 수.</li><li>`max_output_tokens_override`: (integer > 0) AI 응답의 최대 토큰 수 재정의.</li><li>`context_message_limit`: (integer >= 0) 컨텍스트에 포함할 과거 메시지 수 (0은 컨텍스트 없음).</li></ul><span class="api-desc-note">special_mode_type이 "stream"이면 SSE 스트리밍 응답, "canvas"면 이미지 생성 등 특수 모드 지원.</span>',
+    desc: '특정 채팅 세션에 새 메시지를 전송하고 AI의 응답을 받습니다.<br>Validation Rules: <ul><li>`session_id` (URL param): 필수, 유효한 UUID 형식, 최대 36자.</li><li>`message` (body): 필수, 1-4000자 사이의 문자열.</li><li>`system_prompt` (body): 선택, 0-2000자 사이의 문자열.</li><li>`special_mode_type` (body): 선택, \'stream\' 또는 \'canvas\' 중 하나여야 합니다.</li></ul><br>Optional overrides:<ul><li>`ai_provider_override`: (string) "vertexai", "geminiapi" 또는 "ollama". 제공될 경우 빈 문자열이 아니어야 합니다.</li><li>`model_id_override`: (string) 특정 모델 ID. 제공될 경우 빈 문자열이 아니어야 합니다.</li><li>`user_message_token_count`: (integer >= 0) 사용자 메시지의 토큰 수.</li><li>`max_output_tokens_override`: (integer > 0) AI 응답의 최대 토큰 수 재정의.</li><li>`context_message_limit`: (integer >= 0) 컨텍스트에 포함할 과거 메시지 수 (0은 컨텍스트 없음).</li></ul><span class="api-desc-note">special_mode_type이 "stream"이면 SSE 스트리밍 응답, "canvas"면 HTML/CSS/JS 추출 지원. 캔버스 모드에서는 응답에 canvas_html, canvas_css, canvas_js 필드가 추가됩니다.</span><br><span class="api-desc-note">⚠️ 최근 버그 수정: 게스트 사용자 지원 (req.user 없을 때 GUEST_USER_ID 사용), req.body undefined 안전 처리, 스트리밍 중 에러 처리 개선</span>',
     params: [
       { name: 'session_id', type: 'text', label: '세션 ID (최대 36자)', required: true, inPath: true, default: 'API_TEST_SESSION_ID' },
       { name: 'message', type: 'text', label: '메시지 (1-4000자)', required: true },
@@ -306,6 +337,23 @@ const apis = [
     "message": "안녕하세요! 오늘 날씨는 맑고 화창합니다.",
     "created_at": "YYYY-MM-DDTHH:mm:ss.sssZ",
     "ai_message_token_count": 25,
+    "ai_provider": "geminiapi",
+    "model_id": "gemini-2.0-flash-thinking-exp-01-21"
+  }
+}
+
+캔버스 모드 응답 (special_mode_type: "canvas"):
+{
+  "status": "success",
+  "data": {
+    "user_message_id": "API_TEST_USER_MESSAGE_ID",
+    "ai_message_id": "API_TEST_AI_MESSAGE_ID",
+    "message": "HTML 페이지를 생성했습니다...",
+    "canvas_html": "<div>Hello World</div>",
+    "canvas_css": "div { color: blue; }",
+    "canvas_js": "console.log('Hello');",
+    "created_at": "YYYY-MM-DDTHH:mm:ss.sssZ",
+    "ai_message_token_count": 50,
     "ai_provider": "geminiapi",
     "model_id": "gemini-2.0-flash-thinking-exp-01-21"
   }
@@ -345,23 +393,68 @@ data: {
     method: 'PUT',
     path: '/api/chat/messages/:message_id',
     title: '메시지 수정',
-    desc: '특정 메시지의 내용을 수정합니다.<br>Validation Rules: <ul><li>`message_id` (URL param): 필수, 유효한 UUID 형식, 최대 36자.</li><li>`content` (body): 필수, 1-4000자 사이의 문자열.</li></ul>',
+    desc: '특정 메시지의 내용을 수정합니다.<br>Validation Rules: <ul><li>`message_id` (URL param): 필수, 유효한 UUID 형식, 최대 36자.</li><li>`content` (body): 필수, 1-4000자 사이의 문자열. null/undefined 안전 처리됨.</li><li>`edit_reason` (body): 선택, 편집 사유.</li></ul><br><span class="api-desc-note">⚠️ 최근 버그 수정: content 필드 validation 개선, trim() 에러 방지, 게스트 사용자 지원</span>',
     params: [
       { name: 'message_id', type: 'text', label: '메시지 ID (최대 36자)', required: true, inPath: true },
-      { name: 'content', type: 'text', label: '수정할 내용 (1-4000자)', required: true }
+      { name: 'content', type: 'text', label: '수정할 내용 (1-4000자)', required: true },
+      { name: 'edit_reason', type: 'text', label: '편집 사유 (선택)', required: false }
     ],
     exampleReq:  `{
-  "content": "이것은 수정된 메시지입니다."
+  "content": "이것은 수정된 메시지입니다.",
+  "edit_reason": "오타 수정"
 }`,
     exampleRes:  `{
   "status": "success",
   "data": {
-    "message": "메시지가 성공적으로 수정되었습니다.",
+    "message": "메시지가 성공적으로 편집되었습니다.",
     "updated_message": {
       "message_id": "msg-id",
       "content": "이것은 수정된 메시지입니다.",
       "updated_at": "YYYY-MM-DDTHH:mm:ss.sssZ"
     }
+  }
+}`
+  },
+  {
+    method: 'GET',
+    path: '/api/chat/messages/:message_id/history',
+    title: '메시지 편집 기록 조회',
+    desc: '특정 메시지의 편집 기록을 조회합니다.<br>Validation Rules: <ul><li>`message_id` (URL param): 필수, 유효한 UUID 형식, 최대 36자.</li></ul>',
+    params: [
+      { name: 'message_id', type: 'text', label: '메시지 ID (최대 36자)', required: true, inPath: true }
+    ],
+    exampleReq: '',
+    exampleRes:  `{
+  "status": "success",
+  "data": [
+    {
+      "edit_id": "edit-id-1",
+      "message_id": "msg-id",
+      "old_content": "원본 메시지 내용",
+      "new_content": "수정된 메시지 내용",
+      "edit_reason": "오타 수정",
+      "edited_at": "YYYY-MM-DDTHH:mm:ss.sssZ",
+      "edited_by": "user-id"
+    }
+  ]
+}`
+  },
+  {
+    method: 'POST',
+    path: '/api/chat/sessions/:session_id/messages/:message_id/reresponse',
+    title: 'AI 재응답 요청',
+    desc: '편집된 메시지에 대해 AI 재응답을 요청합니다.<br>Validation Rules: <ul><li>`session_id` (URL param): 필수, 유효한 UUID 형식, 최대 36자.</li><li>`message_id` (URL param): 필수, 유효한 UUID 형식, 최대 36자.</li></ul>',
+    params: [
+      { name: 'session_id', type: 'text', label: '세션 ID (최대 36자)', required: true, inPath: true },
+      { name: 'message_id', type: 'text', label: '메시지 ID (최대 36자)', required: true, inPath: true }
+    ],
+    exampleReq: '',
+    exampleRes:  `{
+  "status": "success",
+  "data": {
+    "message": "AI 재응답이 성공적으로 요청되었습니다.",
+    "new_ai_message_id": "new-ai-msg-id",
+    "ai_response": "편집된 메시지에 대한 새로운 AI 응답입니다."
   }
 }`
   },
@@ -420,15 +513,29 @@ data: {
   /* 5. 파일 업로드 */
   {
     method: 'POST',
-    path: '/api/chat/sessions/:session_id/files',
+    path: '/api/chat/sessions/:session_id/upload',
     title: '파일 업로드 (채팅)',
-    desc: '특정 채팅 세션에 파일을 업로드하고, 해당 파일 정보를 메시지로 저장합니다.<br>Validation Rules: <ul><li>`session_id` (URL param): 필수, 유효한 UUID 형식, 최대 36자.</li><li>`file` (file): 필수, 허용된 타입 (jpeg, png, pdf, txt, md, html, css, js, ts, py, java, c, cpp, go, rb, php, swift, kt, sh, sql), 최대 5MB.</li><li>`user_id` (form-data): 선택, 최대 36자.</li></ul>',
+    desc: '특정 채팅 세션에 파일을 업로드하고, 해당 파일 정보를 메시지로 저장합니다.<br>Validation Rules: <ul><li>`session_id` (URL param): 필수, 유효한 UUID 형식, 최대 36자.</li><li>`file` (file): 필수, 허용된 타입 (jpeg, png, pdf, txt, md, html, css, js, ts, py, java, c, cpp, go, rb, php, swift, kt, sh, sql).</li><li>`message_content` (form-data): 선택, 파일과 함께 전송할 메시지.</li></ul><br><span class="api-desc-note">파일 크기 제한은 구독 등급에 따라 달라집니다: 코멧(10MB), 플래닛(50MB), 스타(500MB), 갤럭시(2GB)</span><br><span class="api-desc-note">⚠️ 최근 개선: 구독 등급별 파일 크기 제한, 업로드 실패 시 자동 파일 정리, 게스트 사용자 지원</span>',
     params: [
       { name: 'session_id', type: 'text', label: '세션 ID (최대 36자)', required: true, inPath: true },
-      { name: 'file', type: 'file', label: '업로드 파일 (다양한 타입 허용, max 5MB)', required: true },
-      { name: 'user_id', type: 'text', label: '사용자 ID (최대 36자)', required: false }
-    ],    exampleReq: '(multipart/form-data: file=파일 선택, user_id=USER123)',
-    exampleRes:  `{\n  "status": "success",\n  "data": {\n    "message": "파일이 성공적으로 업로드되었습니다.",\n    "file_message": {\n      "message_id": "file-msg-id",\n      "file_name": "document.pdf",\n      "file_size": 1024000,\n      "file_path": "/uploads/session-id/document.pdf"\n    }\n  }\n}`  },
+      { name: 'file', type: 'file', label: '업로드 파일 (다양한 타입 허용, 구독 등급별 크기 제한)', required: true },
+      { name: 'message_content', type: 'text', label: '파일과 함께 전송할 메시지 (선택)', required: false }
+    ],    
+    exampleReq: '(multipart/form-data: file=파일 선택, message_content="문서를 첨부합니다")',
+    exampleRes:  `{
+  "status": "success",
+  "data": {
+    "message": "파일이 성공적으로 업로드되었습니다.",
+    "user_message_id": "user-msg-id",
+    "file_message": {
+      "message_id": "file-msg-id",
+      "file_name": "document.pdf",
+      "file_size": 1024000,
+      "file_path": "/uploads/session-id/document.pdf",
+      "content_type": "application/pdf"
+    }
+  }
+}`  },
   
   /* 뱃지 레벨 시스템 */
   {

@@ -80,6 +80,23 @@ import {
     updateUserLanguageTest
 } from './testScripts/language.js';
 
+// 피드백 시스템 import
+import {
+    testCreateBugReport,
+    testCreateFeedback,
+    testCreateFeatureRequest,
+    testGetUserBugReports,
+    testGetUserFeedbacks,
+    testGetAllBugReports,
+    testGetAllFeedbacks,
+    testVoteFeedback,
+    testUpdateBugReport,
+    testUpdateFeedback,
+    testGetBugReportStatistics,
+    testGetFeedbackStatistics,
+    testFeedbackSystemComplete
+} from './testScripts/feedback.js';
+
 // 유틸리티 함수들 import
 import {
     updateApiResponse
@@ -366,6 +383,30 @@ document.addEventListener('DOMContentLoaded', function() {
     window.testParticipationTest = testParticipationTest;
     window.upgradeSubscriptionBadgeTest = upgradeSubscriptionBadgeTest;
     window.approveBadgeTest = approveBadgeTest;
+
+    // 피드백 시스템 이벤트 리스너
+    document.getElementById('create-bug-report-button')?.addEventListener('click', testCreateBugReport);
+    document.getElementById('create-feedback-button')?.addEventListener('click', testCreateFeedback);
+    document.getElementById('create-feature-request-button')?.addEventListener('click', testCreateFeatureRequest);
+    document.getElementById('get-user-bug-reports-button')?.addEventListener('click', testGetUserBugReports);
+    document.getElementById('get-user-feedbacks-button')?.addEventListener('click', testGetUserFeedbacks);
+    document.getElementById('get-all-bug-reports-button')?.addEventListener('click', testGetAllBugReports);
+    document.getElementById('get-all-feedbacks-button')?.addEventListener('click', testGetAllFeedbacks);
+    document.getElementById('vote-feedback-button')?.addEventListener('click', () => {
+        const feedbackId = document.getElementById('feedback-id-input')?.value?.trim();
+        testVoteFeedback(feedbackId);
+    });
+    document.getElementById('update-bug-report-button')?.addEventListener('click', () => {
+        const reportId = document.getElementById('bug-report-id-input')?.value?.trim();
+        testUpdateBugReport(reportId);
+    });
+    document.getElementById('update-feedback-button')?.addEventListener('click', () => {
+        const feedbackId = document.getElementById('feedback-id-input')?.value?.trim();
+        testUpdateFeedback(feedbackId);
+    });
+    document.getElementById('get-bug-statistics-button')?.addEventListener('click', testGetBugReportStatistics);
+    document.getElementById('get-feedback-statistics-button')?.addEventListener('click', testGetFeedbackStatistics);
+    document.getElementById('test-feedback-system-complete-button')?.addEventListener('click', testFeedbackSystemComplete);
 
     // 자동 API 테스트 이벤트 리스너
     document.getElementById('run-auto-api-test')?.addEventListener('click', async function() {

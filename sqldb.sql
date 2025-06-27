@@ -26,6 +26,8 @@ DROP INDEX idx_chat_msg_session_created;
 DROP INDEX idx_chat_sessions_user;
 DROP INDEX idx_users_email;
 
+DROP TABLE feedback_reports;
+DROP TABLE bug_reports;
 DROP TABLE translation_resources;
 DROP TABLE message_edit_history;
 DROP TABLE user_items;
@@ -243,6 +245,50 @@ CREATE TABLE translation_resources (
     updated_at TIMESTAMP DEFAULT SYSTIMESTAMP
 );
 
+-- 버그 제보 테이블
+CREATE TABLE bug_reports (
+  report_id VARCHAR2(36) DEFAULT SYS_GUID() PRIMARY KEY,
+  user_id VARCHAR2(36) NOT NULL,
+  title VARCHAR2(200) NOT NULL,
+  description CLOB NOT NULL,
+  severity VARCHAR2(20) DEFAULT 'medium' CHECK (severity IN ('low', 'medium', 'high', 'critical')),
+  category VARCHAR2(50) DEFAULT 'general',  -- 'ui', 'api', 'performance', 'security', 'general'
+  browser_info CLOB,  -- 브라우저/환경 정보 JSON
+  steps_to_reproduce CLOB,  -- 재현 단계
+  expected_behavior CLOB,  -- 예상 동작
+  actual_behavior CLOB,  -- 실제 동작
+  status VARCHAR2(20) DEFAULT 'open' CHECK (status IN ('open', 'in_progress', 'resolved', 'closed', 'duplicate')),
+  priority VARCHAR2(20) DEFAULT 'normal' CHECK (priority IN ('low', 'normal', 'high', 'urgent')),
+  assigned_to VARCHAR2(36),  -- 담당자 ID (관리자/개발자)
+  resolution_notes CLOB,  -- 해결 방법/내용
+  attachment_urls CLOB,  -- 첨부파일 URL들 (JSON 배열)
+  created_at DATE DEFAULT SYSDATE,
+  updated_at DATE DEFAULT SYSDATE,
+  resolved_at DATE,
+  CONSTRAINT fk_bug_reports_user FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
+);
+
+-- 피드백 및 제안 테이블
+CREATE TABLE feedback_reports (
+  feedback_id VARCHAR2(36) DEFAULT SYS_GUID() PRIMARY KEY,
+  user_id VARCHAR2(36) NOT NULL,
+  title VARCHAR2(200) NOT NULL,
+  content CLOB NOT NULL,
+  feedback_type VARCHAR2(30) DEFAULT 'general' CHECK (feedback_type IN ('feature_request', 'improvement', 'general', 'ui_ux', 'performance', 'content')),
+  category VARCHAR2(50) DEFAULT 'general',  -- 'chat', 'search', 'ui', 'mobile', 'api', 'general'
+  upvotes NUMBER DEFAULT 0,  -- 다른 사용자들의 추천수
+  downvotes NUMBER DEFAULT 0,  -- 비추천수
+  status VARCHAR2(20) DEFAULT 'submitted' CHECK (status IN ('submitted', 'under_review', 'planned', 'in_development', 'completed', 'rejected')),
+  priority VARCHAR2(20) DEFAULT 'normal' CHECK (priority IN ('low', 'normal', 'high', 'urgent')),
+  admin_response CLOB,  -- 관리자 응답
+  implementation_notes CLOB,  -- 구현 관련 메모
+  attachment_urls CLOB,  -- 첨부파일 URL들 (JSON 배열)
+  created_at DATE DEFAULT SYSDATE,
+  updated_at DATE DEFAULT SYSDATE,
+  reviewed_at DATE,
+  CONSTRAINT fk_feedback_reports_user FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
+);
+
 -- 인덱스 생성 (기본 + 확장)
 CREATE INDEX idx_chat_session ON chat_messages(session_id);
 CREATE INDEX idx_chat_user ON chat_messages(user_id);
@@ -266,6 +312,16 @@ CREATE INDEX idx_user_items_active ON user_items(user_id, is_active);
 CREATE INDEX idx_message_edit_message ON message_edit_history(message_id);
 CREATE INDEX idx_translation_lang ON translation_resources(lang_code);
 CREATE INDEX idx_translation_key ON translation_resources(lang_code, resource_key);
+
+-- 버그 제보 및 피드백 테이블 인덱스
+CREATE INDEX idx_bug_reports_user ON bug_reports(user_id);
+CREATE INDEX idx_bug_reports_status ON bug_reports(status);
+CREATE INDEX idx_bug_reports_severity ON bug_reports(severity, status);
+CREATE INDEX idx_bug_reports_created ON bug_reports(created_at);
+CREATE INDEX idx_feedback_reports_user ON feedback_reports(user_id);
+CREATE INDEX idx_feedback_reports_status ON feedback_reports(status);
+CREATE INDEX idx_feedback_reports_type ON feedback_reports(feedback_type);
+CREATE INDEX idx_feedback_reports_created ON feedback_reports(created_at);
 
 -- 제약 조건 추가
 ALTER TABLE chat_messages ADD CONSTRAINT chk_message_type CHECK (message_type IN ('user', 'ai', 'system', 'file'));

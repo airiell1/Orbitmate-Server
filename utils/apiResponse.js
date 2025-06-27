@@ -37,7 +37,7 @@ function getHttpStatusByErrorCode(errorCode) {
 
 /**
  * API 응답을 표준화하는 함수.
- * 성공 시 데이터를 직접 반환하고,
+ * 성공 시 { status: 'success', data: ... } 형식으로,
  * 에러 시 { status: 'error', error: { code, message, details } } 형식으로 응답합니다.
  * HTTP 상태 코드도 함께 반환하여 res.status().json() 형태로 사용됩니다.
  *
@@ -60,18 +60,28 @@ function standardizeApiResponse(data, error = null) {
     return { statusCode: httpStatusCode, body: responseBody };
   }
 
-  // 성공 시 데이터를 직접 반환
+  // 성공 시 { status: "success", data: ... } 형식으로 반환
   let statusCode = 200;
+  
   if (data === null || data === undefined) {
     // 성공이지만 데이터가 없는 경우 (예: DELETE 성공)
-    statusCode = 204; // No Content
-    return { statusCode, body: null }; // 204는 본문을 포함하지 않음
+    statusCode = 200; // 200으로 변경하고 body 포함
+    return { 
+      statusCode, 
+      body: { 
+        status: "success", 
+        data: null 
+      } 
+    };
   }
 
-  // 성공 시 데이터를 snake_case로 변환하여 직접 반환
+  // 성공 시 데이터를 snake_case로 변환하여 { status: "success", data: ... } 형식으로 반환
   return {
     statusCode: statusCode,
-    body: toSnakeCaseObj(data),
+    body: {
+      status: "success",
+      data: toSnakeCaseObj(data)
+    }
   };
 }
 

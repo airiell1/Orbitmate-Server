@@ -110,8 +110,9 @@ export async function registerUserTest() {
         }
         
         const data = await response.json();
+        const actualData = data.status === 'success' ? data.data : data;
         updateApiResponse({
-            ...data,
+            ...actualData,
             message: `사용자 '${username}' 등록이 완료되었습니다.`
         });
         
@@ -149,13 +150,14 @@ export async function loginUserTest() {
         }
         
         const data = await response.json();
+        const actualData = data.status === 'success' ? data.data : data;
         updateApiResponse({
-            ...data,
-            message: `로그인 성공! 환영합니다, ${data.user?.username || '사용자'}님.`
+            ...actualData,
+            message: `로그인 성공! 환영합니다, ${actualData.user?.username || '사용자'}님.`
         });
         
         // 로그인 성공 시 사용자 ID를 다른 폼에 자동 입력
-        if (data.token && data.user && data.user.user_id) {
+        if (actualData.token && actualData.user && actualData.user.user_id) {
             const userIdFields = [
                 'user-id-input',
                 'customization-user-id',
@@ -168,7 +170,7 @@ export async function loginUserTest() {
             userIdFields.forEach(fieldId => {
                 const field = document.getElementById(fieldId);
                 if (field) {
-                    field.value = data.user.user_id;
+                    field.value = actualData.user.user_id;
                 }
             });
         }
@@ -195,7 +197,8 @@ export async function getUserProfileTest() {
         }
         
         const data = await response.json();
-        updateApiResponse(data);
+        const actualData = data.status === 'success' ? data.data : data;
+        updateApiResponse(actualData);
     }, '사용자 프로필을 가져오는 중...');
 }
 
@@ -225,8 +228,9 @@ export async function deleteUserTest() {
         }
         
         const data = await response.json();
+        const actualData = data.status === 'success' ? data.data : data;
         updateApiResponse({
-            ...data,
+            ...actualData,
             message: `사용자 ID '${user_id}' 삭제가 완료되었습니다.`
         });
         
@@ -252,7 +256,8 @@ export async function getUserSettingsTest() {
         }
         
         const data = await response.json();
-        updateApiResponse(data);
+        const actualData = data.status === 'success' ? data.data : data;
+        updateApiResponse(actualData);
     }, '사용자 설정을 가져오는 중...');
 }
 
@@ -297,8 +302,9 @@ export async function updateUserSettingsTest() {
         }
         
         const data = await response.json();
+        const actualData = data.status === 'success' ? data.data : data;
         updateApiResponse({
-            ...data,
+            ...actualData,
             message: '사용자 설정이 성공적으로 업데이트되었습니다.'
         });
     }, '사용자 설정을 업데이트하는 중...');
@@ -359,8 +365,9 @@ export async function uploadProfileImageTest() {
         }
         
         const data = await response.json();
+        const actualData = data.status === 'success' ? data.data : data;
         updateApiResponse({
-            ...data,
+            ...actualData,
             message: '프로필 이미지가 성공적으로 업로드되었습니다.'
         });
         

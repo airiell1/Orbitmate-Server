@@ -254,7 +254,7 @@ async function editUserMessage(
     const messageResult = await connection.execute(
       `SELECT message_content, user_id, message_type, session_id
        FROM chat_messages
-       WHERE message_id = :message_id AND is_deleted = 0`,
+       WHERE message_id = :message_id`,
       { message_id },
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
