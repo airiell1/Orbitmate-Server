@@ -29,7 +29,12 @@
   Guest User Support: APIs support guest users without authentication. When req.user is undefined,
   the system automatically uses GUEST_USER_ID = "guest"
   
-  Recent Bug Fixes (2025-06-27):
+  Recent Bug Fixes (2025-06-30):
+  - Fixed session message user_id display: User messages now show actual session owner ID instead of "guest"
+  - Improved session message retrieval: Added session owner verification and proper user_id mapping
+  - Enhanced security: Session existence check before message retrieval
+  
+  Previous Bug Fixes (2025-06-27):
   - Fixed message editing API: content field validation, null safety, guest user support
   - Fixed chat message sending: req.user undefined handling, req.body safety checks  
   - Fixed SSE streaming: improved error handling when headers already sent
@@ -275,7 +280,7 @@ const apis = [
     method: 'GET',
     path: '/api/chat/sessions/:session_id/messages',
     title: '세션 메시지 목록 조회',
-    desc: '특정 채팅 세션의 모든 메시지 목록을 조회합니다.<br>Validation Rules: <ul><li>`session_id` (URL param): 필수, 최대 100자. \'undefined\' 또는 \'null\' 문자열 체크 포함.</li></ul><br><span class="api-desc-note">⚠️ 최근 버그 수정: undefined/null 문자열 명시적 체크, 강화된 유효성 검사</span>',
+    desc: '특정 채팅 세션의 모든 메시지 목록을 조회합니다. 사용자 메시지의 user_id는 실제 세션 소유자 ID로 표시됩니다.<br>Validation Rules: <ul><li>`session_id` (URL param): 필수, 최대 100자. \'undefined\' 또는 \'null\' 문자열 체크 포함.</li></ul><br><span class="api-desc-note">⚠️ 최근 버그 수정: undefined/null 문자열 명시적 체크, 강화된 유효성 검사, 사용자 메시지의 정확한 user_id 표시</span>',
     params: [
       { name: 'session_id', type: 'text', label: '세션 ID (최대 100자)', required: true, inPath: true }
     ],
@@ -288,13 +293,14 @@ const apis = [
       "message_content": "안녕하세요!",
       "message_type": "user",
       "created_at": "YYYY-MM-DDTHH:mm:ss.sssZ",
-      "user_id": "user-id"
+      "user_id": "API_TEST_USER_ID"
     },
     {
       "message_id": "msg-id-2", 
       "message_content": "안녕하세요! 무엇을 도와드릴까요?",
       "message_type": "ai",
       "created_at": "YYYY-MM-DDTHH:mm:ss.sssZ",
+      "user_id": "guest",
       "ai_provider": "geminiapi",
       "model_id": "gemini-2.0-flash-thinking-exp-01-21"
     }

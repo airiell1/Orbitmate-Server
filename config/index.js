@@ -27,7 +27,7 @@ const config = {
   // AI Provider Configuration
   ai: {
     defaultProvider: process.env.DEFAULT_AI_PROVIDER || 'geminiapi',
-    gemini: {
+    gemini: { 
       apiKey: process.env.GEMINI_API_KEY,
       defaultModel: process.env.GEMINI_MODEL || 'gemini-2.0-flash-thinking-exp-01-21',
       // 추가적인 Gemini 설정 가능

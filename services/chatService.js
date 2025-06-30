@@ -1,6 +1,7 @@
 const chatModel = require("../models/chat");
 const userModel = require("../models/user"); // For user settings, addUserExperience
 const subscriptionModel = require("../models/subscription"); // For checkDailyUsage
+const sessionModel = require("../models/session"); // For getUserIdBySessionId
 const { fetchChatCompletion } = require("../utils/aiProvider");
 const { withTransaction } = require("../utils/dbUtils");
 const { oracledb } = require("../config/database"); // oracledb import 추가
@@ -29,8 +30,19 @@ async function sendMessageService(
 
   // withTransaction을 사용하여 모든 DB 작업을 하나의 트랜잭션으로 묶음
   return await withTransaction(async (connection) => {
-    // 1. 구독 사용량 체크
-    const usage = await subscriptionModel.checkDailyUsage(connection, userId);
+    // 0. 세션의 실제 사용자 ID 가져오기 (클라이언트에서 전달된 userId 대신 세션의 실제 사용자 ID 사용)
+    let actualUserId = userId;
+    try {
+      const sessionInfo = await sessionModel.getUserIdBySessionId(connection, sessionId);
+      actualUserId = sessionInfo.user_id;
+      console.log(`[DEBUG] 세션 ${sessionId}의 실제 사용자 ID: ${actualUserId} (클라이언트에서 전달된 ID: ${userId})`);
+    } catch (error) {
+      console.warn(`[WARN] 세션 ${sessionId}의 사용자 ID를 가져올 수 없습니다. 클라이언트 ID를 사용합니다: ${userId}`, error.message);
+      // 세션을 찾을 수 없는 경우 클라이언트에서 전달된 userId를 사용
+    }
+
+    // 1. 구독 사용량 체크 (actualUserId 사용)
+    const usage = await subscriptionModel.checkDailyUsage(connection, actualUserId);
     if (!usage.can_make_request) {
       const err = new Error("일일 AI 요청 한도를 초과했습니다.");
       err.code = "FORBIDDEN"; // 429 Too Many Requests에 해당될 수 있음
@@ -42,9 +54,9 @@ async function sendMessageService(
     let actualAiProvider = ai_provider_override || config.ai.defaultProvider;
     let actualModelId = model_id_override;
 
-    if (userId !== "guest" && !ai_provider_override && !model_id_override) {
+    if (actualUserId !== "guest" && !ai_provider_override && !model_id_override) {
       try {
-        const userSettings = await userModel.getUserSettings(connection, userId);
+        const userSettings = await userModel.getUserSettings(connection, actualUserId);
         if (userSettings && userSettings.ai_model_preference) {
           const prefParts = userSettings.ai_model_preference.split('/');
           if (prefParts.length === 2) {
@@ -55,7 +67,7 @@ async function sendMessageService(
           }
         }
       } catch (settingsError) {
-        console.warn(`[ChatService] 사용자 ${userId}의 AI 설정 조회 실패: ${settingsError.message}. 기본값 사용.`);
+        console.warn(`[ChatService] 사용자 ${actualUserId}의 AI 설정 조회 실패: ${settingsError.message}. 기본값 사용.`);
         // 기본값은 이미 설정되어 있으므로 추가 작업 불필요
       }
     }
@@ -73,9 +85,9 @@ async function sendMessageService(
         }
     }
 
-    // 3. 사용자 메시지 DB에 저장
+    // 3. 사용자 메시지 DB에 저장 (actualUserId 사용)
     const userMessageResult = await chatModel.saveUserMessageToDB(
-      connection, sessionId, userId, message, user_message_token_count
+      connection, sessionId, actualUserId, message, user_message_token_count
     );
     const userMessageId = userMessageResult.user_message_id;
 
@@ -116,7 +128,7 @@ async function sendMessageService(
     const aiContentToSave = aiResponseFull.content || "(함수 호출 사용됨)"; // 함수 호출만 있고 텍스트 응답이 없을 경우
 
     const aiMessageResult = await chatModel.saveAiMessageToDB(
-      connection, sessionId, userId, aiContentToSave, aiResponseFull.actual_output_tokens
+      connection, sessionId, actualUserId, aiContentToSave, aiResponseFull.actual_output_tokens
     );
 
     return {

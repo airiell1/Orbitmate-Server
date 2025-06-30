@@ -145,8 +145,10 @@ const getSessionMessagesController = createController(
       (req) => {
         const { session_id: sessionId } = req.params;
         
-        if (!sessionId || typeof sessionId !== "string" || sessionId.trim() === "" || sessionId.length > 36) {
-          const err = new Error("경로 매개변수의 세션 ID는 필수이며 최대 36자입니다.");
+        // 'undefined', 'null' 문자열 명시적 체크 추가
+        if (!sessionId || typeof sessionId !== "string" || sessionId.trim() === "" || 
+            sessionId === 'undefined' || sessionId === 'null' || sessionId.length > 36) {
+          const err = new Error("세션 ID가 제공되지 않았습니다.");
           err.code = "INVALID_INPUT";
           throw err;
         }

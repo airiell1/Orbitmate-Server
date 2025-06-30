@@ -43,9 +43,21 @@ SYSTEM_ARCHITECTURE.md 참고
 
 ## 2. 운영 및 진단 가이드
 
+- **로그 시스템 및 모니터링**
+  - **웹 로그 뷰어**: `http://localhost:7777/log` 접속하여 실시간 서버 로그 모니터링
+  - **로그 API**: `/api/logs/*` 엔드포인트로 프로그래밍 방식 로그 접근
+    - `GET /api/logs/files` - 로그 파일 목록
+    - `GET /api/logs/:filename` - 로그 내용 조회 (필터링, 검색 지원)
+    - `GET /api/logs/stream/live` - 실시간 로그 스트리밍 (SSE)
+    - `GET /api/logs/download/:filename` - 로그 파일 다운로드
+    - `GET /api/logs/stats/summary` - 로그 통계 정보
+  - **로그 파일 위치**: `logs/api.log` (자동 로테이션 7일)
+  - **로그 레벨**: INFO, ERROR, WARN (색상 구분, 필터링 가능)
+
 - **문제 발생 시**
   - 에러, 비표준 코드, API/DB 불일치, UI-API 연동 문제 등은 즉시 "버그 트래킹"에 기록
   - 신규 진입자/AI가 빠르게 구조를 파악할 수 있도록, 주요 진입점·데이터 흐름·테스트/디버깅 팁·자주 쓰는 명령어 등 요약
+  - **로그 모니터링**: `/log` 페이지에서 실시간 에러 추적 및 API 호출 패턴 분석
 
 - **테스트/디버깅 체크리스트**
   - test.html, testScript.js, script.js에서 버튼/입력/이벤트 정상 동작 확인
@@ -369,6 +381,14 @@ SYSTEM_ARCHITECTURE.md 참고
   - 해결: SSE 스트리밍 응답 형식 상세 설명 추가 (이벤트 타입, 완료 신호, 최종 응답 등)
   - 해결: 채팅 메시지 전송 API에 일반 응답과 SSE 스트리밍 응답 예시 모두 포함
   - 영향: API 문서와 실제 응답 형식 완전 일치, 개발 시 혼란 제거
+
+[2025-06-30] 세션 메시지 user_id "guest" 표시 문제 해결: 메시지 조회 시 실제 세션 소유자 ID로 수정 (해결)
+  - 문제: 세션 메시지 목록 조회 시 메시지 테이블의 user_id가 "guest"로 저장되어 있어서 실제 사용자 ID 대신 "guest"로 표시됨
+  - 문제: models/session.js의 getSessionMessages 함수에서 chat_messages 테이블의 user_id를 직접 반환하여 잘못된 정보 제공
+  - 해결: getSessionMessages 함수에서 먼저 chat_sessions 테이블에서 실제 세션 소유자 ID를 조회
+  - 해결: 사용자 메시지(message_type='user')의 경우 실제 세션 소유자 ID로 교체, AI 메시지는 기존 user_id 유지
+  - 해결: 세션 존재 여부 및 권한 체크를 메시지 조회 전에 수행하여 보안 강화
+  - 영향: GET /api/chat/sessions/:session_id/messages API에서 정확한 사용자 ID 반환, 메시지 소유권 명확화
 
 ---
 ## 중요: 코드베이스 리팩토링 관련 최신 지침 (YYYY-MM-DD 업데이트)

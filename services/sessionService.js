@@ -11,6 +11,7 @@ const config = require("../config"); // NODE_ENV 등 설정값
  */
 async function createSessionService(userId, title, category) {
   // 입력값 유효성 검사는 컨트롤러에서 이미 수행되었다고 가정
+  
   return await withTransaction(async (connection) => {
     // 모델 함수는 connection을 첫 번째 인자로 받음
     const session = await sessionModel.createChatSession(connection, userId, title, category);

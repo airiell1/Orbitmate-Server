@@ -9,8 +9,8 @@ const config = require("../config"); // For NODE_ENV
 async function createChatSession(connection, user_id, title, category) {
   try {
     let sessionId;
-    // 테스트 사용자 로직은 NODE_ENV를 확인하여 테스트 환경에서만 실행되도록 수정
-    if (config.nodeEnv === "test" && user_id === API_TEST_USER_ID) {
+    // 테스트 사용자 로직은 NODE_ENV를 확인하여 개발 환경에서만 실행되도록 수정
+    if (config.nodeEnv === "development" && user_id === API_TEST_USER_ID) {
       const testSessionId = API_TEST_SESSION_ID;
       const testUserMsgId = API_TEST_USER_MESSAGE_ID;
       const testAiMsgId = API_TEST_AI_MESSAGE_ID;
@@ -68,6 +68,9 @@ async function createChatSession(connection, user_id, title, category) {
       );
       // commit은 withTransaction에서 처리
     } else {
+      // 디버깅: 실제 DB에 삽입하려는 user_id 확인
+      console.log('🔍 [DEBUG] DB 삽입 시도 - user_id:', user_id, 'title:', title, 'category:', category);
+      
       // UUID 형태의 session_id를 자동 생성하여 반환
       const result = await connection.execute(
         `INSERT INTO chat_sessions (user_id, title, category) 
@@ -198,6 +201,21 @@ async function deleteChatSession(connection, sessionId, user_id) {
 // 특정 세션의 메시지 목록 조회
 async function getSessionMessages(connection, sessionId) {
   try {
+    // 먼저 세션 소유자 확인
+    const sessionOwner = await connection.execute(
+      `SELECT user_id FROM chat_sessions WHERE session_id = :sessionId`,
+      { sessionId: sessionId },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    if (sessionOwner.rows.length === 0) {
+      const error = new Error("세션을 찾을 수 없습니다.");
+      error.code = "SESSION_NOT_FOUND";
+      throw error;
+    }
+
+    const actualUserId = sessionOwner.rows[0].USER_ID;
+
     const result = await connection.execute(
       `SELECT m.message_id, m.user_id, m.message_type, m.message_content, 
               m.created_at, m.reaction, m.is_edited, m.edited_at, m.parent_message_id
@@ -211,7 +229,8 @@ async function getSessionMessages(connection, sessionId) {
     const messages = await Promise.all(
       result.rows.map(async (row) => ({
         message_id: row.MESSAGE_ID,
-        user_id: row.USER_ID,
+        // 사용자 메시지인 경우 실제 세션 소유자 ID로 표시, AI 메시지는 그대로 유지
+        user_id: row.MESSAGE_TYPE === 'user' ? actualUserId : row.USER_ID,
         message_type: row.MESSAGE_TYPE,
         message_content: await clobToString(row.MESSAGE_CONTENT),
         created_at: row.CREATED_AT,
