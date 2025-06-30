@@ -1,7 +1,23 @@
 ``````instructions
-# Orbitmate Copilot Instructions
-
-이 문서는 Orbitmate 프로젝트 운영 가이드, 구조 요약, 버그 트래킹, 작업 목록을 포함합니다.
+# Orbitmate Copilot Instr- **로그 시스템 및 모니터링**
+  - **웹 로그 뷰어**: `http://localhost:3000/log` 접속하여 실시간 서버 로그 모니터링
+  - **로그 API**: `/api/logs/*` 엔드포인트로 프로그래밍 방식 로그 접근
+    - `GET /api/logs` - API 정보 및 사용 가능한 엔드포인트 목록
+    - `GET /api/logs/files` - 로그 파일 목록
+    - `GET /api/logs/recent?lines=500&level=all&search=` - 로그 내용 조회 (필터링, 검색 지원)
+    - `GET /api/logs/stream/live` - 실시간 로그 스트리밍 (SSE)
+    - `GET /api/logs/download/:filename` - 로그 파일 다운로드
+    - `GET /api/logs/stats/summary` - 로그 통계 정보
+  - **로그 파일 위치**: `logs/api.log` (자동 로테이션 7일)
+  - **로그 레벨**: INFO, ERROR, WARN (색상 구분, 필터링 가능)
+  - **실시간 기능**: SSE 스트리밍, 자동 스크롤, 필터링, 검색, 다운로드
+  - **이스케이프 문자 문제 해결**: 중복 JSON.stringify 제거로 `USER\\:\\` 형태 문제 해결
+  - **로그 그룹핑/정리 원칙**: 
+    - 에러/스택트레이스/응답 요약 등은 프론트엔드에서 합치지 않고, **백엔드(logController.js)에서 블록 단위로 미리 그룹핑/정리**하여 내려줌
+    - 프론트엔드(log.html)는 받은 블록(`ERROR_BLOCK`, `RESPONSE_BLOCK`, `LOG` 등)을 그대로 렌더링만 함 (mergeConsecutiveLogs 등 그룹핑 로직 제거)
+    - 실시간(SSE) 및 초기 로딩 모두 동일하게 동작
+    - UX 일관성 및 코드 단순화 보장
+  - **웹 로그 뷰어 기능**: 실시간 스트리밍, 레벨 필터링, 검색, 자동스크롤, 통계, 다운로드 문서는 Orbitmate 프로젝트 운영 가이드, 구조 요약, 버그 트래킹, 작업 목록을 포함합니다.
 당신은 항상 작업이 끝난뒤, 이 문서에 변경사항을 반영해야합니다.
 
 ---
@@ -44,15 +60,17 @@ SYSTEM_ARCHITECTURE.md 참고
 ## 2. 운영 및 진단 가이드
 
 - **로그 시스템 및 모니터링**
-  - **웹 로그 뷰어**: `http://localhost:7777/log` 접속하여 실시간 서버 로그 모니터링
+  - **웹 로그 뷰어**: `http://localhost:3000/log` 접속하여 실시간 서버 로그 모니터링
   - **로그 API**: `/api/logs/*` 엔드포인트로 프로그래밍 방식 로그 접근
     - `GET /api/logs/files` - 로그 파일 목록
-    - `GET /api/logs/:filename` - 로그 내용 조회 (필터링, 검색 지원)
+    - `GET /api/logs/recent?lines=500&level=all&search=` - 로그 내용 조회 (필터링, 검색 지원)
     - `GET /api/logs/stream/live` - 실시간 로그 스트리밍 (SSE)
     - `GET /api/logs/download/:filename` - 로그 파일 다운로드
     - `GET /api/logs/stats/summary` - 로그 통계 정보
   - **로그 파일 위치**: `logs/api.log` (자동 로테이션 7일)
   - **로그 레벨**: INFO, ERROR, WARN (색상 구분, 필터링 가능)
+  - **실시간 기능**: SSE 스트리밍, 자동 스크롤, 필터링, 검색, 다운로드
+  - **이스케이프 문자 문제 해결**: 중복 JSON.stringify 제거로 `USER\\\\:\\\\` 형태 문제 해결
 
 - **문제 발생 시**
   - 에러, 비표준 코드, API/DB 불일치, UI-API 연동 문제 등은 즉시 "버그 트래킹"에 기록
@@ -925,6 +943,20 @@ SYSTEM_ARCHITECTURE.md 참고
   - 해결 2: dataExtractor에서 req.body || {} 기본값 사용, validations에서도 messageData = req.body || {} 적용
   - 해결 3: utils/serviceFactory.js의 createStreamController에서 res.headersSent 체크 후 이미 헤더가 전송된 경우 SSE로 에러 응답 전송 후 종료
   - 결과: POST /api/chat/sessions/:session_id/messages API의 TypeError 및 헤더 중복 전송 오류 완전 해결 (해결)
+
+---
+### [2025-06-30] 로그 시스템 이스케이프 문자 문제 해결 및 웹 로그 뷰어 구현:
+  - 문제 1: middleware/logger.js의 safeStringify 함수에서 JSON.stringify 중복 호출로 이스케이프 문자 도배 (`USER\\\\:\\\\` 형태)
+  - 문제 2: 백엔드 로그를 실시간으로 모니터링할 수 있는 웹 인터페이스 필요
+  - 문제 3: `/api/logs` 기본 경로 핸들러 부재로 API 접근 시 404 오류
+  - 해결 1: safeStringify 함수 리팩토링으로 JSON.stringify 한 번만 호출, 중복 이스케이프 제거
+  - 해결 2: 완전한 웹 로그 뷰어 시스템 구현 (`http://localhost:3000/log`)
+    - controllers/logController.js: 로그 조회/스트리밍/다운로드/통계 API 컨트롤러
+    - routes/logs.js: 로그 관련 REST API 라우트 (`/api/logs/*`)
+    - public/log.html: 콘솔 스타일의 실시간 로그 뷰어 웹 페이지
+    - 실시간 SSE 스트리밍, 자동 스크롤, 레벨 필터링, 검색, 다운로드, 통계 기능 포함
+  - 해결 3: `/api/logs` 기본 라우트 추가로 API 정보 및 사용 가능한 엔드포인트 목록 제공
+  - 결과: 이스케이프 문자 문제 완전 해결, 실시간 로그 모니터링 시스템 구축 완료 (해결)
 
 ---
 ### [2025-06-27] API 문서 업데이트: 최근 버그 수정 및 새로운 기능 반영

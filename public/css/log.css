@@ -1,0 +1,560 @@
+/* 로그 라인 레이아웃 개선 */
+.log-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.15em;
+  padding: 2px 0 2px 0.2em;
+  font-size: 14px;
+}
+.log-timestamp {
+  color: #888;
+  font-size: 12px;
+  min-width: 90px;
+  margin-right: 0.1em;
+  flex-shrink: 0;
+}
+.log-level {
+  min-width: 36px;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-weight: bold;
+  margin-right: 0.1em;
+  margin-left: 0;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: 13px;
+}
+.log-message {
+  flex: 1 1 0%;
+  word-break: break-all;
+  margin-left: 0;
+}
+.error-block .log-message {
+  margin-left: 0;
+}
+.stack-trace-container {
+  margin-left: 0.3em;
+}
+.stack-trace-line {
+  color: #aaa;
+  font-size: 12px;
+  font-family: 'Fira Mono', 'Consolas', monospace;
+  margin-left: 0.3em;
+}
+.error-etc {
+  color: #bbb;
+  font-size: 12px;
+  margin-left: 0.3em;
+}
+/* ERROR 메시지 가독성 개선 */
+.error-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 10px;
+  background: rgba(255, 102, 102, 0.08);
+  border-radius: 4px;
+  margin: 2px 0 2px 0;
+  word-break: keep-all;
+}
+.error-main {
+  font-weight: bold;
+  color: #ff6666;
+  font-size: 13px;
+  margin-bottom: 2px;
+  word-break: keep-all;
+}
+.error-msg {
+  color: #ffcc99;
+  font-size: 12px;
+  margin-top: 2px;
+  word-break: keep-all;
+}
+.error-code {
+  color: #ffb366;
+  font-size: 12px;
+  margin-top: 2px;
+  word-break: keep-all;
+}
+.error-ip {
+  color: #66ccff;
+  font-size: 11px;
+  margin-top: 2px;
+  word-break: keep-all;
+}
+.error-etc {
+  color: #bbbbbb;
+  font-size: 11px;
+  margin-top: 2px;
+  word-break: keep-all;
+}
+.log-line.error .log-message {
+  word-break: keep-all;
+}
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "Monaco", "Menlo", "Consolas", monospace;
+  background: #0a0a0a;
+  color: #e0e0e0;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.header {
+  background: #1a1a1a;
+  border-bottom: 2px solid #333;
+  padding: 10px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.header h1 {
+  color: #00ff88;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-indicator {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ff4444;
+  transition: background 0.3s ease;
+}
+
+.status-indicator.connected {
+  background: #00ff88;
+  box-shadow: 0 0 10px #00ff88;
+}
+
+.controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.controls select,
+.controls input,
+.controls button {
+  background: #2a2a2a;
+  border: 1px solid #444;
+  color: #e0e0e0;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.controls button {
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+
+.controls button:hover {
+  background: #3a3a3a;
+}
+
+.controls button.active {
+  background: #00ff88;
+  color: #000;
+}
+
+.main-container {
+  display: flex;
+  height: calc(100vh - 70px);
+}
+
+.log-container {
+  flex: 1;
+  background: #0a0a0a;
+  overflow: hidden;
+  position: relative;
+}
+
+.log-content {
+  height: 100%;
+  overflow-y: auto;
+  padding: 10px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.log-line {
+  margin: 2px 0;
+  padding: 4px 8px;
+  border-radius: 3px;
+  word-wrap: break-word;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.log-line:hover {
+  background: #1a1a1a;
+}
+
+.log-timestamp {
+  color: #888;
+  font-size: 11px;
+  white-space: nowrap;
+  min-width: 200px;
+}
+
+.log-level {
+  font-weight: bold;
+  min-width: 50px;
+  text-align: center;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+}
+
+.log-level.INFO {
+  background: #0066cc;
+  color: white;
+}
+
+.log-level.ERROR {
+  background: #cc0000;
+  color: white;
+}
+
+.log-level.WARN {
+  background: #ff9900;
+  color: white;
+}
+
+.log-level.UNKNOWN {
+  background: #666;
+  color: white;
+}
+
+.log-level.STACK_TRACE {
+  background: #555;
+  color: #ccc;
+}
+
+.log-level.CONTINUATION {
+  background: #444;
+  color: #aaa;
+}
+
+.log-message {
+  flex: 1;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+/* 메시지 타입별 색상 (기존) */
+.log-message.REQUEST {
+  color: #66ccff;
+}
+
+.log-message.RESPONSE {
+  color: #88ff88;
+}
+
+.log-message.ERROR {
+  color: #ff6666;
+}
+
+.log-message.INFO {
+  color: #cccccc;
+}
+
+/* 로그 레벨 기준 메시지 색상 (새로 추가) */
+.log-line.info .log-message {
+  color: #66ccff;
+}
+
+.log-line.warn .log-message {
+  color: #ffcc66;
+}
+
+.log-line.error .log-message {
+  color: #ff6666;
+}
+
+.log-line.stack_trace .log-message {
+  color: #888;
+  font-size: 11px;
+  font-family: 'Courier New', monospace;
+}
+
+.log-details {
+  font-size: 11px;
+  color: #999;
+  margin-top: 2px;
+  padding-left: 20px;
+  font-style: italic;
+}
+
+.continuation-lines {
+  margin-top: 4px;
+  padding-left: 10px;
+  border-left: 2px solid #444;
+}
+
+.stack-line {
+  color: #777;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  margin: 1px 0;
+  padding-left: 10px;
+}
+
+/* 스택 트레이스 컨테이너 스타일 (강화) */
+.stack-trace-container {
+  margin-top: 6px;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.7);
+  border-left: 4px solid #ff6666;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 102, 102, 0.3);
+  box-shadow: inset 0 0 10px rgba(255, 102, 102, 0.1);
+}
+
+.stack-trace-line {
+  color: #ffcc99;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  margin: 2px 0;
+  padding: 4px 8px;
+  word-break: break-all;
+  background: rgba(255, 204, 153, 0.05);
+  border-radius: 2px;
+  border-left: 3px solid #666;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.stack-trace-line:hover {
+  background: rgba(255, 204, 153, 0.12);
+  border-left-color: #ff6666;
+  transform: translateX(2px);
+}
+
+.stack-trace-line:before {
+  content: "📍 ";
+  color: #ff6666;
+  font-weight: bold;
+  margin-right: 4px;
+}
+
+.continuation-line {
+  color: #bbbbbb;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  margin: 2px 0;
+  padding: 3px 6px;
+  background: rgba(187, 187, 187, 0.03);
+  border-radius: 2px;
+  border-left: 2px solid #444;
+  opacity: 0.8;
+}
+
+.continuation-line:before {
+  content: "↳ ";
+  color: #888;
+  margin-right: 4px;
+}
+
+/* 로그 레벨별 스타일 강화 */
+.log-line.stack_trace {
+  background: rgba(85, 85, 85, 0.1);
+  border-left: 3px solid #555;
+  padding-left: 15px;
+}
+
+.log-line.continuation {
+  background: rgba(68, 68, 68, 0.05);
+  border-left: 2px solid #444;
+  padding-left: 12px;
+  opacity: 0.9;
+}
+
+.log-line.stack_trace .log-message {
+  color: #cccccc;
+  font-size: 11px;
+  font-family: 'Courier New', monospace;
+  line-height: 1.3;
+}
+
+.log-line.continuation .log-message {
+  color: #aaaaaa;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.continuation-count {
+  font-size: 10px;
+  color: #666;
+  margin-top: 2px;
+  font-style: italic;
+}
+
+/* 로그 타입별 배경색 */
+.log-line.request {
+  background: rgba(102, 204, 255, 0.05);
+  border-left: 2px solid #66ccff;
+}
+
+.log-line.response {
+  background: rgba(136, 255, 136, 0.05);
+  border-left: 2px solid #88ff88;
+}
+
+.log-line.error {
+  background: rgba(255, 102, 102, 0.1);
+  border-left: 2px solid #ff6666;
+}
+
+.sidebar {
+  width: 300px;
+  background: #1a1a1a;
+  border-left: 2px solid #333;
+  padding: 15px;
+  overflow-y: auto;
+}
+
+.stats-section {
+  margin-bottom: 20px;
+}
+
+.stats-section h3 {
+  color: #00ff88;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.stat-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 0;
+  border-bottom: 1px solid #333;
+  font-size: 12px;
+}
+
+.stat-value {
+  color: #00ff88;
+  font-weight: bold;
+}
+
+.connection-status {
+  padding: 10px;
+  border-radius: 5px;
+  margin-bottom: 15px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.connection-status.connected {
+  background: #004d00;
+  color: #00ff88;
+  border: 1px solid #00ff88;
+}
+
+.connection-status.disconnected {
+  background: #4d0000;
+  color: #ff6666;
+  border: 1px solid #ff6666;
+}
+
+.loading {
+  text-align: center;
+  padding: 40px;
+  color: #888;
+}
+
+.error-message {
+  background: #4d0000;
+  color: #ff6666;
+  padding: 10px;
+  border-radius: 5px;
+  margin: 10px;
+  border: 1px solid #ff6666;
+}
+
+.search-highlight {
+  background: #ffff00;
+  color: #000;
+  padding: 1px 2px;
+  border-radius: 2px;
+}
+
+/* 새 로그 강조 효과 */
+.log-entry.new-log {
+  animation: newLogHighlight 0.5s ease-out;
+  border-left: 4px solid #00ff88;
+  background: rgba(0, 255, 136, 0.1);
+}
+
+@keyframes newLogHighlight {
+  0% {
+    background: rgba(0, 255, 136, 0.3);
+    transform: translateX(5px);
+  }
+  100% {
+    background: rgba(0, 255, 136, 0.1);
+    transform: translateX(0);
+  }
+}
+
+/* 스크롤바 스타일링 */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #666;
+}
+
+/* 반응형 디자인 */
+@media (max-width: 768px) {
+  .main-container {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    height: 200px;
+    border-left: none;
+    border-top: 2px solid #333;
+  }
+
+  .controls {
+    justify-content: center;
+  }
+
+  .header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

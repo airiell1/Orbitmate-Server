@@ -42,53 +42,54 @@ function safeStringify(data) {
         if (typeof data === 'string') return data;
         if (data === null || data === undefined) return '';
         
-        // 민감한 정보 마스킹 처리
-        const sanitized = JSON.parse(JSON.stringify(data));
+        // 데이터가 이미 객체인 경우 바로 사용
+        let sanitized = data;
         
         // 재귀적으로 객체 내부의 민감한 정보 마스킹
         function maskSensitiveData(obj) {
             if (typeof obj !== 'object' || obj === null) return obj;
             
+            // 배열 처리
+            if (Array.isArray(obj)) {
+                return obj.map(item => maskSensitiveData(item));
+            }
+            
+            // 객체 처리
+            const masked = {};
             for (const key in obj) {
                 if (obj.hasOwnProperty(key)) {
                     const lowerKey = key.toLowerCase();
                     
-                    // 비밀번호 관련 필드
+                    // 민감한 필드 마스킹
                     if (lowerKey.includes('password') || 
                         lowerKey.includes('passwd') || 
-                        lowerKey.includes('pwd')) {
-                        obj[key] = '***';
+                        lowerKey.includes('pwd') ||
+                        lowerKey.includes('token') || 
+                        lowerKey.includes('jwt') || 
+                        lowerKey.includes('auth') ||
+                        lowerKey.includes('bearer') ||
+                        lowerKey.includes('secret') || 
+                        lowerKey.includes('credential') ||
+                        lowerKey.includes('ssn') || 
+                        lowerKey.includes('social') || 
+                        lowerKey.includes('credit') ||
+                        lowerKey.includes('card')) {
+                        masked[key] = '***';
                     }
-                    // 토큰 관련 필드
-                    else if (lowerKey.includes('token') || 
-                             lowerKey.includes('jwt') || 
-                             lowerKey.includes('auth') ||
-                             lowerKey.includes('bearer')) {
-                        obj[key] = '***';
-                    }
-                    // API 키 관련 필드
-                    else if (lowerKey.includes('secret') || 
-                             lowerKey.includes('credential')) {
-                        obj[key] = '***';
-                    }
-                    // 개인정보 관련 필드
-                    else if (lowerKey.includes('ssn') || 
-                             lowerKey.includes('social') || 
-                             lowerKey.includes('credit') ||
-                             lowerKey.includes('card')) {
-                        obj[key] = '***';
-                    }
-                    // 중첩된 객체나 배열 처리
+                    // 중첩된 객체나 배열 재귀 처리
                     else if (typeof obj[key] === 'object' && obj[key] !== null) {
-                        maskSensitiveData(obj[key]);
+                        masked[key] = maskSensitiveData(obj[key]);
+                    }
+                    else {
+                        masked[key] = obj[key];
                     }
                 }
             }
-            return obj;
+            return masked;
         }
         
-        maskSensitiveData(sanitized);
-        return JSON.stringify(sanitized);
+        const maskedData = maskSensitiveData(sanitized);
+        return JSON.stringify(maskedData, null, 0); // 한 번만 stringify
     } catch (error) {
         return '[JSON 변환 실패]';
     }
@@ -115,6 +116,11 @@ function logApiRequest(req, res, next) {
     const startTime = Date.now();
     const clientIP = getClientIP(req);
     
+    // 로그 API 자체는 로깅하지 않음 (무한 루프 방지)
+    if (req.originalUrl.startsWith('/api/logs')) {
+        return next();
+    }
+    
     // 요청 정보 로깅
     const requestInfo = {
         method: req.method,
@@ -127,18 +133,17 @@ function logApiRequest(req, res, next) {
         params: Object.keys(req.params).length > 0 ? safeStringify(req.params) : ''
     };
     
-    const requestMessage = `REQUEST: ${req.method} ${req.originalUrl} | IP: ${clientIP} | Body: ${requestInfo.body} | Query: ${requestInfo.query} | Params: ${requestInfo.params}`;
+    // 요청은 일단 저장만 하고 응답과 함께 로깅
+    req.requestStartTime = startTime;
+    req.requestInfo = requestInfo;
     
-    // 콘솔과 파일에 모두 로깅
-    console.log(`🔵 [API REQUEST] ${requestMessage}`);
-    writeToLogFile('INFO', `REQUEST: ${requestMessage}`);
-    
-    // 원본 res.json 메서드 저장
+    // 원본 메서드 저장
     const originalJson = res.json;
     const originalSend = res.send;
     const originalStatus = res.status;
     
     let responseStatusCode = 200;
+    let responseLogged = false; // 중복 로깅 방지 플래그
     
     // res.status 메서드 오버라이드
     res.status = function(code) {
@@ -146,18 +151,15 @@ function logApiRequest(req, res, next) {
         return originalStatus.call(this, code);
     };
     
-    // res.json 메서드 오버라이드하여 응답 로깅
-    res.json = function(body) {
+    // 응답 로깅 공통 함수
+    function logResponse(body, method = 'RESPONSE') {
+        if (responseLogged) return; // 이미 로깅했다면 중복 방지
+        responseLogged = true;
+        
         const endTime = Date.now();
         const duration = endTime - startTime;
         
-        const responseInfo = {
-            statusCode: responseStatusCode,
-            duration: `${duration}ms`,
-            body: safeStringify(body)
-        };
-        
-        const responseMessage = `RESPONSE: ${req.method} ${req.originalUrl} | Status: ${responseStatusCode} | Duration: ${duration}ms | Body: ${responseInfo.body}`;
+        const responseMessage = `${req.method} ${req.originalUrl} | Status: ${responseStatusCode} | Duration: ${duration}ms | Body: ${safeStringify(body)}`;
         
         // 성공/실패에 따라 다른 색상으로 로깅
         if (responseStatusCode >= 200 && responseStatusCode < 300) {
@@ -170,28 +172,20 @@ function logApiRequest(req, res, next) {
             console.log(`🟡 [API RESPONSE] ${responseMessage}`);
             writeToLogFile('WARN', `RESPONSE: ${responseMessage}`);
         }
-        
+    }
+    
+    // res.json 메서드 오버라이드 (JSON 응답)
+    res.json = function(body) {
+        logResponse(body, 'JSON');
         return originalJson.call(this, body);
     };
     
-    // res.send 메서드도 오버라이드 (json이 아닌 응답용)
+    // res.send 메서드 오버라이드 (일반 응답)
     res.send = function(body) {
-        const endTime = Date.now();
-        const duration = endTime - startTime;
-        
-        const responseMessage = `SEND: ${req.method} ${req.originalUrl} | Status: ${responseStatusCode} | Duration: ${duration}ms | Body: ${safeStringify(body)}`;
-        
-        if (responseStatusCode >= 200 && responseStatusCode < 300) {
-            console.log(`🟢 [API SEND] ${responseMessage}`);
-            writeToLogFile('INFO', `SEND: ${responseMessage}`);
-        } else if (responseStatusCode >= 400) {
-            console.log(`🔴 [API ERROR] ${responseMessage}`);
-            writeToLogFile('ERROR', `ERROR: ${responseMessage}`);
-        } else {
-            console.log(`🟡 [API SEND] ${responseMessage}`);
-            writeToLogFile('WARN', `SEND: ${responseMessage}`);
+        // res.json이 내부적으로 res.send를 호출하므로 중복 방지
+        if (!responseLogged) {
+            logResponse(body, 'SEND');
         }
-        
         return originalSend.call(this, body);
     };
     
@@ -214,6 +208,11 @@ function logApiRequest(req, res, next) {
 function logApiError(err, req, res, next) {
     const clientIP = getClientIP(req);
     
+    // 로그 API 자체는 에러 로깅하지 않음 (무한 루프 방지)
+    if (req.originalUrl.startsWith('/api/logs')) {
+        return next(err);
+    }
+    
     const errorInfo = {
         method: req.method,
         url: req.originalUrl,
@@ -231,12 +230,12 @@ function logApiError(err, req, res, next) {
     
     const errorMessage = `ERROR: ${req.method} ${req.originalUrl} | IP: ${clientIP} | Error: ${err.name} - ${err.message} | Code: ${err.code || 'UNKNOWN'}`;
     
-    // 콘솔과 파일에 에러 로깅
+    // 콘솔과 파일에 에러 로깅 (스택 트레이스 포함)
     console.error(`💥 [API ERROR] ${errorMessage}`);
     console.error(`💥 [ERROR STACK] ${err.stack}`);
     
-    writeToLogFile('ERROR', `ERROR: ${errorMessage}`);
-    writeToLogFile('ERROR', `ERROR STACK: ${err.stack}`);
+    // 파일에는 멀티라인으로 기록
+    writeToLogFile('ERROR', `${errorMessage}\n${err.stack}`);
     
     // 에러를 다음 미들웨어로 전달
     next(err);
@@ -274,7 +273,29 @@ function initializeLogger() {
     console.log(`📂 로그 파일 위치: ${logFilePath}`);
     
     // 서버 시작 로그
-    writeToLogFile('INFO', 'API 로깅 시스템 시작됨');
+    writeToLogFile('INFO', 'API 로깅 시스템 재시작됨');
+    
+    // 테스트 로그 (로그 레벨별 색상 확인용, 실제 운영 포맷과 동일하게)
+    writeToLogFile('INFO', '✅ INFO 레벨 테스트 - 정상 작동 중입니다');
+    writeToLogFile('WARN', '⚠️ WARN 레벨 테스트 - 경고 메시지입니다');
+    // 에러+스택트레이스 블록 예시
+    writeToLogFile('ERROR', 'ERROR: POST /api/test | IP: 127.0.0.1 | Error: TestError - 테스트 에러 | Code: TEST_ERR');
+    writeToLogFile('ERROR', '    at testFunction (C:\\Users\\test\\file.js:123:45)');
+    writeToLogFile('ERROR', '    at anotherFunction (C:\\Users\\test\\another.js:67:89)');
+    writeToLogFile('ERROR', '    at mainFunction (C:\\Users\\test\\main.js:12:34)');
+    writeToLogFile('ERROR', 'Status: 500');
+    writeToLogFile('ERROR', 'Body: {"error":"테스트"}');
+
+    // 진짜 에러 객체로 스택 트레이스 테스트 (운영 포맷과 동일하게)
+    const testError = new Error('테스트 에러 - 스택 트레이스 확인용');
+    writeToLogFile('ERROR', `ERROR: GET /api/test2 | IP: 127.0.0.1 | Error: ${testError.name} - ${testError.message} | Code: TEST_ERR2`);
+    if (testError.stack) {
+      const stackLines = testError.stack.split('\n').slice(1); // 첫 줄은 에러 메시지
+      stackLines.forEach(line => {
+        writeToLogFile('ERROR', `    ${line.trim()}`);
+      });
+    }
+    writeToLogFile('ERROR', 'Status: 500');
     
     // 주기적으로 로그 파일 정리 (매일 자정)
     setInterval(() => {
