@@ -4,14 +4,11 @@
 // 🧪 테스트 관련 상수
 // =========================
 
-// API 테스트용 고정 ID들
+// API 테스트용 고정 ID들 (API 문서에서 테스트 편의성을 위함)
 const API_TEST_USER_ID = "API_TEST_USER_ID";
 const API_TEST_SESSION_ID = "API_TEST_SESSION_ID";
 const API_TEST_USER_MESSAGE_ID = "API_TEST_USER_MESSAGE_ID";
 const API_TEST_AI_MESSAGE_ID = "API_TEST_AI_MESSAGE_ID";
-
-// 게스트 사용자 ID
-const GUEST_USER_ID = "guest";
 
 // =========================
 // 🏆 구독 관련 상수
@@ -158,9 +155,6 @@ module.exports = {
   API_TEST_SESSION_ID,
   API_TEST_USER_MESSAGE_ID,
   API_TEST_AI_MESSAGE_ID,
-  
-  // 게스트 사용자
-  GUEST_USER_ID,
   
   // 구독 관련
   SUBSCRIPTION_TIERS,

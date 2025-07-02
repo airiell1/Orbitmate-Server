@@ -18,7 +18,6 @@ const {
   validateUserAccess,
   validateFileType 
 } = require("../utils/validation");
-const { GUEST_USER_ID } = require("../utils/constants");
 const { validateFileSizeByTier, cleanupFailedUploads } = require("../utils/fileUtils");
 const config = require("../config");
 
@@ -36,8 +35,14 @@ const sendMessageController = createStreamController(
     dataExtractor: (req) => {
       const { session_id } = req.params;
       const messageData = req.body || {};
-      const user_id = req.user?.user_id || GUEST_USER_ID;
+      const user_id = req.user?.user_id;
       const clientIp = req.ip || req.connection.remoteAddress || "127.0.0.1";
+      
+      if (!user_id) {
+        const err = new Error("사용자 인증이 필요합니다.");
+        err.code = "UNAUTHORIZED";
+        throw err;
+      }
       
       return [session_id, user_id, messageData, clientIp];
     },
@@ -110,7 +115,13 @@ const editMessageController = createUpdateController(
     dataExtractor: (req) => {
       const { message_id } = req.params;
       const { content, edit_reason } = req.body;
-      const user_id = req.user ? req.user.user_id : (req.body.user_id || "guest");
+      const user_id = req.user?.user_id || req.body.user_id;
+      
+      if (!user_id) {
+        const err = new Error("사용자 인증이 필요합니다.");
+        err.code = "UNAUTHORIZED";
+        throw err;
+      }
       
       // content가 undefined인 경우 빈 문자열로 처리하여 trim() 에러 방지
       const safeContent = content || '';
@@ -169,7 +180,13 @@ const requestAiReresponseController = createController(
   {
     dataExtractor: (req) => {
       const { session_id, message_id } = req.params;
-      const user_id = req.user ? req.user.user_id : "guest";
+      const user_id = req.user?.user_id;
+      
+      if (!user_id) {
+        const err = new Error("사용자 인증이 필요합니다.");
+        err.code = "UNAUTHORIZED";
+        throw err;
+      }
       
       return [session_id, message_id, user_id];
     },
@@ -267,7 +284,13 @@ const deleteMessageController = createDeleteController(
   {
     dataExtractor: (req) => {
       const { message_id } = req.params;
-      const user_id = req.user ? req.user.user_id : "guest";
+      const user_id = req.user?.user_id;
+      
+      if (!user_id) {
+        const err = new Error("사용자 인증이 필요합니다.");
+        err.code = "UNAUTHORIZED";
+        throw err;
+      }
       
       return [message_id, user_id];
     },
@@ -297,9 +320,15 @@ const uploadFile = createFileUploadController(
     dataExtractor: (req) => {
       const { session_id } = req.params;
       const { message_content } = req.body;
-      const user_id = req.user ? req.user.user_id : "guest";
+      const user_id = req.user?.user_id;
       const files = req.files || (req.file ? [req.file] : []);
       const file = files.length > 0 ? files[0] : null;
+      
+      if (!user_id) {
+        const err = new Error("사용자 인증이 필요합니다.");
+        err.code = "UNAUTHORIZED";
+        throw err;
+      }
       
       return [session_id, user_id, file, message_content];
     },

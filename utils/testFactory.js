@@ -172,7 +172,10 @@ function createAuthenticatedTest(endpoint, options = {}) {
 }
 
 // 사용자 ID 기반 테스트
-function createUserTest(endpoint, userId = 'guest', options = {}) {
+function createUserTest(endpoint, userId, options = {}) {
+  if (!userId) {
+    throw new Error("User ID is required for user-based tests");
+  }
   const processedEndpoint = endpoint.replace(':user_id', userId);
   return createAuthenticatedTest(processedEndpoint, {
     pathParams: { user_id: userId },
@@ -286,7 +289,10 @@ function generateTestUser() {
 }
 
 // 랜덤 테스트 세션 데이터
-function generateTestSession(userId = 'guest') {
+function generateTestSession(userId) {
+  if (!userId) {
+    throw new Error("User ID is required for test session generation");
+  }
   return {
     title: `Test Session ${Date.now()}`,
     category: 'general',
@@ -295,7 +301,10 @@ function generateTestSession(userId = 'guest') {
 }
 
 // 랜덤 테스트 메시지 데이터
-function generateTestMessage(sessionId = '1', userId = 'guest') {
+function generateTestMessage(sessionId, userId) {
+  if (!sessionId || !userId) {
+    throw new Error("Session ID and User ID are required for test message generation");
+  }
   return {
     session_id: sessionId,
     user_id: userId,

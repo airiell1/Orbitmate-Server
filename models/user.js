@@ -3,7 +3,6 @@ const bcrypt = require("bcrypt");
 const { oracledb } = require("../config/database");
 const { clobToString, convertClobFields, toSnakeCaseObj } = require("../utils/dbUtils");
 const { handleOracleError } = require("../utils/errorHandler");
-const { API_TEST_USER_ID } = require("../utils/constants");
 const config = require("../config"); // For NODE_ENV
 
 // Helper function to create default user profile, used internally

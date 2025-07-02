@@ -6,9 +6,12 @@ const fs = require('fs');
 require('dotenv').config(); // 환경 변수 로드
 
 const { initOracleClient, initializeDbPool } = require('./config/database'); // DB 관련 함수들 가져오기
-const { logApiRequest, logApiError, initializeLogger } = require('./middleware/logger'); // 로깅 미들웨어 추가
+const { logApiRequest, logApiError, initializeLogger } = require('./middleware/logger'); // JSON 기반 로깅 미들웨어 포함
+
 
 const app = express();
+// 🔥 중앙집중식 API 자동 로깅 미들웨어 적용 (모든 라우트보다 먼저 설정)
+app.use('/api', logApiRequest);
 
 // ** 라우터 변수만 선언 (require는 나중에) **
 let usersRouter;
@@ -32,8 +35,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// 🔥 중앙집중식 API 로깅 미들웨어 적용 (모든 라우트보다 먼저 설정)
-app.use('/api', logApiRequest);
+
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -88,6 +90,7 @@ async function startServer() {  try {
     feedbackRouter = require('./routes/feedback'); // feedbackRouter 로드
     logsRouter = require('./routes/logs'); // logsRouter 로드
 
+
     app.use('/api/users', usersRouter);
     app.use('/api/chat', chatRouter);
     app.use('/api/sessions', sessionsRouter);
@@ -103,10 +106,8 @@ async function startServer() {  try {
       res.json({ status: 'ok', timestamp: new Date().toISOString() });
     });
 
-    // 중앙 에러 핸들링 미들웨어 등록 (모든 라우트 및 일반 미들웨어 뒤에 위치)
+    // 🔥 API 에러 자동 로깅 미들웨어 (에러 핸들러보다 먼저)
     const { handleCentralError } = require('./utils/errorHandler');
-    
-    // 🔥 API 에러 로깅 미들웨어 추가 (에러 핸들러보다 먼저)
     app.use('/api', logApiError);
     app.use(handleCentralError);
 

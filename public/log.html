@@ -1,732 +1,643 @@
 <!DOCTYPE html>
 <html lang="ko">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Orbitmate Server 로그 뷰어</title>
-    <link rel="stylesheet" href="/css/log.css" />
-  </head>
-  <body>
-    <div class="header">
-      <h1>🚀 Orbitmate Server 로그 뷰어</h1>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orbitmate Server Logs</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-      <div class="status">
-        <div class="status-indicator" id="statusIndicator"></div>
-        <span id="statusText">연결 중...</span>
-      </div>
+        body {
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            line-height: 1.4;
+            overflow: hidden;
+        }
 
-      <div class="controls">
-        <select id="levelFilter">
-          <option value="all">모든 레벨</option>
-          <option value="INFO">INFO</option>
-          <option value="ERROR">ERROR</option>
-          <option value="WARN">WARN</option>
-        </select>
+        .container {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
 
-        <input
-          type="text"
-          id="searchInput"
-          placeholder="검색..."
-          maxlength="100"
-        />
+        .header {
+            background: #2d2d2d;
+            padding: 10px 20px;
+            border-bottom: 1px solid #444;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
 
-        <select id="linesLimit">
-          <option value="100">최근 100줄</option>
-          <option value="500" selected>최근 500줄</option>
-          <option value="1000">최근 1000줄</option>
-        </select>
+        .header h1 {
+            color: #00ff00;
+            font-size: 18px;
+            font-weight: bold;
+        }
 
-        <button id="autoScrollBtn" class="active">자동스크롤</button>
-        <button id="clearBtn">지우기</button>
-        <button id="refreshBtn">새로고침</button>
-        <button id="downloadBtn">다운로드</button>
-      </div>
-    </div>
+        .controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
 
-    <div class="main-container">
-      <div class="log-container">
-        <div class="log-content" id="logContent">
-          <div class="loading">로그를 불러오는 중...</div>
+        .filter-group {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .filter-btn {
+            padding: 5px 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+            transition: all 0.2s ease;
+            color: white;
+            background: #444;
+        }
+
+        .filter-btn.active {
+            box-shadow: 0 0 10px rgba(255,255,255,0.3);
+        }
+
+        .filter-btn.level-INFO { border: 1px solid #4CAF50; }
+        .filter-btn.level-INFO.active { background: #4CAF50; }
+
+        .filter-btn.level-WARN { border: 1px solid #FF9800; }
+        .filter-btn.level-WARN.active { background: #FF9800; }
+
+        .filter-btn.level-ERROR { border: 1px solid #F44336; }
+        .filter-btn.level-ERROR.active { background: #F44336; }
+
+        .filter-btn.level-API { border: 1px solid #9C27B0; }
+        .filter-btn.level-API.active { background: #9C27B0; }
+
+        .filter-btn.level-REQUEST { border: 1px solid #607D8B; }
+        .filter-btn.level-REQUEST.active { background: #607D8B; }
+
+        .filter-btn.level-RESPONSE { border: 1px solid #795548; }
+        .filter-btn.level-RESPONSE.active { background: #795548; }
+
+        .filter-btn.level-SYSTEM { border: 1px solid #607D8B; }
+        .filter-btn.level-SYSTEM.active { background: #607D8B; }
+
+        .auto-scroll-toggle {
+            padding: 5px 10px;
+            border: 1px solid #666;
+            border-radius: 4px;
+            background: #333;
+            color: white;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .auto-scroll-toggle.active {
+            background: #00ff00;
+            color: #000;
+        }
+
+        .search-box {
+            padding: 5px 8px;
+            border: 1px solid #666;
+            border-radius: 4px;
+            background: #333;
+            color: white;
+            font-size: 12px;
+            width: 200px;
+        }
+
+        .clear-btn {
+            padding: 5px 10px;
+            border: 1px solid #666;
+            border-radius: 4px;
+            background: #555;
+            color: white;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .clear-btn:hover {
+            background: #666;
+        }
+
+        .log-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            background: #1a1a1a;
+        }
+
+        .log-entry {
+            margin-bottom: 8px;
+            padding: 8px;
+            border-radius: 4px;
+            border-left: 4px solid;
+            font-size: 13px;
+            word-wrap: break-word;
+            transition: all 0.2s ease;
+        }
+
+        .log-entry:hover {
+            background: rgba(255,255,255,0.05);
+        }
+
+        .log-entry.level-INFO {
+            border-left-color: #4CAF50;
+            background: rgba(76, 175, 80, 0.1);
+        }
+
+        .log-entry.level-WARN {
+            border-left-color: #FF9800;
+            background: rgba(255, 152, 0, 0.1);
+        }
+
+        .log-entry.level-ERROR {
+            border-left-color: #F44336;
+            background: rgba(244, 67, 54, 0.1);
+        }
+
+        .log-entry.level-API {
+            border-left-color: #9C27B0;
+            background: rgba(156, 39, 176, 0.1);
+        }
+
+        .log-entry.level-REQUEST {
+            border-left-color: #2196F3;
+            background: rgba(33, 150, 243, 0.1);
+        }
+
+        .log-entry.level-RESPONSE {
+            border-left-color: #9C27B0;
+            background: rgba(156, 39, 176, 0.1);
+        }
+
+        .log-entry.level-SYSTEM {
+            border-left-color: #607D8B;
+            background: rgba(96, 125, 139, 0.1);
+        }
+
+        .log-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 5px;
+        }
+
+        .timestamp {
+            color: #888;
+            font-size: 11px;
+        }
+
+        .level-badge {
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: bold;
+            min-width: 60px;
+            text-align: center;
+        }
+
+        .level-badge.INFO { background: #4CAF50; color: white; }
+        .level-badge.WARN { background: #FF9800; color: white; }
+        .level-badge.ERROR { background: #F44336; color: white; }
+        .level-badge.API { background: #9C27B0; color: white; }
+        .level-badge.REQUEST { background: #607D8B; color: white; }
+        .level-badge.RESPONSE { background: #795548; color: white; }
+        .level-badge.SYSTEM { background: #2196F3; color: white; }
+
+        .request-id {
+            background: #333;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            color: #ccc;
+        }
+
+        .method {
+            font-weight: bold;
+            color: #00ff00;
+        }
+
+        .url {
+            color: #87CEEB;
+        }
+
+        .status {
+            font-weight: bold;
+        }
+
+        .status.success { color: #4CAF50; }
+        .status.client-error { color: #FF9800; }
+        .status.server-error { color: #F44336; }
+
+        .duration {
+            color: #FFD700;
+            font-size: 11px;
+        }
+
+        .message {
+            color: #e0e0e0;
+            margin-top: 5px;
+        }
+
+        .stack-trace {
+            margin-top: 5px;
+            padding: 8px;
+            background: rgba(244, 67, 54, 0.2);
+            border-radius: 4px;
+            font-size: 11px;
+            line-height: 1.3;
+        }
+
+        .stack-line {
+            margin: 2px 0;
+            color: #ffcccb;
+        }
+
+        .body-content {
+            margin-top: 5px;
+            padding: 5px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 3px;
+            font-size: 11px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 12px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #F44336;
+        }
+
+        .status-dot.connected {
+            background: #4CAF50;
+        }
+
+        .stats {
+            font-size: 11px;
+            color: #888;
+        }
+
+        /* 스크롤바 스타일링 */
+        .log-container::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .log-container::-webkit-scrollbar-track {
+            background: #2d2d2d;
+        }
+
+        .log-container::-webkit-scrollbar-thumb {
+            background: #555;
+            border-radius: 4px;
+        }
+
+        .log-container::-webkit-scrollbar-thumb:hover {
+            background: #777;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Orbitmate Server Logs</h1>
+            <div class="controls">
+                <div class="filter-group">
+                    <button class="filter-btn level-INFO active" data-level="INFO">INFO</button>
+                    <button class="filter-btn level-WARN active" data-level="WARN">WARN</button>
+                    <button class="filter-btn level-ERROR active" data-level="ERROR">ERROR</button>
+                    <button class="filter-btn level-API active" data-level="API">API</button>
+                    <button class="filter-btn level-REQUEST" data-level="REQUEST">REQ</button>
+                    <button class="filter-btn level-RESPONSE" data-level="RESPONSE">RES</button>
+                    <button class="filter-btn level-SYSTEM active" data-level="SYSTEM">SYS</button>
+                </div>
+                <input type="text" class="search-box" placeholder="검색..." id="search-input">
+                <button class="auto-scroll-toggle active" id="auto-scroll-toggle">자동스크롤</button>
+                <button class="clear-btn" id="clear-logs">지우기</button>
+                <div class="connection-status">
+                    <div class="status-dot" id="connection-dot"></div>
+                    <span id="connection-text">연결 중...</span>
+                </div>
+                <div class="stats" id="log-stats">로그: 0</div>
+            </div>
         </div>
-      </div>
-
-      <div class="sidebar">
-        <div class="connection-status disconnected" id="connectionStatus">
-          연결 상태: 끊어짐
+        <div class="log-container" id="log-container">
+            <!-- 로그 엔트리들이 여기에 동적으로 추가됩니다 -->
         </div>
-
-        <div class="stats-section">
-          <h3>📊 로그 통계</h3>
-          <div class="stat-item">
-            <span>총 로그 수:</span>
-            <span class="stat-value" id="totalLogs">0</span>
-          </div>
-          <div class="stat-item">
-            <span>INFO:</span>
-            <span class="stat-value" id="infoCount">0</span>
-          </div>
-          <div class="stat-item">
-            <span>ERROR:</span>
-            <span class="stat-value" id="errorCount">0</span>
-          </div>
-          <div class="stat-item">
-            <span>WARN:</span>
-            <span class="stat-value" id="warnCount">0</span>
-          </div>
-        </div>
-
-        <div class="stats-section">
-          <h3>🔧 시스템 정보</h3>
-          <div class="stat-item">
-            <span>메모리 로그:</span>
-            <span class="stat-value" id="memoryCount">0</span>
-          </div>
-          <div class="stat-item">
-            <span>필터 상태:</span>
-            <span class="stat-value" id="filterStatus">없음</span>
-          </div>
-        </div>
-
-        <div class="export-section">
-          <h3>📁 내보내기</h3>
-          <button id="exportBtn">현재 로그 내보내기</button>
-        </div>
-      </div>
     </div>
 
     <script>
-      let eventSource = null;
-      let autoScroll = true;
-      let allLogs = [];
-      let filteredLogs = [];
+        class LogViewer {
+            constructor() {
+                this.logs = [];
+                this.filteredLogs = [];
+                this.activeFilters = new Set(['INFO', 'WARN', 'ERROR', 'API', 'SYSTEM']);
+                this.autoScroll = true;
+                this.searchTerm = '';
+                this.eventSource = null;
+                this.logContainer = document.getElementById('log-container');
+                this.connectionDot = document.getElementById('connection-dot');
+                this.connectionText = document.getElementById('connection-text');
+                this.logStats = document.getElementById('log-stats');
+                
+                this.initializeEventListeners();
+                this.connectToLogStream();
+                this.loadRecentLogs();
+            }
 
-      // DOM 요소 참조
-      const logContent = document.getElementById("logContent");
-      const levelFilter = document.getElementById("levelFilter");
-      const searchInput = document.getElementById("searchInput");
-      const linesLimit = document.getElementById("linesLimit");
-      const autoScrollBtn = document.getElementById("autoScrollBtn");
-      const clearBtn = document.getElementById("clearBtn");
-      const refreshBtn = document.getElementById("refreshBtn");
-      const downloadBtn = document.getElementById("downloadBtn");
-      const exportBtn = document.getElementById("exportBtn");
-      const statusIndicator = document.getElementById("statusIndicator");
-      const statusText = document.getElementById("statusText");
-      const connectionStatus = document.getElementById("connectionStatus");
-
-      // 로그 메시지 파싱 및 포매팅 함수 (스택 트레이스 강화)
-      function parseAndFormatLogMessage(message) {
-        console.log("🔍 parseAndFormatLogMessage 호출:", message);
-
-        // 입력값 검증 및 문자열 변환
-        if (typeof message !== "string") {
-          if (message && typeof message === "object") {
-            // 객체인 경우 message 프로퍼티가 있는지 확인
-            message = message.message || JSON.stringify(message);
-          } else {
-            message = String(message || "");
-          }
-        }
-
-        // 타임스탬프 패턴: [2025-06-30T05:35:34.559Z] (ISO 형식)
-        const timestampRegex = /^\[([^\]]+)\]/;
-        const timestampMatch = message.match(timestampRegex);
-
-        if (!timestampMatch) {
-          // 타임스탬프가 없는 경우 - 우선 레벨 패턴부터 검사
-          const trimmed = message.trim();
-          if (/^(RESPONSE:|TIMEOUT:)/i.test(trimmed)) {
-            return {
-              timestamp: null,
-              level: "INFO",
-              message: trimmed,
-              formatted: formatLogLine(null, "INFO", trimmed),
-            };
-          }
-          if (/^INFO:/i.test(trimmed)) {
-            return {
-              timestamp: null,
-              level: "INFO",
-              message: trimmed,
-              formatted: formatLogLine(null, "INFO", trimmed),
-            };
-          }
-          if (/^WARN:/i.test(trimmed)) {
-            return {
-              timestamp: null,
-              level: "WARN",
-              message: trimmed,
-              formatted: formatLogLine(null, "WARN", trimmed),
-            };
-          }
-          if (/^ERROR:/i.test(trimmed)) {
-            return {
-              timestamp: null,
-              level: "ERROR",
-              message: trimmed,
-              formatted: formatLogLine(null, "ERROR", trimmed),
-            };
-          }
-          // 스택트레이스 패턴 검사
-          const stackPatterns = [
-            /^\s*at\s+/, // "at " 시작
-            /\.js:\d+:\d+/, // .js:줄번호:컬럼번호
-            /\.ts:\d+:\d+/, // .ts:줄번호:컬럼번호
-            /node_modules/, // node_modules 경로
-            /\([^)]*:\d+:\d+\)/, // (파일:줄:컬럼)
-            /Error:\s/, // "Error: " 시작
-            /TypeError:\s/, // "TypeError: " 시작
-            /ReferenceError:\s/, // "ReferenceError: " 시작
-            /^\s*\^/, // 화살표 포인터
-            /^\s*~/, // 틸다 포인터
-          ];
-          const isStackTrace = stackPatterns.some((pattern) => pattern.test(trimmed));
-          return {
-            timestamp: null,
-            level: isStackTrace ? "STACK_TRACE" : "CONTINUATION",
-            message: trimmed,
-            formatted: formatLogLine(
-              null,
-              isStackTrace ? "STACK_TRACE" : "CONTINUATION",
-              trimmed
-            ),
-          };
-        }
-
-        const timestamp = timestampMatch[1];
-        const afterTimestamp = message
-          .substring(timestampMatch[0].length)
-          .trim();
-
-        // 레벨 패턴: [INFO], [ERROR], [WARN]
-        const levelRegex = /^\[([A-Z]+)\]/;
-        const levelMatch = afterTimestamp.match(levelRegex);
-
-        if (!levelMatch) {
-          // 레벨이 없는 경우 (연속 메시지)
-          return {
-            timestamp: timestamp,
-            level: "CONTINUATION",
-            message: afterTimestamp,
-            formatted: formatLogLine(timestamp, "CONTINUATION", afterTimestamp),
-          };
-        }
-
-        const level = levelMatch[1];
-        const logMessage = afterTimestamp
-          .substring(levelMatch[0].length)
-          .trim();
-
-        const result = {
-          timestamp: timestamp,
-          level: level,
-          message: logMessage,
-          formatted: formatLogLine(timestamp, level, logMessage),
-        };
-
-        console.log("✅ parseAndFormatLogMessage 결과:", result);
-        return result;
-      }
-
-      // HTML 이스케이프 함수 (ReferenceError 방지)
-      function escapeHtml(text) {
-        const div = document.createElement("div");
-        div.textContent = text;
-        return div.innerHTML;
-      }
-
-      // 로그 라인 포맷팅
-      function formatLogLine(timestamp, level, message, stackTraces) {
-        const timestampHtml = timestamp
-          ? `<span class="log-timestamp">${timestamp}</span>`
-          : "";
-
-        const levelClass = level.toLowerCase();
-        const levelHtml = `<span class="log-level ${level}">${level}</span>`;
-
-        let messageHtml = "";
-        if (level === "ERROR") {
-          // ERROR 메시지 가독성 개선: 엔드포인트/에러/코드 분리
-          // 예: "ERROR: POST ... | IP: ... | Error: ... | Code: ..."
-          // → [엔드포인트/메서드] [Error: ...] [Code: ...] 블록 분리
-          const parts = message.split("|").map(s => s.trim());
-          let main = "";
-          let errorMsg = "";
-          let codeMsg = "";
-          let ipMsg = "";
-          let others = [];
-          for (const part of parts) {
-            if (part.startsWith("Error:")) errorMsg = part;
-            else if (part.startsWith("Code:")) codeMsg = part;
-            else if (part.startsWith("IP:")) ipMsg = part;
-            else if (part.startsWith("ERROR:")) main = part;
-            else if (part.match(/^(POST|GET|PUT|DELETE|PATCH)\s/)) main = part;
-            else others.push(part);
-          }
-          messageHtml = `<div class="log-message error-block">
-            <div class="error-main">${escapeHtml(main || message)}</div>
-            ${ipMsg ? `<div class="error-ip">${escapeHtml(ipMsg)}</div>` : ""}
-            ${errorMsg ? `<div class="error-msg">${escapeHtml(errorMsg)}</div>` : ""}
-            ${codeMsg ? `<div class="error-code">${escapeHtml(codeMsg)}</div>` : ""}
-            ${others.length ? `<div class="error-etc">${others.map(escapeHtml).join("<br>")}</div>` : ""}
-          </div>`;
-        } else {
-          messageHtml = `<span class="log-message">${escapeHtml(message)}</span>`;
-        }
-        if (Array.isArray(stackTraces) && stackTraces.length > 0) {
-          messageHtml +=
-            '<div class="stack-trace-container">' +
-            stackTraces
-              .map((line) => {
-                const isStackTraceLine = /^\s*(at\s+|Error:|TypeError:|ReferenceError:|\s*\^|\s*~|📍)/.test(
-                  line
-                );
-                const className = isStackTraceLine
-                  ? "stack-trace-line"
-                  : "continuation-line";
-                return `<div class="${className}">${escapeHtml(
-                  line.trim()
-                )}</div>`;
-              })
-              .join("") +
-            "</div>";
-        }
-
-        return `<div class="log-line ${levelClass}">
-        ${timestampHtml}
-        ${levelHtml}
-        ${messageHtml}
-    </div>`;
-      }
-
-      // 백엔드에서 이미 블록 단위로 그룹핑됨 (ERROR_BLOCK, RESPONSE_BLOCK, LOG 등)
-      // 프론트는 단순히 블록을 렌더링만 하면 됨
-// ... (위에서 mergeConsecutiveLogs 함수는 이미 올바르게 정의됨. 아래 중복/불필요 코드 제거)
-
-      // 로그 필터링 및 렌더링 (블록 단위)
-      function filterLogs() {
-        const level = levelFilter.value;
-        const search = searchInput.value.toLowerCase();
-        // logsToShow는 allLogs에서 level/search 필터만 적용
-        let logsToShow = allLogs;
-        if (level !== "all") {
-          logsToShow = logsToShow.filter(log => (log.level || '').toUpperCase() === level.toUpperCase());
-        }
-        if (search) {
-          logsToShow = logsToShow.filter(log => {
-            return Object.values(log).some(v => typeof v === 'string' && v.toLowerCase().includes(search))
-              || (Array.isArray(log.stack) && log.stack.some(s => s.toLowerCase().includes(search)))
-              || (Array.isArray(log.etc) && log.etc.some(s => s.toLowerCase().includes(search)));
-          });
-        }
-        // 렌더링
-        const htmlContent = logsToShow.map((log) => renderLogBlock(log)).join("");
-        logContent.innerHTML = htmlContent;
-        // 스크롤/자동스크롤 유지
-        if (autoScroll) {
-          setTimeout(() => scrollToBottom(), 50);
-        }
-      }
-
-      // 블록 단위 렌더링 함수
-      function renderLogBlock(log) {
-        if (log.type === 'ERROR_BLOCK') {
-          // 에러 블록
-          return `<div class="log-line error-block">
-            <span class="log-timestamp">${escapeHtml(log.timestamp || '')}</span>
-            <span class="log-level ERROR">ERROR</span>
-            <div class="log-message">
-              <div class="error-main">${escapeHtml(log.main || '')}</div>
-              ${log.etc && log.etc.length ? `<div class="error-etc">${log.etc.map(escapeHtml).join('<br>')}</div>` : ''}
-              ${log.stack && log.stack.length ? `<div class="stack-trace-container">${log.stack.map(line => `<div class="stack-trace-line">${escapeHtml(line)}</div>`).join('')}</div>` : ''}
-            </div>
-          </div>`;
-        } else if (log.type === 'RESPONSE_BLOCK') {
-          // 응답/타임아웃 블록
-          return `<div class="log-line ${log.level ? log.level.toLowerCase() : ''}">
-            <span class="log-timestamp">${escapeHtml(log.timestamp || '')}</span>
-            <span class="log-level ${log.level}">${escapeHtml(log.level || '')}</span>
-            <span class="log-message">${escapeHtml(log.message || '')}</span>
-          </div>`;
-        } else {
-          // 일반 로그
-          return `<div class="log-line ${log.level ? log.level.toLowerCase() : ''}">
-            <span class="log-timestamp">${escapeHtml(log.timestamp || '')}</span>
-            <span class="log-level ${log.level}">${escapeHtml(log.level || '')}</span>
-            <span class="log-message">${escapeHtml(log.message || '')}</span>
-          </div>`;
-        }
-      }
-
-      // 개별 로그 추가 (실시간 그룹핑 지원)
-      function addSingleLog(logData) {
-        try {
-          console.log("➕ 개별 로그 추가:", logData);
-
-        // 실시간 그룹핑: 직전 로그가 ERROR이고, 새 로그가 STACK_TRACE/CONTINUATION이면 push
-        if (
-            (logData.level === "STACK_TRACE" || logData.level === "CONTINUATION") &&
-            allLogs.length > 0 &&
-            allLogs[allLogs.length - 1].level === "ERROR"
-        ) {
-            const last = allLogs[allLogs.length - 1];
-            if (!last.stackTraces) last.stackTraces = [];
-            last.stackTraces.push(logData.message);
-            // DOM에 바로 append (UX 개선)
-            const logContent = document.getElementById("logContent");
-            const lastEntry = logContent.lastElementChild;
-            if (lastEntry && lastEntry.classList.contains("error-block")) {
-                // Error: ... 라인은 error-msg로, at ... 등은 stack-trace로
-                if (/^Error:/i.test(logData.message)) {
-                    // error-msg가 이미 있으면 중복 추가 방지
-                    let hasErrorMsg = false;
-                    lastEntry.querySelectorAll('.error-msg').forEach(div => {
-                        if (div.textContent === logData.message) hasErrorMsg = true;
+            initializeEventListeners() {
+                // 필터 버튼들
+                document.querySelectorAll('.filter-btn').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const level = btn.dataset.level;
+                        this.toggleFilter(level, btn);
                     });
-                    if (!hasErrorMsg) {
-                        const errorMsg = document.createElement('div');
-                        errorMsg.className = 'error-msg';
-                        errorMsg.textContent = logData.message;
-                        lastEntry.appendChild(errorMsg);
-                        errorMsg.classList.add('new-log');
-                        setTimeout(() => errorMsg.classList.remove('new-log'), 500);
+                });
+
+                // 자동 스크롤 토글
+                document.getElementById('auto-scroll-toggle').addEventListener('click', (e) => {
+                    this.autoScroll = !this.autoScroll;
+                    e.target.classList.toggle('active', this.autoScroll);
+                });
+
+                // 검색
+                document.getElementById('search-input').addEventListener('input', (e) => {
+                    this.searchTerm = e.target.value.toLowerCase();
+                    this.applyFilters();
+                });
+
+                // 로그 지우기
+                document.getElementById('clear-logs').addEventListener('click', () => {
+                    this.clearLogs();
+                });
+            }
+
+            toggleFilter(level, btnElement) {
+                if (this.activeFilters.has(level)) {
+                    this.activeFilters.delete(level);
+                    btnElement.classList.remove('active');
+                } else {
+                    this.activeFilters.add(level);
+                    btnElement.classList.add('active');
+                }
+                this.applyFilters();
+            }
+
+            applyFilters() {
+                this.filteredLogs = this.logs.filter(log => {
+                    const levelMatch = this.activeFilters.has(log.level);
+                    const searchMatch = this.searchTerm === '' || 
+                        JSON.stringify(log).toLowerCase().includes(this.searchTerm);
+                    return levelMatch && searchMatch;
+                });
+                this.renderLogs();
+                this.updateStats();
+            }
+
+            connectToLogStream() {
+                this.eventSource = new EventSource('/api/logs/stream/live');
+                
+                this.eventSource.onopen = () => {
+                    this.connectionDot.classList.add('connected');
+                    this.connectionText.textContent = '실시간 연결됨';
+                };
+
+                this.eventSource.onmessage = (event) => {
+                    try {
+                        const logData = JSON.parse(event.data);
+                        if (logData.type === 'connected') return;
+                        
+                        this.addLog(logData);
+                    } catch (error) {
+                        console.error('로그 파싱 에러:', error);
+                    }
+                };
+
+                this.eventSource.onerror = () => {
+                    this.connectionDot.classList.remove('connected');
+                    this.connectionText.textContent = '연결 끊김';
+                    
+                    // 재연결 시도
+                    setTimeout(() => {
+                        this.connectToLogStream();
+                    }, 3000);
+                };
+            }
+
+            async loadRecentLogs() {
+                try {
+                    const response = await fetch('/api/logs/recent?lines=100');
+                    const result = await response.json();
+                    
+                    if (result.status === 'success') {
+                        this.logs = result.data.logs || [];
+                        this.applyFilters();
+                    }
+                } catch (error) {
+                    console.error('최근 로그 로드 에러:', error);
+                }
+            }
+
+            addLog(logData) {
+                const parsedLog = this.parseLogData(logData);
+                this.logs.push(parsedLog);
+                
+                // 최대 1000개 로그만 유지
+                if (this.logs.length > 1000) {
+                    this.logs.shift();
+                }
+                
+                this.applyFilters();
+                
+                if (this.autoScroll) {
+                    setTimeout(() => {
+                        this.logContainer.scrollTop = this.logContainer.scrollHeight;
+                    }, 10);
+                }
+            }
+
+            parseLogData(data) {
+                // 새로운 구조화된 로그 형식 파싱
+                return {
+                    timestamp: data.timestamp || new Date().toISOString(),
+                    level: data.level || data.type || 'INFO',
+                    requestId: data.requestId,
+                    method: data.method,
+                    url: data.url,
+                    status: data.status,
+                    duration: data.duration,
+                    code: data.code,
+                    message: data.message,
+                    stack: data.stack,
+                    body: data.body,
+                    requestBody: data.requestBody,
+                    responseBody: data.responseBody,  // 새로운 통합 API 로그 지원
+                    ip: data.ip,
+                    contentType: data.contentType,
+                    query: data.query,
+                    params: data.params,
+                    meta: data.meta,
+                    raw: data.raw
+                };
+            }
+
+            renderLogs() {
+                this.logContainer.innerHTML = this.filteredLogs.map(log => this.renderLogEntry(log)).join('');
+            }
+
+            renderLogEntry(log) {
+                const timestamp = new Date(log.timestamp).toLocaleTimeString('ko-KR', { 
+                    hour12: false, 
+                    hour: '2-digit', 
+                    minute: '2-digit', 
+                    second: '2-digit',
+                    fractionalSecondDigits: 3
+                });
+
+                let statusClass = '';
+                if (log.status) {
+                    const status = parseInt(log.status);
+                    if (status >= 200 && status < 300) statusClass = 'success';
+                    else if (status >= 400 && status < 500) statusClass = 'client-error';
+                    else if (status >= 500) statusClass = 'server-error';
+                }
+
+                let content = '';
+                
+                // 로그 헤더
+                content += `<div class="log-header">`;
+                content += `<span class="timestamp">${timestamp}</span>`;
+                content += `<span class="level-badge ${log.level}">${log.level}</span>`;
+                
+                if (log.requestId) {
+                    content += `<span class="request-id">${log.requestId}</span>`;
+                }
+                
+                if (log.method) {
+                    content += `<span class="method">${log.method}</span>`;
+                }
+                
+                if (log.url) {
+                    content += `<span class="url">${log.url}</span>`;
+                }
+                
+                if (log.status) {
+                    content += `<span class="status ${statusClass}">${log.status}</span>`;
+                }
+                
+                if (log.duration) {
+                    content += `<span class="duration">${log.duration}ms</span>`;
+                }
+                
+                if (log.code) {
+                    content += `<span class="code">${log.code}</span>`;
+                }
+                
+                content += `</div>`;
+
+                // 메시지
+                if (log.message) {
+                    content += `<div class="message">${this.escapeHtml(log.message)}</div>`;
+                }
+
+                // 스택 트레이스
+                if (log.stack && log.stack.length > 0) {
+                    content += `<div class="stack-trace">`;
+                    log.stack.forEach((line, index) => {
+                        content += `<div class="stack-line">${index + 1}. ${this.escapeHtml(line)}</div>`;
+                    });
+                    content += `</div>`;
+                }
+
+                // 통합 API 로그의 요청/응답 바디 표시 (더 상세하게)
+                if (log.level === 'API') {
+                    // 요청 바디
+                    if (log.requestBody) {
+                        content += `<div class="body-content">`;
+                        content += `<strong>📤 Request Body:</strong><br>`;
+                        content += `<pre>${this.escapeHtml(JSON.stringify(log.requestBody, null, 2))}</pre>`;
+                        content += `</div>`;
+                    }
+                    
+                    // 응답 바디
+                    if (log.responseBody) {
+                        content += `<div class="body-content">`;
+                        content += `<strong>📥 Response Body:</strong><br>`;
+                        content += `<pre>${this.escapeHtml(JSON.stringify(log.responseBody, null, 2))}</pre>`;
+                        content += `</div>`;
+                    }
+                    
+                    // IP 등 추가 정보
+                    if (log.ip && log.ip !== 'unknown') {
+                        content += `<div class="body-content">`;
+                        content += `<strong>🌐 IP:</strong> ${this.escapeHtml(log.ip)}<br>`;
+                        if (log.contentType && log.contentType !== 'none') {
+                            content += `<strong>📄 Content Type:</strong> ${this.escapeHtml(log.contentType)}<br>`;
+                        }
+                        content += `</div>`;
                     }
                 } else {
-                    let stackContainer = lastEntry.querySelector('.stack-trace-container');
-                    if (!stackContainer) {
-                        stackContainer = document.createElement('div');
-                        stackContainer.className = 'stack-trace-container';
-                        lastEntry.appendChild(stackContainer);
+                    // 기존 로그 형식 (호환성)
+                    if (log.body) {
+                        content += `<div class="body-content">`;
+                        content += `<strong>📄 Data:</strong><br>`;
+                        content += `<pre>${this.escapeHtml(JSON.stringify(log.body, null, 2))}</pre>`;
+                        content += `</div>`;
                     }
-                    const stackLine = document.createElement('div');
-                    stackLine.className = logData.level === "STACK_TRACE" ? 'stack-trace-line' : 'continuation-line';
-                    stackLine.textContent = logData.message;
-                    stackContainer.appendChild(stackLine);
-                    stackLine.classList.add('new-log');
-                    setTimeout(() => stackLine.classList.remove('new-log'), 500);
                 }
-                // 자동 스크롤
-                const wasScrolledToBottom = logContent.scrollTop + logContent.clientHeight >= logContent.scrollHeight - 50;
-                if (autoScroll && wasScrolledToBottom) {
-                  setTimeout(() => {
-                    logContent.scrollTop = logContent.scrollHeight;
-                  }, 10);
+
+                // Raw 데이터 (fallback)
+                if (log.raw) {
+                    content += `<div class="message">${this.escapeHtml(log.raw)}</div>`;
                 }
-                updateStats();
-                return;
-            } else {
-                // fallback: 전체 재렌더링
-                filterLogs();
-                return;
+
+                return `<div class="log-entry level-${log.level}">${content}</div>`;
+            }
+
+            escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+
+            clearLogs() {
+                this.logs = [];
+                this.filteredLogs = [];
+                this.renderLogs();
+                this.updateStats();
+            }
+
+            updateStats() {
+                this.logStats.textContent = `로그: ${this.filteredLogs.length}/${this.logs.length}`;
             }
         }
 
-          // 일반 로그는 기존 방식대로 추가
-          const logElement = document.createElement("div");
-          logElement.innerHTML =
-            formatLogLine(logData.timestamp, logData.level, logData.message, logData.stackTraces);
-          logElement.className = "log-entry new-log";
-
-          // 스크롤 위치 확인
-          const wasScrolledToBottom =
-            logContent.scrollTop + logContent.clientHeight >=
-            logContent.scrollHeight - 50;
-
-          // DOM에 추가
-          logContent.appendChild(logElement);
-
-          // 새 로그 강조 효과 (0.5초 후 제거)
-          setTimeout(() => {
-            logElement.classList.remove("new-log");
-          }, 500);
-
-          // 자동 스크롤
-          if (autoScroll && wasScrolledToBottom) {
-            setTimeout(() => {
-              scrollToBottom();
-            }, 10);
-          }
-
-          console.log("✅ 개별 로그 추가 완료");
-        } catch (error) {
-          console.error("개별 로그 추가 실패:", error, logData);
-          // 실패 시 전체 재렌더링
-          filterLogs();
-        }
-      }
-
-      // SSE 연결 시작
-      function startSSE() {
-        if (eventSource) {
-          eventSource.close();
-        }
-
-        statusText.textContent = "연결 중...";
-        statusIndicator.classList.remove("connected");
-        connectionStatus.textContent = "연결 상태: 연결 중...";
-
-        eventSource = new EventSource("/api/logs/stream/live");
-
-        eventSource.onopen = function () {
-          statusText.textContent = "실시간 연결됨";
-          statusIndicator.classList.add("connected");
-          connectionStatus.textContent = "연결 상태: 실시간 스트리밍";
-          connectionStatus.className = "connection-status connected";
-        };
-
-        eventSource.onmessage = function (event) {
-          try {
-            const logData = JSON.parse(event.data);
-            if (logData.logs && Array.isArray(logData.logs)) {
-              // 초기 로그 데이터 (한 번만)
-              console.log("📥 초기 로그 데이터 수신:", logData.logs.length);
-              allLogs = logData.logs.map((logItem) => {
-                const message =
-                  typeof logItem === "string"
-                    ? logItem
-                    : logItem.message || JSON.stringify(logItem);
-                return parseAndFormatLogMessage(message);
-              });
-              filterLogs();
-            } else if (logData.message) {
-              // 새로운 로그 메시지 (개별 추가)
-              console.log("📨 새 로그 메시지 수신:", logData.message);
-              const message =
-                typeof logData.message === "string"
-                  ? logData.message
-                  : JSON.stringify(logData.message);
-              const parsed = parseAndFormatLogMessage(message);
-              allLogs.push(parsed);
-
-              // 메모리 한계 관리 (최대 10000개)
-              if (allLogs.length > 10000) {
-                allLogs = allLogs.slice(-5000);
-                console.log("🗑️ 로그 메모리 정리: 5000개로 축소");
-              }
-
-              // 필터링이 'all'이거나 새 로그가 필터에 맞으면 바로 표시
-              const level = levelFilter.value;
-              const search = searchInput.value.toLowerCase();
-
-              const shouldShow =
-                (level === "all" || parsed.level === level) &&
-                (!search || parsed.message.toLowerCase().includes(search));
-
-              if (shouldShow) {
-                // 개별 로그만 추가 (전체 재렌더링 방지)
-                addSingleLog(parsed);
-              }
-
-              updateStats();
-            }
-          } catch (e) {
-            console.error("로그 파싱 오류:", e, event.data);
-          }
-        };
-
-        eventSource.onerror = function () {
-          statusText.textContent = "연결 실패";
-          statusIndicator.classList.remove("connected");
-          connectionStatus.textContent = "연결 상태: 끊어짐";
-          connectionStatus.className = "connection-status disconnected";
-
-          // 3초 후 재연결 시도
-          setTimeout(() => {
-            if (eventSource && eventSource.readyState === EventSource.CLOSED) {
-              startSSE();
-            }
-          }, 3000);
-        };
-      }
-
-      // 기존 로그 로드
-      async function loadExistingLogs() {
-        try {
-          const lines = linesLimit.value;
-          const response = await fetch(
-            `/api/logs/recent?lines=${lines}&level=all`
-          );
-          const data = await response.json();
-
-          if (data.status === "success" && data.data && data.data.logs) {
-            // 로그 데이터 구조 확인 (전체 배열 길이와 샘플 보기)
-            const logs = data.data.logs;
-            console.log(`✅ 로그 데이터 로드: 총 ${logs.length}개`);
-            console.log("로그 데이터 구조 샘플:", logs.slice(0, 5)); // 5개 샘플로 증가
-
-            allLogs = logs.map((logItem, index) => {
-              // 객체인 경우 raw 또는 message 프로퍼티 사용, 없으면 문자열화
-              if (typeof logItem === "object" && logItem !== null) {
-                const message =
-                  logItem.raw || logItem.message || JSON.stringify(logItem);
-                const parsed = parseAndFormatLogMessage(message);
-
-                // 처음 3개만 디버깅 로그 출력
-                if (index < 3) {
-                  console.log(
-                    `🔍 로그 ${index}: 원본="${message.substring(
-                      0,
-                      80
-                    )}..." → 파싱결과=`,
-                    parsed
-                  );
-                }
-
-                return parsed;
-              } else {
-                // 문자열인 경우 그대로 파싱
-                return parseAndFormatLogMessage(String(logItem));
-              }
-            });
-            console.log(`🔍 파싱 완료: ${allLogs.length}개 로그 처리됨`);
-            filterLogs();
-          } else {
-            showError("로그를 불러올 수 없습니다.");
-          }
-        } catch (error) {
-          console.error("로그 로딩 오류:", error);
-          showError("서버 연결 오류");
-        }
-      }
-
-      // 통계 업데이트
-      function updateStats() {
-        const logStats = {
-          total: filteredLogs.length,
-          info: filteredLogs.filter((log) => log.level === "INFO").length,
-          error: filteredLogs.filter((log) => log.level === "ERROR").length,
-          warn: filteredLogs.filter((log) => log.level === "WARN").length,
-        };
-
-        document.getElementById("totalLogs").textContent = logStats.total;
-        document.getElementById("infoCount").textContent = logStats.info;
-        document.getElementById("errorCount").textContent = logStats.error;
-        document.getElementById("warnCount").textContent = logStats.warn;
-        document.getElementById("memoryCount").textContent = allLogs.length;
-      }
-
-      // 필터 상태 업데이트
-      function updateFilterStatus() {
-        const level = levelFilter.value;
-        const search = searchInput.value;
-        let status = "없음";
-
-        if (level !== "all" || search) {
-          const filters = [];
-          if (level !== "all") filters.push(level);
-          if (search) filters.push(`"${search}"`);
-          status = filters.join(", ");
-        }
-
-        document.getElementById("filterStatus").textContent = status;
-      }
-
-      // 자동 스크롤 토글
-      function toggleAutoScroll() {
-        autoScroll = !autoScroll;
-        autoScrollBtn.classList.toggle("active", autoScroll);
-
-        if (autoScroll) {
-          scrollToBottom();
-        }
-      }
-
-      // 하단으로 스크롤
-      function scrollToBottom() {
-        logContent.scrollTop = logContent.scrollHeight;
-      }
-
-      // 로그 지우기
-      function clearLogs() {
-        if (confirm("모든 로그를 지우시겠습니까?")) {
-          allLogs = [];
-          filteredLogs = [];
-          updateLogDisplay();
-          updateStats();
-        }
-      }
-
-      // 로그 다운로드
-      function downloadLogs() {
-        window.open("/api/logs/download/api.log", "_blank");
-      }
-
-      // 현재 로그 내보내기
-      function exportLogs() {
-        const content = filteredLogs
-          .map((log) => `[${log.timestamp}] [${log.level}] ${log.message}`)
-          .join("\n");
-
-        const blob = new Blob([content], { type: "text/plain" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `orbitmate-logs-${new Date()
-          .toISOString()
-          .slice(0, 19)}.txt`;
-        a.click();
-        URL.revokeObjectURL(url);
-      }
-
-      // 에러 메시지 표시
-      function showError(message) {
-        logContent.innerHTML = `<div class="error-message">❌ ${message}</div>`;
-      }
-
-      // 정규식 이스케이프
-      function escapeRegex(string) {
-        return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      }
-
-      // 디바운스 함수
-      function debounce(func, wait) {
-        let timeout;
-        return function executedFunction(...args) {
-          const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-          };
-          clearTimeout(timeout);
-          timeout = setTimeout(later, wait);
-        };
-      }
-
-      // 이벤트 리스너 등록
-      levelFilter.addEventListener("change", filterLogs);
-      searchInput.addEventListener("input", debounce(filterLogs, 300));
-      linesLimit.addEventListener("change", loadExistingLogs);
-      autoScrollBtn.addEventListener("click", toggleAutoScroll);
-      clearBtn.addEventListener("click", clearLogs);
-      refreshBtn.addEventListener("click", () => {
-        location.reload();
-      });
-      downloadBtn.addEventListener("click", downloadLogs);
-      exportBtn.addEventListener("click", exportLogs);
-
-      // 스크롤 이벤트 (자동스크롤 해제)
-      logContent.addEventListener("scroll", () => {
-        const isAtBottom =
-          logContent.scrollTop + logContent.clientHeight >=
-          logContent.scrollHeight - 5;
-        if (!isAtBottom && autoScroll) {
-          autoScroll = false;
-          autoScrollBtn.classList.remove("active");
-        }
-      });
-
-      // 페이지 언로드 시 정리
-      window.addEventListener("beforeunload", function () {
-        if (eventSource) {
-          eventSource.close();
-        }
-      });
-
-      // 초기화
-      document.addEventListener("DOMContentLoaded", function () {
-        loadExistingLogs().then(() => {
-          startSSE();
+        // 페이지 로드 시 로그 뷰어 초기화
+        document.addEventListener('DOMContentLoaded', () => {
+            new LogViewer();
         });
-      });
     </script>
-  </body>
+</body>
 </html>

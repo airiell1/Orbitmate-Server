@@ -39,113 +39,109 @@ async function getLogFilesService() {
 }
 
 /**
- * 최근 로그 조회 서비스
+ * 최근 로그 조회 서비스 (최적화된 구조화 로그 파싱)
  */
 async function getRecentLogsService(lines, level, search) {
   try {
     const data = await fs.readFile(logFilePath, 'utf8');
     let logLines = data.split('\n').filter(line => line.trim() !== '');
-
-    // 레벨/검색 필터링은 블록 파싱 후 적용 (블록 단위 UX)
-    // 최근 N줄만 가져오기는 블록 파싱 후 적용
-
-    // 블록 파싱: 에러+스택트레이스, 응답(RESPONSE/TIMEOUT), 일반(INFO/WARN)
-    const blocks = [];
-    let i = 0;
-    while (i < logLines.length) {
-      const line = logLines[i];
-      const match = line.match(/^\[([^\]]+)\] \[([^\]]+)\] (.+)$/);
-      if (match) {
-        let [_, timestamp, lvl, message] = match;
-        // TIMEOUT은 WARN으로 강제
-        if (/^TIMEOUT:/i.test(message)) lvl = 'WARN';
-        if (lvl === 'ERROR') {
-          // 에러 블록: 연속된 스택트레이스/에러/바디 등 포함
-          const errorBlock = {
-            type: 'ERROR_BLOCK',
-            timestamp,
-            level: lvl,
-            main: message,
-            stack: [],
-            etc: []
-          };
-          let j = i + 1;
-          while (j < logLines.length) {
-            const next = logLines[j];
-            // 스택트레이스(들여쓰기, at, Error: 등) 또는 바디/상태 등
-            if (/^\s+at /.test(next) || /^\s*Error:/.test(next) || /^\s*TypeError:/.test(next) || /^\s*ReferenceError:/.test(next) || /^\s*\^/.test(next) || /^\s*~/.test(next) || /node_modules/.test(next) || /\(.*:\d+:\d+\)/.test(next)) {
-              errorBlock.stack.push(next.trim());
-              j++;
-            } else if (/^\[.*\] \[ERROR\]/.test(next)) {
-              // 연속된 ERROR: 상태/바디 등만 etc로
-              const m2 = next.match(/^\[([^\]]+)\] \[ERROR\] (.+)$/);
-              if (m2) {
-                const msg2 = m2[2];
-                if (/^(Status:|Duration:|Body:)/.test(msg2.trim())) {
-                  errorBlock.etc.push(msg2.trim());
-                  j++;
-                  continue;
-                }
-              }
-              break;
-            } else {
-              break;
-            }
-          }
-          blocks.push(errorBlock);
-          i = j;
-          continue;
-        } else if (/^(RESPONSE:|TIMEOUT:)/.test(message)) {
-          // 응답/타임아웃 블록
-          blocks.push({
-            type: 'RESPONSE_BLOCK',
-            timestamp,
-            level: lvl,
-            message
-          });
-          i++;
-          continue;
-        } else if (lvl === 'CONTINUATION' || lvl === 'STACK_TRACE') {
-          // CONTINUATION/STACK_TRACE 등은 무시 (이미 블록에 포함됨)
-          i++;
-          continue;
-        } else {
-          // 일반 블록
-          blocks.push({
-            type: 'LOG',
-            timestamp,
-            level: lvl,
-            message
-          });
-          i++;
-          continue;
+    
+    // 구조화된 로그 파싱
+    let logs = [];
+    let currentLog = null;
+    
+    for (const line of logLines) {
+      const trimmed = line.trim();
+      
+      // 메인 로그 라인 감지 (타임스탬프로 시작)
+      if (trimmed.startsWith('[') && trimmed.includes('] [')) {
+        // 이전 로그 완료
+        if (currentLog) {
+          logs.push(currentLog);
         }
-      } else {
-        // 스택트레이스/들여쓰기 등은 직전 에러에 포함됨(위에서 처리)
-        i++;
+        
+        // 새 로그 파싱
+        currentLog = parseStructuredLogLine(trimmed);
+      }
+      // 추가 정보 라인들 (들여쓰기로 시작)
+      else if (trimmed.startsWith('    ') && currentLog) {
+        if (trimmed.startsWith('    1.') || trimmed.match(/^\s+\d+\./)) {
+          // 스택 트레이스 라인
+          if (!currentLog.stack) currentLog.stack = [];
+          currentLog.stack.push(trimmed.replace(/^\s+\d+\.\s*/, ''));
+        } else if (trimmed.startsWith('    BODY:')) {
+          // 기존 응답 바디 (호환성)
+          try {
+            currentLog.body = JSON.parse(trimmed.replace('    BODY:', '').trim());
+          } catch (e) {
+            currentLog.body = trimmed.replace('    BODY:', '').trim();
+          }
+        } else if (trimmed.startsWith('    RES_BODY:')) {
+          // 새로운 응답 바디 형식
+          try {
+            currentLog.responseBody = JSON.parse(trimmed.replace('    RES_BODY:', '').trim());
+          } catch (e) {
+            currentLog.responseBody = trimmed.replace('    RES_BODY:', '').trim();
+          }
+        } else if (trimmed.startsWith('    REQ_BODY:')) {
+          // 요청 바디
+          try {
+            currentLog.requestBody = JSON.parse(trimmed.replace('    REQ_BODY:', '').trim());
+          } catch (e) {
+            currentLog.requestBody = trimmed.replace('    REQ_BODY:', '').trim();
+          }
+        } else if (trimmed.startsWith('    IP:')) {
+          currentLog.ip = trimmed.replace('    IP:', '').trim();
+        } else if (trimmed.startsWith('    QUERY:')) {
+          try {
+            currentLog.query = JSON.parse(trimmed.replace('    QUERY:', '').trim());
+          } catch (e) {
+            currentLog.query = trimmed.replace('    QUERY:', '').trim();
+          }
+        } else if (trimmed.startsWith('    PARAMS:')) {
+          try {
+            currentLog.params = JSON.parse(trimmed.replace('    PARAMS:', '').trim());
+          } catch (e) {
+            currentLog.params = trimmed.replace('    PARAMS:', '').trim();
+          }
+        } else if (trimmed.startsWith('    CONTENT_TYPE:')) {
+          currentLog.contentType = trimmed.replace('    CONTENT_TYPE:', '').trim();
+        } else if (trimmed.startsWith('    META:')) {
+          // 메타 정보
+          try {
+            currentLog.meta = JSON.parse(trimmed.replace('    META:', '').trim());
+          } catch (e) {
+            currentLog.meta = trimmed.replace('    META:', '').trim();
+          }
+        }
       }
     }
-
-    // 필터/검색/라인 제한 적용 (블록 단위)
-    let filteredBlocks = blocks;
-    if (level !== 'all') {
-      filteredBlocks = filteredBlocks.filter(b => (b.level || '').toUpperCase() === level.toUpperCase());
+    
+    // 마지막 로그 추가
+    if (currentLog) {
+      logs.push(currentLog);
     }
-    if (search) {
-      filteredBlocks = filteredBlocks.filter(b => {
-        return Object.values(b).some(v => typeof v === 'string' && v.toLowerCase().includes(search.toLowerCase()))
-          || (Array.isArray(b.stack) && b.stack.some(s => s.toLowerCase().includes(search.toLowerCase())))
-          || (Array.isArray(b.etc) && b.etc.some(s => s.toLowerCase().includes(search.toLowerCase())));
+    
+    // level/type 필터
+    if (level !== 'all') {
+      logs = logs.filter(l => {
+        const logLevel = l.level || l.type || '';
+        return logLevel.toUpperCase() === level.toUpperCase();
       });
     }
-    // 최근 N개 블록만
-    filteredBlocks = filteredBlocks.slice(-lines);
-
+    
+    // 검색 필터
+    if (search) {
+      logs = logs.filter(l => JSON.stringify(l).toLowerCase().includes(search.toLowerCase()));
+    }
+    
+    logs = logs.slice(-lines);
+    
     return {
       total_lines: logLines.length,
-      returned_lines: filteredBlocks.length,
+      returned_lines: logs.length,
       filters: { level, search, lines },
-      logs: filteredBlocks
+      logs
     };
   } catch (error) {
     if (error.code === 'ENOENT') {
@@ -159,6 +155,93 @@ async function getRecentLogsService(lines, level, search) {
     }
     throw error;
   }
+}
+
+/**
+ * 구조화된 로그 라인 파싱 함수
+ */
+function parseStructuredLogLine(line) {
+  // [timestamp] [level] [requestId] method url status duration code "message"
+  const parts = [];
+  let current = '';
+  let inQuotes = false;
+  let inBrackets = false;
+  
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    
+    if (char === '[' && !inQuotes) {
+      inBrackets = true;
+      current += char;
+    } else if (char === ']' && !inQuotes && inBrackets) {
+      inBrackets = false;
+      current += char;
+      if (current.trim()) {
+        parts.push(current.trim());
+        current = '';
+      }
+    } else if (char === '"' && !inBrackets) {
+      inQuotes = !inQuotes;
+      current += char;
+    } else if (char === ' ' && !inQuotes && !inBrackets) {
+      if (current.trim()) {
+        parts.push(current.trim());
+        current = '';
+      }
+    } else {
+      current += char;
+    }
+  }
+  
+  if (current.trim()) {
+    parts.push(current.trim());
+  }
+  
+  // 파싱된 결과를 객체로 변환
+  const result = {
+    type: 'STRUCTURED_LOG'
+  };
+  
+  let partIndex = 0;
+  
+  // 타임스탬프
+  if (parts[partIndex] && parts[partIndex].startsWith('[') && parts[partIndex].endsWith(']')) {
+    result.timestamp = parts[partIndex].slice(1, -1);
+    partIndex++;
+  }
+  
+  // 레벨
+  if (parts[partIndex] && parts[partIndex].startsWith('[') && parts[partIndex].endsWith(']')) {
+    result.level = parts[partIndex].slice(1, -1);
+    partIndex++;
+  }
+  
+  // 요청 ID (옵션)
+  if (parts[partIndex] && parts[partIndex].startsWith('[') && parts[partIndex].endsWith(']')) {
+    result.requestId = parts[partIndex].slice(1, -1);
+    partIndex++;
+  }
+  
+  // 나머지 파트들 파싱
+  const remainingParts = parts.slice(partIndex);
+  
+  for (const part of remainingParts) {
+    if (part.match(/^(GET|POST|PUT|DELETE|PATCH|OPTIONS)$/)) {
+      result.method = part;
+    } else if (part.startsWith('/')) {
+      result.url = part;
+    } else if (part.match(/^\d+$/)) {
+      result.status = parseInt(part);
+    } else if (part.endsWith('ms')) {
+      result.duration = parseInt(part.replace('ms', ''));
+    } else if (part.startsWith('"') && part.endsWith('"')) {
+      result.message = part.slice(1, -1);
+    } else if (part.match(/^[A-Z_]+$/)) {
+      result.code = part;
+    }
+  }
+  
+  return result;
 }
 
 /**
@@ -346,96 +429,111 @@ async function streamLogsController(req, res, next) {
       }
     }
 
-    // 주기적으로 파일 변경 확인 (1초마다)
+    // 주기적으로 파일 변경 확인 (2초마다 - 로그 블록이 완성될 시간을 줌)
     const checkInterval = setInterval(async () => {
       try {
         const stats = await fs.stat(logFilePath);
         if (stats.size > lastPosition) {
-          // 새로운 내용이 추가됨
-          const stream = require('fs').createReadStream(logFilePath, {
-            start: lastPosition,
-            encoding: 'utf8'
-          });
-          let buffer = '';
-          let blockBuffer = [];
-          stream.on('data', (chunk) => {
-            buffer += chunk;
-            const lines = buffer.split('\n');
-            buffer = lines.pop(); // 마지막 불완전한 줄은 버퍼에 보관
-            for (let idx = 0; idx < lines.length; idx++) {
-              const line = lines[idx];
-              if (!line.trim()) continue;
-              // CONTINUATION, STACK_TRACE 등 불필요한 라인 무시
-              if (line.startsWith('CONTINUATION') || line.startsWith('STACK_TRACE')) continue;
-              const match = line.match(/^\[([^\]]+)\] \[([^\]]+)\] (.+)$/);
-              if (match) {
-                let [_, timestamp, lvl, message] = match;
-                // TIMEOUT은 WARN으로 강제
-                if (/^TIMEOUT:/i.test(message)) lvl = 'WARN';
-                if (lvl === 'ERROR') {
-                  // 에러 블록 시작
-                  const errorBlock = {
-                    type: 'ERROR_BLOCK',
-                    timestamp,
-                    level: lvl,
-                    main: message,
-                    stack: [],
-                    etc: []
-                  };
-                  let j = idx + 1;
-                  while (j < lines.length) {
-                    const next = lines[j];
-                    if (/^\s+at /.test(next) || /^\s*Error:/.test(next) || /^\s*TypeError:/.test(next) || /^\s*ReferenceError:/.test(next) || /^\s*\^/.test(next) || /^\s*~/.test(next) || /node_modules/.test(next) || /\(.*:\d+:\d+\)/.test(next)) {
-                      errorBlock.stack.push(next.trim());
-                      j++;
-                    } else if (/^\[.*\] \[ERROR\]/.test(next)) {
-                      const m2 = next.match(/^\[([^\]]+)\] \[ERROR\] (.+)$/);
-                      if (m2) {
-                        const msg2 = m2[2];
-                        if (/^(Status:|Duration:|Body:)/.test(msg2.trim())) {
-                          errorBlock.etc.push(msg2.trim());
-                          j++;
-                          continue;
-                        }
+          // 약간의 지연을 두어 로그 블록이 완전히 쓰여질 때까지 기다림
+          setTimeout(async () => {
+            try {
+              // 새로운 내용이 추가됨 - 스트림으로 새로운 부분만 읽기
+              const stream = require('fs').createReadStream(logFilePath, {
+                start: lastPosition,
+                encoding: 'utf8'
+              });
+              
+              let newContent = '';
+              
+              stream.on('data', (chunk) => {
+                newContent += chunk;
+              });
+              
+              stream.on('end', () => {
+                if (newContent.trim()) {
+                  // 새로운 로그들을 파싱
+                  const newLogs = [];
+                  const lines = newContent.split('\n');
+                  let currentLog = null;
+                  
+                  for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed) continue;
+                    
+                    // 메인 로그 라인 감지 (타임스탬프로 시작)
+                    if (trimmed.startsWith('[') && trimmed.includes('] [')) {
+                      // 이전 로그 완료
+                      if (currentLog) {
+                        newLogs.push(currentLog);
                       }
-                      break;
-                    } else {
-                      break;
+                      
+                      // 새 로그 파싱
+                      currentLog = parseStructuredLogLine(trimmed);
+                    }
+                    // 추가 정보 라인들 (들여쓰기로 시작)
+                    else if (trimmed.startsWith('    ') && currentLog) {
+                      if (trimmed.startsWith('    1.') || trimmed.match(/^\s+\d+\./)) {
+                        // 스택 트레이스 라인
+                        if (!currentLog.stack) currentLog.stack = [];
+                        currentLog.stack.push(trimmed.replace(/^\s+\d+\.\s*/, ''));
+                      } else if (trimmed.startsWith('    RES_BODY:')) {
+                        // 응답 바디
+                        try {
+                          currentLog.responseBody = JSON.parse(trimmed.replace('    RES_BODY:', '').trim());
+                        } catch (e) {
+                          currentLog.responseBody = trimmed.replace('    RES_BODY:', '').trim();
+                        }
+                      } else if (trimmed.startsWith('    REQ_BODY:')) {
+                        // 요청 바디
+                        try {
+                          currentLog.requestBody = JSON.parse(trimmed.replace('    REQ_BODY:', '').trim());
+                        } catch (e) {
+                          currentLog.requestBody = trimmed.replace('    REQ_BODY:', '').trim();
+                        }
+                      } else if (trimmed.startsWith('    IP:')) {
+                        currentLog.ip = trimmed.replace('    IP:', '').trim();
+                      } else if (trimmed.startsWith('    QUERY:')) {
+                        try {
+                          currentLog.query = JSON.parse(trimmed.replace('    QUERY:', '').trim());
+                        } catch (e) {
+                          currentLog.query = trimmed.replace('    QUERY:', '').trim();
+                        }
+                      } else if (trimmed.startsWith('    PARAMS:')) {
+                        try {
+                          currentLog.params = JSON.parse(trimmed.replace('    PARAMS:', '').trim());
+                        } catch (e) {
+                          currentLog.params = trimmed.replace('    PARAMS:', '').trim();
+                        }
+                      } else if (trimmed.startsWith('    CONTENT_TYPE:')) {
+                        currentLog.contentType = trimmed.replace('    CONTENT_TYPE:', '').trim();
+                      }
                     }
                   }
-                  res.write(`data: ${JSON.stringify(errorBlock)}\n\n`);
-                  idx = j - 1;
-                  continue;
-                } else if (/^(RESPONSE:|TIMEOUT:)/.test(message)) {
-                  // 응답/타임아웃 블록
-                  res.write(`data: ${JSON.stringify({
-                    type: 'RESPONSE_BLOCK',
-                    timestamp,
-                    level: lvl,
-                    message
-                  })}\n\n`);
-                  continue;
-                } else {
-                  // 일반 블록
-                  res.write(`data: ${JSON.stringify({
-                    type: 'LOG',
-                    timestamp,
-                    level: lvl,
-                    message
-                  })}\n\n`);
-                  continue;
+                  
+                  // 모든 완성된 로그들을 전송 (마지막 로그는 다음에 완성될 수도 있으므로 제외)
+                  for (const log of newLogs) {
+                    res.write(`data: ${JSON.stringify(log)}\n\n`);
+                  }
+                  
+                  // 현재 처리 중인 로그가 완전히 끝난 것 같으면 전송
+                  if (currentLog && newContent.includes('\n    ') && !newContent.trim().endsWith('    ')) {
+                    res.write(`data: ${JSON.stringify(currentLog)}\n\n`);
+                  }
                 }
-              } // else: 스택트레이스/들여쓰기 등은 위에서 처리
+                
+                lastPosition = stats.size;
+              });
+            } catch (error) {
+              console.error('지연된 로그 스트리밍 오류:', error);
             }
-            lastPosition = stats.size;
-          });
+          }, 200); // 200ms 지연
         }
       } catch (error) {
         if (error.code !== 'ENOENT') {
           console.error('로그 스트리밍 오류:', error);
         }
       }
-    }, 1000);
+    }, 2000); // 2초마다 체크
 
     // 연결 종료 시 정리
     req.on('close', () => {

@@ -54,7 +54,7 @@ async function sendMessageService(
     let actualAiProvider = ai_provider_override || config.ai.defaultProvider;
     let actualModelId = model_id_override;
 
-    if (actualUserId !== "guest" && !ai_provider_override && !model_id_override) {
+    if (!ai_provider_override && !model_id_override) {
       try {
         const userSettings = await userModel.getUserSettings(connection, actualUserId);
         if (userSettings && userSettings.ai_model_preference) {
@@ -156,7 +156,7 @@ async function editMessageService(messageId, userId, newContent, editReason = nu
 
         // 경험치 지급 로직 (userActivityService 호출 또는 직접 userModel 호출)
         // 여기서는 userModel을 직접 호출한다고 가정 (userActivityService가 아직 없을 수 있으므로)
-        if (userId !== "guest" && editResult.success) { // editResult.success 등으로 성공 여부 확인
+        if (editResult.success) { // editResult.success 등으로 성공 여부 확인
             try {
                 // addUserExperience가 connection을 받도록 수정되었다고 가정
                 await userModel.addUserExperience(connection, userId, 5, "message_edit", "메시지 편집");
@@ -303,7 +303,7 @@ async function uploadFileService(sessionId, userId, file, messageContent) {
 /**
  * 세션의 모든 메시지 조회 서비스 (강화된 유효성 검증)
  */
-async function getSessionMessagesService(connection, sessionId) {
+async function getSessionMessagesService(sessionId) {
     // 🔍 서비스 레벨에서 사전 검증
     if (!sessionId || sessionId === 'undefined' || sessionId === 'null' || typeof sessionId !== 'string') {
         console.error('[getSessionMessagesService] 잘못된 sessionId 파라미터:', {
@@ -318,7 +318,9 @@ async function getSessionMessagesService(connection, sessionId) {
 
     console.log('[getSessionMessagesService] 실행:', { sessionId, type: typeof sessionId });
 
-    return await chatModel.getSessionMessagesForClient(connection, sessionId);
+    return await withTransaction(async (connection) => {
+        return await chatModel.getSessionMessagesForClient(connection, sessionId);
+    });
 }
 
 module.exports = {

@@ -13,7 +13,15 @@ const {
 function requireFeature(requiredFeature) {
   return async (req, res, next) => {
     try {
-      const user_id = req.params.user_id || req.body.user_id || "guest";
+      const user_id = req.params.user_id || req.body.user_id;
+      
+      if (!user_id) {
+        return res.status(401).json({
+          error: "Authentication required",
+          message: "User ID is required for feature access",
+          required_feature: requiredFeature,
+        });
+      }
 
       console.log(
         `[subscriptionMiddleware] Checking feature access: ${requiredFeature} for user: ${user_id}`
@@ -68,7 +76,14 @@ function requireFeature(requiredFeature) {
 function checkDailyLimit() {
   return async (req, res, next) => {
     try {
-      const user_id = req.params.user_id || req.body.user_id || "guest";
+      const user_id = req.params.user_id || req.body.user_id;
+      
+      if (!user_id) {
+        return res.status(401).json({
+          error: "Authentication required",
+          message: "User ID is required for usage limit check",
+        });
+      }
 
       console.log(
         `[subscriptionMiddleware] Checking daily usage limit for user: ${user_id}`
@@ -111,7 +126,15 @@ function checkDailyLimit() {
 function requireTierLevel(minTierLevel) {
   return async (req, res, next) => {
     try {
-      const user_id = req.params.user_id || req.body.user_id || "guest";
+      const user_id = req.params.user_id || req.body.user_id;
+      
+      if (!user_id) {
+        return res.status(401).json({
+          error: "Authentication required",
+          message: "User ID is required for tier level check",
+          required_tier_level: minTierLevel,
+        });
+      }
 
       console.log(
         `[subscriptionMiddleware] Checking tier level: ${minTierLevel} for user: ${user_id}`
@@ -162,7 +185,14 @@ function requireTierLevel(minTierLevel) {
 function checkFileUploadLimit(fileSize) {
   return async (req, res, next) => {
     try {
-      const user_id = req.params.user_id || req.body.user_id || "guest";
+      const user_id = req.params.user_id || req.body.user_id;
+      
+      if (!user_id) {
+        return res.status(401).json({
+          error: "Authentication required",
+          message: "User ID is required for file upload limit check",
+        });
+      }
 
       console.log(
         `[subscriptionMiddleware] Checking file upload limit for user: ${user_id}, file size: ${fileSize} bytes`

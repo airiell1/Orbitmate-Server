@@ -356,12 +356,35 @@ async function getMessageEditHistory(
 async function requestAiReresponse(
   connection, // Added connection parameter
   session_id,
-  edited_message_id
-  // user_id parameter was not used in the original logic after removing connection.execute("BEGIN") etc.
-  // If user_id is needed for authorization or other logic, it should be passed and used.
-  // For now, keeping it removed as per the refactoring to simplify.
+  edited_message_id,
+  user_id // 사용자 권한 확인을 위해 다시 추가
 ) {
   try {
+    // 사용자 권한 확인 - 편집된 메시지가 해당 사용자의 것인지 또는 세션 소유자인지 확인
+    const messageOwnerCheck = await connection.execute(
+      `SELECT cm.user_id as message_owner, cs.user_id as session_owner
+       FROM chat_messages cm
+       JOIN chat_sessions cs ON cm.session_id = cs.session_id
+       WHERE cm.message_id = :edited_message_id AND cm.session_id = :session_id`,
+      { edited_message_id, session_id },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    if (messageOwnerCheck.rows.length === 0) {
+      const error = new Error("편집된 메시지를 찾을 수 없습니다.");
+      error.code = "MESSAGE_NOT_FOUND";
+      throw error;
+    }
+
+    const { MESSAGE_OWNER, SESSION_OWNER } = messageOwnerCheck.rows[0];
+    
+    // 권한 확인: 메시지 작성자이거나 세션 소유자여야 함
+    if (user_id !== MESSAGE_OWNER && user_id !== SESSION_OWNER) {
+      const error = new Error("이 작업을 수행할 권한이 없습니다.");
+      error.code = "FORBIDDEN";
+      throw error;
+    }
+
     const subsequentMessages = await connection.execute(
       `SELECT message_id, message_type 
        FROM chat_messages 

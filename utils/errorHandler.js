@@ -142,9 +142,22 @@ function logError(error, context = {}) {
  */
 function handleCentralError(err, req, res, next) {
   // 에러 로깅 (요청 ID, 사용자 ID 등 컨텍스트 정보 포함)
+  
+  // 사용자 ID 추출 - 여러 소스에서 시도
+  let userId = "unknown";
+  if (req.user && req.user.user_id) {
+    userId = req.user.user_id;
+  } else if (req.params && req.params.user_id) {
+    userId = req.params.user_id;
+  } else if (req.body && req.body.user_id) {
+    userId = req.body.user_id;
+  } else {
+    userId = "unknown";
+  }
+  
   const errorContext = {
     requestId: req.id, // req.id는 나중에 미들웨어로 추가 예정
-    userId: req.user ? req.user.user_id : "guest",
+    userId: userId,
     path: req.originalUrl,
     method: req.method,
     handler: req.route ? req.route.path : "unknown", // 어떤 라우트 핸들러에서 발생했는지
