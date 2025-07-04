@@ -77,9 +77,34 @@ async function getSessionMessagesService(sessionId) {
 async function deleteSessionService(sessionId, userId) {
   // 컨트롤러에서 sessionId와 userId가 제공되었는지 확인했다고 가정
   return await withTransaction(async (connection) => {
+    // 디버깅: 삭제 시도 전 세션과 사용자 정보 로깅
+    console.log('🔍 [DEBUG] 세션 삭제 시도:', {
+      sessionId: sessionId,
+      requestingUserId: userId
+    });
+
+    // 먼저 세션이 존재하는지, 실제 소유자가 누구인지 확인
+    try {
+      const sessionInfo = await sessionModel.getUserIdBySessionId(connection, sessionId);
+      console.log('🔍 [DEBUG] 세션 소유자 정보:', {
+        sessionId: sessionId,
+        actualOwnerId: sessionInfo.user_id,
+        requestingUserId: userId,
+        isOwner: sessionInfo.user_id === userId
+      });
+    } catch (checkError) {
+      console.log('🔍 [DEBUG] 세션 소유자 확인 실패:', checkError.message);
+    }
+
     // 모델 함수는 내부적으로 chat_messages 삭제 후 chat_sessions 삭제
     // rowsAffected를 반환하며, 0이면 삭제할 세션이 없거나 권한이 없음을 의미 (모델에서 에러 throw 안 함)
     const deletedCount = await sessionModel.deleteChatSession(connection, sessionId, userId);
+
+    console.log('🔍 [DEBUG] 삭제 결과:', {
+      sessionId: sessionId,
+      userId: userId,
+      deletedCount: deletedCount
+    });
 
     if (deletedCount === 0) {
       // 서비스 레벨에서 명시적인 에러를 발생시켜 컨트롤러가 알 수 있도록 함

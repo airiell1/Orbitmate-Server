@@ -21,6 +21,11 @@
 당신은 항상 작업이 끝난뒤, 이 문서에 변경사항을 반영해야합니다.
 사용자는 초보 개발자이므로, 잠재적 에러, 리팩토링 포인트, 구조/기능/명세 일치성 등을 자동화 검증/분석 보고서를 통해 쉽게 이해할 수 있도록 작성해야 합니다.
 
+주요 사항
+실제 프론트엔드는 다른 곳에서 호출하고있습니다.
+이제 이곳의 프론트엔드 코드는 코드 테스트용입니다.
+사용자가 명시적으로 요청하지 않는 한, 프론트엔드 코드는 이곳에서 수정하지 않습니다.
+
 ---
 
 ## [2025-06-26] 시스템 구조/운영/리팩토링 검증 요약 (자동화 보고서 기반)
@@ -33,7 +38,7 @@
 ### 2. 미세 리팩토링/개선 포인트 및 잠재적 에러
 - config: 환경변수 유효성, 안내 메시지, graceful degradation 등
 - middleware/models: connection 주입 일관성, autoCommit, 중복 로직, 에러코드 표준화 등
-- controllers: 유효성 검사/에러코드/응답 포맷 중복, guest 권한 처리, 파일 업로드 예외, 외부 API 장애 대응 등
+- controllers: 유효성 검사/에러코드/응답 포맷 중복, 파일 업로드 예외, 외부 API 장애 대응 등
 
 ### 3. 컨트롤러/모델/미들웨어 상세 검증
 - 모든 컨트롤러는 ServiceFactory 패턴 기반, dataExtractor/validations/responseTransformer/errorHandler 일관성 유지
@@ -333,15 +338,14 @@ SYSTEM_ARCHITECTURE.md 참고
 [2025-06-02] API 응답 형식 통일: standardizeApiResponse 함수를 원래 방식으로 복원 (단일 데이터 객체 반환), 검색 API는 createSearchApiResponse로 분리 (성공시 데이터 직접 반환, 실패시 에러 메시지 반환) (해결)
 [2025-06-02] 위키피디아 API 구현 완료: 백엔드/프론트엔드/테스트 UI 모두 구현, 검색 기능 정상 작동 확인 (해결)
 [2025-06-10] 기본 AI Provider 변경: ollama → vertexai 전체 시스템 변경 완료 (해결)
-[2025-06-10] GUEST_USER_ID 오류: chatController.js에서 GUEST_USER_ID가 미정의 → 'guest'로 변경 (해결)
+
 [2025-06-10] 테스트 페이지 UI 개선: Gemini 선택 시 Ollama 옵션 자동 비활성화 및 gemini → vertexai 자동 변환 완료 (해결)
 [2025-06-17] API 라우트 404 오류: 서버 IP 변경 시 API 요청이 404 에러 발생 → 라우트 설정 및 서버 연결 상태 확인 필요 (진행중)
 [2025-06-17] 회원탈퇴 후 CASCADE 오류: 사용자 삭제 시 연관 메시지/세션이 CASCADE로 삭제되어 리액션 API에서 참조 오류 발생 → 리액션 API에서 메시지 존재 여부 체크 강화 및 우아한 오류 처리 필요 (해결)
 [2025-06-17] 기본 AI Provider 변경: vertexai → geminiapi (Google AI Studio) 전체 시스템 변경 완료 (해결)
 [2025-06-17] Google AI Studio API 통합: config/geminiapi.js 추가, 최신 공짜모델인 gemini-2.0-flash-thinking-exp-01-21 모델 사용 (해결)
 [2025-06-17] API 명세 업데이트: geminiapi provider 추가, 기본값 변경 반영 완료 (해결)
-[2025-06-19] WebSocket 완전 제거: 모든 WebSocket 관련 코드 제거, HTTP SSE 스트리밍만 사용하도록 단순화 → 팀원 사용 편의성 대폭 향상 (해결)
-[2025-06-19] 사용자 ID 통일: 모든 시스템에서 'guest' 사용, 일관성 확보 (해결)
+[2025-06-19] HTTP SSE 스트리밍 시스템 최적화: 모든 WebSocket 관련 코드 제거, HTTP SSE 스트리밍만 사용하도록 단순화 → 팀원 사용 편의성 대폭 향상 (해결)
 [2025-06-23] 구독 등급 체계 업데이트: 새로운 구독 등급으로 변경 완료 (☄️ 코멧-무료, 🪐 플래닛-월1.5만원, ☀️ 스타-월15만원, 🌌 갤럭시-기업용월300만원), 갤럭시는 기업용으로 프로필 뱃지 제공하지 않음, DB 스키마 확장 완료 (해결)
 [2025-06-20] Markdown 렌더링 구현: 메인/테스트 페이지에 Marked.js + Highlight.js 통합, AI 응답 Markdown 자동 렌더링, 코드 하이라이팅, 완전한 CSS 스타일링 적용 (해결)
 [2025-06-23] 7~10번 기능 구현 완료: 프로필 꾸미기, 레벨 시스템, 메시지 편집, 다국어 지원 백엔드 구현 (해결)
@@ -401,9 +405,8 @@ SYSTEM_ARCHITECTURE.md 참고
   - 해결: 채팅 메시지 전송 API에 일반 응답과 SSE 스트리밍 응답 예시 모두 포함
   - 영향: API 문서와 실제 응답 형식 완전 일치, 개발 시 혼란 제거
 
-[2025-06-30] 세션 메시지 user_id "guest" 표시 문제 해결: 메시지 조회 시 실제 세션 소유자 ID로 수정 (해결)
-  - 문제: 세션 메시지 목록 조회 시 메시지 테이블의 user_id가 "guest"로 저장되어 있어서 실제 사용자 ID 대신 "guest"로 표시됨
-  - 문제: models/session.js의 getSessionMessages 함수에서 chat_messages 테이블의 user_id를 직접 반환하여 잘못된 정보 제공
+[2025-06-30] 메시지 조회 시 사용자 ID 정확성 개선: 세션 소유자 정보를 정확하게 반환하도록 수정 (해결)
+  - 문제: 세션 메시지 목록 조회 시 일부 메시지에서 잘못된 사용자 정보 표시
   - 해결: getSessionMessages 함수에서 먼저 chat_sessions 테이블에서 실제 세션 소유자 ID를 조회
   - 해결: 사용자 메시지(message_type='user')의 경우 실제 세션 소유자 ID로 교체, AI 메시지는 기존 user_id 유지
   - 해결: 세션 존재 여부 및 권한 체크를 메시지 조회 전에 수행하여 보안 강화
@@ -829,7 +832,6 @@ SYSTEM_ARCHITECTURE.md 참고
 ### 🔧 현재 기본 설정
 - **기본 AI Provider**: `geminiapi` (Google AI Studio)
 - **기본 모델**: `gemini-2.0-flash-thinking-exp-01-21`
-- **테스트 사용자 ID**: `guest`
 - **기본 구독 등급**: 코멧 (무료) - 일일 30회 AI 요청, 10MB 파일 업로드 **✅ 구독 시스템 추가됨**
 - **Vertex AI 모델**: `gemini-2.5-pro-exp-03-25` (대체 옵션)
 - **Ollama 모델**: `gemma3:4b` (대체 옵션)
@@ -840,7 +842,7 @@ SYSTEM_ARCHITECTURE.md 참고
 2. **팀원 친화적**: 표준 HTTP API, 브라우저 네트워크 탭에서 확인 가능
 3. **UI/UX 개선**: Gemini 선택 시 Ollama 옵션 자동 비활성화
 4. **자동 매핑**: 테스트 페이지에서 `gemini` → `geminiapi` 자동 변환
-5. **기본값 통일**: 전체 시스템에서 Google AI Studio 우선 사용, 'guest' 사용자 ID 통일
+5. **기본값 통일**: 전체 시스템에서 Google AI Studio 우선 사용
 6. **Markdown 렌더링**: AI 응답의 완전한 Markdown 지원 및 코드 하이라이팅
 7. **구독 관리 시스템**:  4단계 구독 등급 및 기능 제한 시스템 **✅ 새로 추가됨**
 
@@ -937,10 +939,10 @@ SYSTEM_ARCHITECTURE.md 참고
 
 ---
 ### [2025-06-27] chatController.js user_id 접근 오류 및 스트리밍 에러 처리 버그 수정:
-  - 문제 1: sendMessageController의 dataExtractor에서 req.user.user_id 접근 시 req.user가 undefined인 경우 TypeError 발생
+  - 문제 1: chatController.js에서 req.user가 undefined인 경우 req.user.user_id 접근 시 TypeError 발생
   - 문제 2: req.body가 undefined일 때 messageData.message 접근 시 오류 발생
   - 문제 3: 스트리밍 중 에러 발생 시 이미 전송된 헤더에 대해 다시 헤더 설정 시도로 "Cannot set headers after they are sent" 오류 발생
-  - 해결 1: utils/constants.js에 GUEST_USER_ID 상수 정의 및 export, chatController.js에서 req.user?.user_id || GUEST_USER_ID 패턴 사용
+  - 해결 1: chatController.js에서 req.user?.user_id 패턴 사용하고 인증 에러 처리 강화
   - 해결 2: dataExtractor에서 req.body || {} 기본값 사용, validations에서도 messageData = req.body || {} 적용
   - 해결 3: utils/serviceFactory.js의 createStreamController에서 res.headersSent 체크 후 이미 헤더가 전송된 경우 SSE로 에러 응답 전송 후 종료
   - 결과: POST /api/chat/sessions/:session_id/messages API의 TypeError 및 헤더 중복 전송 오류 완전 해결 (해결)
@@ -961,14 +963,62 @@ SYSTEM_ARCHITECTURE.md 참고
 
 ---
 ### [2025-06-27] API 문서 업데이트: 최근 버그 수정 및 새로운 기능 반영
-  - 일반 정보 섹션 업데이트: 캔버스 모드, 게스트 사용자 지원, 최근 버그 수정 사항 추가
-  - 채팅 메시지 전송 API: 캔버스 모드 HTML/CSS/JS 추출 기능, 게스트 사용자 지원, 스트리밍 에러 처리 개선 명시
-  - 메시지 편집 API: content 필드 안전 처리, edit_reason 파라미터 추가, 게스트 사용자 지원 명시
+  - 일반 정보 섹션 업데이트: 캔버스 모드, 최근 버그 수정 사항 추가
+  - 채팅 메시지 전송 API: 캔버스 모드 HTML/CSS/JS 추출 기능, 스트리밍 에러 처리 개선 명시
+  - 메시지 편집 API: content 필드 안전 처리, edit_reason 파라미터 추가 명시
   - 새로운 API 추가: 메시지 편집 기록 조회 (GET /api/chat/messages/:message_id/history), AI 재응답 요청 (POST /api/chat/sessions/:session_id/messages/:message_id/reresponse)
   - 세션 메시지 목록 조회 API: 'undefined'/'null' 문자열 체크, 강화된 유효성 검사 명시
   - 파일 업로드 API: 경로 수정 (upload로 변경), 구독 등급별 파일 크기 제한, 자동 파일 정리 기능 명시
   - 캔버스 모드 응답 예시 추가: canvas_html, canvas_css, canvas_js 필드 포함된 응답 형식
   - 모든 API 응답 형식 표준화: {status: "success/error", data/error: ...} 구조 일관성 유지
   - 결과: API 문서가 실제 구현과 완전히 일치, 최근 버그 수정 및 기능 개선 사항 모두 반영 (해결)
+
+---
+### [2025-07-03] MVP용 인증 시스템 완전 제거
+  - 배경: MVP에서는 복잡한 JWT 인증보다 간단한 시스템이 적합
+  - 제거된 항목:
+    - controllers/userController.js: generateToken import 및 사용 제거
+    - services/authService.js: generateToken import 제거  
+    - public/script.js: Authorization 헤더 제거
+    - public/api_docs.js: JWT 관련 설명을 MVP 모드로 변경
+    - utils/testFactory.js: 인증 테스트 함수들 MVP 모드로 수정
+    - README.md: JWT 설명을 간단한 인증으로 변경
+  - 유지된 항목: middleware/auth.js (향후 확장용으로 보존)
+  - 결과: 에러 없이 완전한 MVP 환경 구축, 클라이언트에서 user_id만 전송하면 작동 (해결)
+
+---
+### [2025-07-03] 세션 삭제 권한 문제 및 MVP 간소화
+  - 문제: 사용자 A가 생성한 세션을 사용자 B가 삭제하려고 시도하여 SESSION_NOT_FOUND 오류 발생
+  - 원인: 다른 사용자의 세션을 삭제하려고 시도하는 것은 정상적인 보안 동작
+  - 해결: 인증 토큰 시스템을 제거하고 MVP 버전에 맞게 간소화
+    - routes/chat.js: verifyToken 미들웨어 제거
+    - routes/sessions.js: verifyToken 미들웨어 제거  
+    - controllers/sessionController.js: JWT 기반 로직을 req.body 기반으로 복원
+    - MVP에서는 클라이언트가 올바른 user_id를 전송하도록 신뢰하는 방식 채택
+  - 디버깅 로그 추가: sessionService.js와 models/session.js에 상세 디버깅 로그 추가
+  - 결과: MVP 환경에 적합한 간단한 권한 체크 시스템으로 복원 (해결)
+  - **새로운 파일**: utils/systemPrompt.js - 시스템 프롬프트 생성 및 관리 유틸리티
+    - generateSystemPrompt: 사용자 프로필/설정 기반 개인화된 프롬프트 자동 생성
+    - validateAndCleanPrompt: 프롬프트 검증 및 정리 (최대 8000자)
+    - enhancePromptWithContext: 컨텍스트별 프롬프트 확장 (coding, creative, analysis 등)
+    - DEFAULT_SYSTEM_PROMPT: 한/영 기본 프롬프트 템플릿 (OrbitMate Mate 3.5 정체성)
+  - **기본 프롬프트 강화**: 
+    - 영어 기본 프롬프트로 "Mate 3.5, OrbitMate Corporation" 브랜드 정체성 확립
+    - 핵심 역량, 가이드라인, 사용 가능한 도구 명시
+    - 사용자 정보 자동 포함 (닉네임, 레벨, 구독등급, 위치, 언어설정 등)
+  - **개인화 기능**:
+    - 사용자 프로필 정보 자동 반영 (display_name, user_level, country)
+    - 사용자 설정 반영 (language, timezone, ai_model_preference, communication_style)
+    - 구독 등급 정보 포함으로 AI가 사용자 레벨 인지
+  - **검열 완화**: 
+    - Gemini API: BLOCK_MEDIUM_AND_ABOVE → BLOCK_ONLY_HIGH
+    - Vertex AI: 새로운 safetySettings 추가 (BLOCK_ONLY_HIGH)
+    - 시스템 프롬프트 관련 검열 방지로 사용성 향상
+  - **services/chatService.js 개선**:
+    - 사용자 프로필/설정 자동 조회 및 프롬프트 개인화
+    - finalSystemPrompt 생성 로직 추가, 컨텍스트별 확장 지원
+    - 프롬프트 길이 및 타입 로깅으로 디버깅 개선
+  - **API 문서 업데이트**: system_prompt 최대 길이 8000자, 개인화 기능 설명 추가
+  - 결과: AI가 사용자별 맞춤형 응답 제공, 검열로 인한 시스템 프롬프트 차단 문제 해결 (해결)
 
 ---

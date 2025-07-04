@@ -548,3 +548,4 @@ LEFT JOIN user_profiles up ON u.user_id = up.user_id
 WHERE u.user_id = 'A66C8382886C4EA6B57B9F1033E49EB2';
 
 COMMIT;
+

@@ -7,11 +7,15 @@ require('dotenv').config(); // 환경 변수 로드
 
 const { initOracleClient, initializeDbPool } = require('./config/database'); // DB 관련 함수들 가져오기
 const { logApiRequest, logApiError, initializeLogger } = require('./middleware/logger'); // JSON 기반 로깅 미들웨어 포함
+const { aiLoggingMiddleware } = require('./middleware/aiLogger'); // AI 전용 로깅 미들웨어
 
 
 const app = express();
 // 🔥 중앙집중식 API 자동 로깅 미들웨어 적용 (모든 라우트보다 먼저 설정)
 app.use('/api', logApiRequest);
+
+// 🎯 AI 전용 로깅 미들웨어 적용 (채팅 관련 API)
+app.use('/api', aiLoggingMiddleware);
 
 // ** 라우터 변수만 선언 (require는 나중에) **
 let usersRouter;
@@ -22,7 +26,6 @@ let searchRouter;
 let subscriptionsRouter;
 let translationsRouter; // translationsRouter 변수 선언 추가
 let feedbackRouter; // feedbackRouter 변수 선언 추가
-let logsRouter; // logsRouter 변수 선언 추가
 
 
 // 미들웨어 설정
@@ -35,16 +38,11 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-
-
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 app.get('/test', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'test.html'));
-});
-app.get('/log', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'log.html'));
 });
 
 // favicon.ico 요청 처리 (404 오류 방지)
@@ -88,7 +86,6 @@ async function startServer() {  try {
     subscriptionsRouter = require('./routes/subscriptions'); // Require subscriptionsRouter
     translationsRouter = require('./routes/translations'); // translationsRouter 로드
     feedbackRouter = require('./routes/feedback'); // feedbackRouter 로드
-    logsRouter = require('./routes/logs'); // logsRouter 로드
 
 
     app.use('/api/users', usersRouter);
@@ -99,7 +96,6 @@ async function startServer() {  try {
     app.use('/api/subscriptions', subscriptionsRouter); // Mount subscriptionsRouter
     app.use('/api/translations', translationsRouter); // translationsRouter 마운트
     app.use('/api/feedback', feedbackRouter); // feedbackRouter 마운트
-    app.use('/api/logs', logsRouter); // logsRouter 마운트
 
     // 서버 상태 확인용 엔드포인트
     app.get('/api/health', (req, res) => {

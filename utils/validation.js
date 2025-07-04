@@ -183,10 +183,10 @@ function validateMessageId(req) {
 // 사용자 접근 권한 검사
 function validateUserAccess(req) {
   // 기본적인 사용자 권한 검사 로직
-  const user_id = req.user ? req.user.user_id : null;
+  const user_id = req.body ? req.body.user_id : null;
   if (!user_id) {
-    const error = new Error("사용자 인증이 필요합니다.");
-    error.code = "UNAUTHORIZED";
+    const error = new Error("user_id가 필요합니다.");
+    error.code = "INVALID_INPUT";
     return error;
   }
   return null;
@@ -263,9 +263,9 @@ function validateMessageId(messageIdOrReq, fieldName = 'Message ID') {
 function validateUserAccess(userIdOrReq, sessionUserId = null, fieldName = 'User access') {
   let userId;
   
-  // req 객체인지 확인하고 user에서 추출
-  if (userIdOrReq && typeof userIdOrReq === 'object' && userIdOrReq.user) {
-    userId = userIdOrReq.user.user_id || null;
+  // req 객체인지 확인하고 body에서 추출
+  if (userIdOrReq && typeof userIdOrReq === 'object' && userIdOrReq.body) {
+    userId = userIdOrReq.body.user_id || null;
   } else if (userIdOrReq && typeof userIdOrReq === 'object' && userIdOrReq.params) {
     userId = userIdOrReq.params.user_id;
   } else {
@@ -273,8 +273,8 @@ function validateUserAccess(userIdOrReq, sessionUserId = null, fieldName = 'User
   }
   
   if (!userId) {
-    const error = new Error("사용자 인증이 필요합니다.");
-    error.code = "UNAUTHORIZED";
+    const error = new Error("user_id가 필요합니다.");
+    error.code = "INVALID_INPUT";
     return error;
   }
   

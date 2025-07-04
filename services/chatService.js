@@ -6,6 +6,11 @@ const { fetchChatCompletion } = require("../utils/aiProvider");
 const { withTransaction } = require("../utils/dbUtils");
 const { oracledb } = require("../config/database"); // oracledb import 추가
 const config = require("../config");
+const { 
+  generateSystemPrompt, 
+  validateAndCleanPrompt, 
+  enhancePromptWithContext 
+} = require("../utils/systemPrompt");
 
 /**
  * 채팅 메시지 전송 및 AI 응답 처리 서비스
@@ -13,13 +18,13 @@ const config = require("../config");
 async function sendMessageService(
   sessionId,
   userId,
-  messageData, // { message, systemPrompt, specialModeType, ...overrides }
+  messageData, // { message, system_prompt, specialModeType, ...overrides }
   clientIp,
   streamResponseCallback // 스트리밍 콜백 함수 (컨트롤러에서 전달)
 ) {
   const {
     message,
-    systemPrompt,
+    system_prompt,
     specialModeType,
     max_output_tokens_override,
     context_message_limit,
@@ -91,12 +96,36 @@ async function sendMessageService(
     );
     const userMessageId = userMessageResult.user_message_id;
 
-    // 4. 대화 이력 조회
+    // 4. 사용자 프로필 및 설정 조회 (시스템 프롬프트 개인화용)
+    let userProfile = null;
+    let userSettings = null;
+    
+    try {
+      // 사용자 프로필 정보 조회
+      userProfile = await userModel.getUserProfile(connection, actualUserId);
+      
+      // 사용자 설정 조회
+      userSettings = await userModel.getUserSettings(connection, actualUserId);
+    } catch (profileError) {
+      console.warn(`[ChatService] 사용자 ${actualUserId} 프로필/설정 조회 실패: ${profileError.message}`);
+      // 프로필 조회 실패는 치명적이지 않음
+    }
+
+    // 5. 시스템 프롬프트 생성 및 개선
+    const enhancedSystemPrompt = generateSystemPrompt(userProfile, userSettings, system_prompt);
+    const finalSystemPrompt = enhancePromptWithContext(
+      validateAndCleanPrompt(enhancedSystemPrompt), 
+      specialModeType
+    );
+
+    console.log(`[ChatService] 시스템 프롬프트 적용 - 길이: ${finalSystemPrompt.length}자, 타입: ${specialModeType || 'general'}`);
+
+    // 6. 대화 이력 조회
     const chatHistoryForAI = await chatModel.getChatHistoryFromDB(
       connection, sessionId, false, context_message_limit
     );
 
-    // 5. AI 응답 요청
+    // 7. AI 응답 요청
     const callOptions = {
       max_output_tokens_override,
       model_id_override: actualModelId, // 최종 결정된 모델 ID
@@ -106,13 +135,13 @@ async function sendMessageService(
     const requestContext = { clientIp };
 
     const aiResponseFull = await fetchChatCompletion(
-      actualAiProvider, message, chatHistoryForAI, systemPrompt,
+      actualAiProvider, message, chatHistoryForAI, finalSystemPrompt,
       specialModeType,
       specialModeType === 'stream' ? streamResponseCallback : null, // 스트리밍 모드일 때만 콜백 전달
       callOptions, requestContext
     );
 
-    // 6. AI 응답 DB에 저장
+    // 8. AI 응답 DB에 저장
     // 스트리밍의 경우, fetchChatCompletion이 최종 fullContent를 반환해야 DB 저장 가능.
     // 또는, 컨트롤러에서 스트리밍 완료 후 별도 API로 AI 메시지 ID와 content를 받아 저장할 수도 있음.
     // 여기서는 fetchChatCompletion이 스트리밍 여부와 관계없이 최종 content를 반환한다고 가정.
@@ -125,11 +154,24 @@ async function sendMessageService(
       }
     }
 
-    const aiContentToSave = aiResponseFull.content || "(함수 호출 사용됨)"; // 함수 호출만 있고 텍스트 응답이 없을 경우
+    let aiContentToSave = aiResponseFull.content || "(함수 호출 사용됨)";
+    if (aiContentToSave.includes(message)) {
+        console.warn("AI 응답에 사용자 메시지가 중복 포함됨. 중복 제거 처리.");
+        aiContentToSave = aiContentToSave.replace(message, "");
+    }
 
     const aiMessageResult = await chatModel.saveAiMessageToDB(
-      connection, sessionId, actualUserId, aiContentToSave, aiResponseFull.actual_output_tokens
+      connection, sessionId, actualUserId, aiContentToSave.trim(), aiResponseFull.actual_output_tokens
     );
+
+    // 🎯 채팅 메시지 전송 성공 시 경험치 지급 (1 경험치)
+    try {
+      await userModel.addUserExperience(connection, actualUserId, 1, "chat_message", "채팅 메시지 전송");
+      console.log(`[ChatService] 사용자 ${actualUserId}에게 채팅 메시지 전송 경험치 1점 지급 완료`);
+    } catch (expError) {
+      console.warn(`[ChatService] 사용자 ${actualUserId} 경험치 지급 실패: ${expError.message}`);
+      // 경험치 지급 실패는 주 트랜잭션 실패로 이어지지 않도록 처리
+    }
 
     return {
       user_message_id: userMessageId,

@@ -375,13 +375,10 @@ async function addUserExperience(connection, user_id, points, exp_type = "chat",
     );
 
     if (userProfileResult.rows.length === 0) {
-      // 프로필이 없으면 생성 후 재시도 (createDefaultUserProfile은 connection을 인자로 받도록 수정 필요)
-      // await createDefaultUserProfile(connection, user_id); // 이 함수가 connection을 받도록 수정되었다고 가정
-      // return await addUserExperience(connection, user_id, points, exp_type, reason);
-      // 또는 에러 처리
-      const error = new Error("사용자 프로필을 찾을 수 없습니다. 경험치를 추가할 수 없습니다.");
-      error.code = "USER_NOT_FOUND";
-      throw error;
+      // 프로필이 없으면 기본 프로필 생성 후 재시도
+      console.log(`[addUserExperience] 사용자 ${user_id}의 프로필이 없음. 기본 프로필 생성 중...`);
+      await createDefaultUserProfile(connection, user_id);
+      return await addUserExperience(connection, user_id, points, exp_type, reason);
     }
 
     const currentData = toSnakeCaseObj(userProfileResult.rows[0]);
@@ -565,9 +562,10 @@ async function getUserLevel(connection, user_id) {
     );
 
     if (result.rows.length === 0) {
-      const error = new Error("사용자 레벨 정보를 찾을 수 없습니다.");
-      error.code = "USER_NOT_FOUND";
-      throw error;
+      // 프로필이 없으면 기본 프로필 생성 후 재조회
+      console.log(`[getUserLevel] 사용자 ${user_id}의 프로필이 없음. 기본 프로필 생성 중...`);
+      await createDefaultUserProfile(connection, user_id);
+      return await getUserLevel(connection, user_id);
     }
 
     const data = toSnakeCaseObj(result.rows[0]);

@@ -140,31 +140,27 @@ function createDeleteTest(endpoint, options = {}) {
  * 사용자 관련 테스트 팩토리들
  */
 
-// 사용자 인증 테스트
+// 사용자 인증 테스트 (MVP에서는 비활성화)
 function createAuthTest(endpoint, credentials = {}) {
   return createPostTest(endpoint, credentials, {
     responseProcessor: (data) => {
-      if (data.token) {
-        localStorage.setItem('authToken', data.token);
-        console.log('🔐 Auth token saved to localStorage');
-      }
+      // MVP에서는 토큰 저장하지 않음
+      console.log('🔐 MVP mode - no token required');
       return data;
     },
-    successMessage: `✅ Authentication successful`
+    successMessage: `✅ Authentication successful (MVP mode)`
   });
 }
 
-// 인증이 필요한 테스트
+// 인증이 필요한 테스트 (MVP에서는 인증 헤더 없음)
 function createAuthenticatedTest(endpoint, options = {}) {
   return createApiTest({
     endpoint,
     headers: {
-      'Authorization': `Bearer ${localStorage.getItem('authToken') || ''}`
+      // MVP에서는 인증 헤더 없음
     },
     errorHandler: (error) => {
-      if (error.message.includes('401') || error.message.includes('403')) {
-        console.warn('⚠️ Authentication required. Please login first.');
-      }
+      console.warn('⚠️ MVP mode - no authentication required');
       return { success: false, error: error.message };
     },
     ...options

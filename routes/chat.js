@@ -43,14 +43,14 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage });
 
-// --- 인증 필요한 라우트 --- (verifyToken 미들웨어 제거)
+// --- 인증 없는 라우트 (MVP) ---
 // 새 채팅 세션 생성
 router.post('/sessions', createSessionController);
 
 // 채팅 세션 정보 수정
 router.put('/sessions/:session_id', updateSessionController);
 
-// 채팅 세션 삭제 // 추가
+// 채팅 세션 삭제
 router.delete('/sessions/:session_id', deleteSessionController);
 
 // 특정 세션의 메시지 목록 조회

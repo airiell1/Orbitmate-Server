@@ -14,7 +14,6 @@ const {
 
 const userModel = require("../models/user");
 const { standardizeApiResponse } = require("../utils/apiResponse");
-const { generateToken } = require("../middleware/auth");
 const { API_TEST_USER_ID } = require("../utils/constants");
 const { withTransaction } = require("../utils/dbUtils");
 const config = require("../config");
@@ -73,9 +72,8 @@ async function loginUserController(req, res, next) {
       return await userModel.loginUser(connection, email, password);
     });
 
-    // JWT 토큰 생성
-    const token = generateToken({ user_id: result.user_id, email: result.email });
-    const finalResult = { ...result, token };
+    // MVP에서는 토큰 없이 사용자 정보만 반환
+    const finalResult = { ...result };
 
     const apiResponse = standardizeApiResponse(finalResult);
     res.status(apiResponse.statusCode).json(apiResponse.body);

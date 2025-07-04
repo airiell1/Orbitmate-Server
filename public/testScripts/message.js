@@ -146,9 +146,8 @@ export async function editMessageTest() {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                new_content,
-                edit_reason,
-                user_id: 'guest' // 테스트용
+                content: new_content,
+                edit_reason
             })
         });
         const data = await response.json();
@@ -194,10 +193,7 @@ export async function requestAiReresponseTest() {
     try {
         const response = await fetch(`/api/chat/sessions/${session_id}/messages/${message_id}/reresponse`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                user_id: 'guest' // 테스트용
-            })
+            headers: { 'Content-Type': 'application/json' }
         });
         const data = await response.json();
         updateApiResponse(data);

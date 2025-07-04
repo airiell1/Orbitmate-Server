@@ -169,7 +169,7 @@ async function initializeSession() {
     }
 }
 
-function addMessage(sender, text, messageId = null, isEdited = false, isRealtime = false) {
+function addMessage(sender, text, messageId = null, isEdited = false, isRealtime = false, timestamp = null) {
     const messageElement = document.createElement('div');
     messageElement.classList.add('message');
     
@@ -181,7 +181,25 @@ function addMessage(sender, text, messageId = null, isEdited = false, isRealtime
     
     if (messageId) {
         messageElement.dataset.messageId = messageId; // 메시지 ID를 data 속성으로 저장
-    }    const contentSpan = document.createElement('span');
+    }
+
+    // 타임스탬프 표시 추가
+    if (timestamp) {
+        const timestampElement = document.createElement('div');
+        timestampElement.classList.add('message-timestamp');
+        const date = new Date(timestamp);
+        timestampElement.textContent = date.toLocaleString('ko-KR', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+        messageElement.appendChild(timestampElement);
+    }
+
+    const contentSpan = document.createElement('span');
     contentSpan.classList.add('message-content');
     
     if (sender === 'user') {
@@ -371,7 +389,7 @@ async function sendMessage() {
         const requestBody = {
             message: originalMessageText,
             user_id: GUEST_USER_ID,
-            systemPrompt: systemPromptToSend,
+            system_prompt: systemPromptToSend,
             max_output_tokens_override: currentMaxOutputTokens,
             context_message_limit: currentContextLimit
             // ai_provider_override: selectedAiProvider,
@@ -397,9 +415,8 @@ async function sendMessage() {
         const response = await fetch(`/api/chat/sessions/${currentSessionId}/messages`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                // 필요시 인증 토큰 추가
-                // 'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+                'Content-Type': 'application/json'
+                // MVP에서는 인증 없음
             },
             body: JSON.stringify(requestBody)
         });

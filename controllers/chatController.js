@@ -35,12 +35,12 @@ const sendMessageController = createStreamController(
     dataExtractor: (req) => {
       const { session_id } = req.params;
       const messageData = req.body || {};
-      const user_id = req.user?.user_id;
+      const user_id = messageData.user_id;
       const clientIp = req.ip || req.connection.remoteAddress || "127.0.0.1";
       
       if (!user_id) {
-        const err = new Error("사용자 인증이 필요합니다.");
-        err.code = "UNAUTHORIZED";
+        const err = new Error("user_id가 필요합니다.");
+        err.code = "INVALID_INPUT";
         throw err;
       }
       
@@ -114,24 +114,25 @@ const editMessageController = createUpdateController(
   {
     dataExtractor: (req) => {
       const { message_id } = req.params;
-      const { content, edit_reason } = req.body;
-      const user_id = req.user?.user_id || req.body.user_id;
+      const { message, new_content, edit_reason, user_id } = req.body;
       
       if (!user_id) {
-        const err = new Error("사용자 인증이 필요합니다.");
-        err.code = "UNAUTHORIZED";
+        const err = new Error("user_id가 필요합니다.");
+        err.code = "INVALID_INPUT";
         throw err;
       }
       
-      // content가 undefined인 경우 빈 문자열로 처리하여 trim() 에러 방지
-      const safeContent = content || '';
+      // message 또는 new_content 둘 다 지원
+      const content = message || new_content || '';
       
-      return [message_id, user_id, safeContent.trim(), edit_reason];
+      return [message_id, user_id, content.trim(), edit_reason];
     },
     validations: [
       (req) => {
         const { message_id } = req.params;
-        const { content } = req.body;
+        const { message, new_content } = req.body;
+        
+        const content = message || new_content;
         
         if (!message_id || !content || typeof content !== "string" || content.trim().length === 0) {
           const err = new Error("메시지 ID와 새로운 내용(비어있지 않은 문자열)이 필요합니다.");
@@ -180,11 +181,11 @@ const requestAiReresponseController = createController(
   {
     dataExtractor: (req) => {
       const { session_id, message_id } = req.params;
-      const user_id = req.user?.user_id;
+      const { user_id } = req.body;
       
       if (!user_id) {
-        const err = new Error("사용자 인증이 필요합니다.");
-        err.code = "UNAUTHORIZED";
+        const err = new Error("user_id가 필요합니다.");
+        err.code = "INVALID_INPUT";
         throw err;
       }
       
@@ -284,11 +285,11 @@ const deleteMessageController = createDeleteController(
   {
     dataExtractor: (req) => {
       const { message_id } = req.params;
-      const user_id = req.user?.user_id;
+      const { user_id } = req.body || {};
       
       if (!user_id) {
-        const err = new Error("사용자 인증이 필요합니다.");
-        err.code = "UNAUTHORIZED";
+        const err = new Error("user_id가 필요합니다.");
+        err.code = "INVALID_INPUT";
         throw err;
       }
       
@@ -319,14 +320,13 @@ const uploadFile = createFileUploadController(
   {
     dataExtractor: (req) => {
       const { session_id } = req.params;
-      const { message_content } = req.body;
-      const user_id = req.user?.user_id;
+      const { message_content, user_id } = req.body;
       const files = req.files || (req.file ? [req.file] : []);
       const file = files.length > 0 ? files[0] : null;
       
       if (!user_id) {
-        const err = new Error("사용자 인증이 필요합니다.");
-        err.code = "UNAUTHORIZED";
+        const err = new Error("user_id가 필요합니다.");
+        err.code = "INVALID_INPUT";
         throw err;
       }
       

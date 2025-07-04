@@ -64,3 +64,6 @@ module.exports = {
   generateToken,
   verifyToken,
 };
+
+// ⚠️ 중요 공지: MVP 버전에서는 인증을 사용하지 않습니다
+// 이 파일은 향후 확장 시에만 사용될 예정입니다

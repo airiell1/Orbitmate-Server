@@ -16,17 +16,35 @@ const defaultGenerationConfig = {
   maxOutputTokens: 65535, // Vertex AI의 기본 최대값 또는 서비스 한도에 따름
 };
 
+// 안전성 설정 (완화된 검열 설정)
+const safetySettings = [
+  {
+    category: "HARM_CATEGORY_HATE_SPEECH",
+    threshold: "BLOCK_ONLY_HIGH",
+  },
+  {
+    category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+    threshold: "BLOCK_ONLY_HIGH",
+  },
+  {
+    category: "HARM_CATEGORY_HARASSMENT",
+    threshold: "BLOCK_ONLY_HIGH",
+  },
+  {
+    category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+    threshold: "BLOCK_ONLY_HIGH",
+  },
+];
+
 if (project && keyFilename) {
   try {
     vertex_ai = new VertexAI({ project, location, keyFilename });
-    console.log(`[VertexAI] Attempting to initialize model: ${defaultModelId}`);
 
     generativeModel = vertex_ai.getGenerativeModel({
       model: defaultModelId,
       generationConfig: defaultGenerationConfig,
-      // safetySettings 등 추가 설정 가능
+      safetySettings: safetySettings,
     });
-    console.log(`[VertexAI] Model '${defaultModelId}' initialized successfully.`);
   } catch (error) {
     logError(
       "vertexAiConfig:startup",

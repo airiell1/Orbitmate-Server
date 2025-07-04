@@ -135,7 +135,7 @@ async function saveAiMessageToDB(
     return {
       ai_message_id: result.outBinds.messageId[0],
       content: contentStr,
-      created_at: result.outBinds.createdAt[0],
+      created_at: result.outBinds.createdAt[0] ? result.outBinds.createdAt[0].toISOString() : null,
       ai_message_token_count: aiTokenCount,
     };
   } catch (err) {
@@ -218,8 +218,8 @@ async function getSessionMessagesForClient(
           user_id: row.USER_ID,
           message_type: row.MESSAGE_TYPE,
           message_content: messageContentStr,
-          created_at: row.CREATED_AT,
-          edited_at: row.EDITED_AT,
+          created_at: row.CREATED_AT ? row.CREATED_AT.toISOString() : null,
+          edited_at: row.EDITED_AT ? row.EDITED_AT.toISOString() : null,
           is_edited: row.IS_EDITED,
           attachment: row.ATTACHMENT_FILE_NAME
             ? {

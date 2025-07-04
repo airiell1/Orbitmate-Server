@@ -71,7 +71,7 @@ export async function initializeSession() {
     }
 }
 
-export function addMessage(sender, text, messageId = null, className = null) {
+export function addMessage(sender, text, messageId = null, className = null, timestamp = null) {
     const chatBox = document.getElementById('chat-box');
     const messageElement = document.createElement('div');
     messageElement.classList.add('message');
@@ -86,6 +86,22 @@ export function addMessage(sender, text, messageId = null, className = null) {
     
     if (messageId) {
         messageElement.dataset.messageId = messageId;
+    }
+
+    // 타임스탬프 표시 추가
+    if (timestamp) {
+        const timestampElement = document.createElement('div');
+        timestampElement.classList.add('message-timestamp');
+        const date = new Date(timestamp);
+        timestampElement.textContent = date.toLocaleString('ko-KR', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+        messageElement.appendChild(timestampElement);
     }
 
     // 메시지 내용을 담을 컨테이너
@@ -201,7 +217,7 @@ export async function sendMessage() {
         };
         
         if (systemPrompt && systemPrompt.length > 0) {
-            requestBody.systemPrompt = systemPrompt;
+            requestBody.system_prompt = systemPrompt;
         }
 
         console.log('전송할 요청 본문:', requestBody);
@@ -436,6 +452,7 @@ export async function refreshSessionMessages() {
                 const messageType = msg.message_type || msg.MESSAGE_TYPE;
                 const messageContent = msg.message_content || msg.MESSAGE_CONTENT;
                 const messageId = msg.message_id || msg.MESSAGE_ID;
+                const createdAt = msg.created_at || msg.CREATED_AT;
                 
                 if (!messageType || !messageContent) {
                     console.warn('메시지 형식 오류:', msg);
@@ -451,7 +468,7 @@ export async function refreshSessionMessages() {
                 }
                 
                 console.log(`메시지 추가: ${sender} - ${displayContent.substring(0, 50)}...`);
-                addMessage(sender, displayContent, messageId);
+                addMessage(sender, displayContent, messageId, null, createdAt);
             });
         }
         

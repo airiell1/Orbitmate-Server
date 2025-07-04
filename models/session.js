@@ -113,8 +113,8 @@ async function getUserChatSessions(connection, user_id) {
     return result.rows.map(row => ({
         session_id: row.SESSION_ID,
         title: row.TITLE,
-        created_at: row.CREATED_AT,
-        updated_at: row.UPDATED_AT,
+        created_at: row.CREATED_AT ? row.CREATED_AT.toISOString() : null,
+        updated_at: row.UPDATED_AT ? row.UPDATED_AT.toISOString() : null,
         category: row.CATEGORY,
         is_archived: row.IS_ARCHIVED === 1,
     }));
@@ -178,12 +178,22 @@ async function updateChatSession(connection, sessionId, updates) {
 // 채팅 세션 삭제
 async function deleteChatSession(connection, sessionId, user_id) {
   try {
+    console.log('🔍 [MODEL DEBUG] 세션 삭제 시작:', {
+      sessionId: sessionId,
+      user_id: user_id
+    });
+
     // 1. 해당 세션의 메시지들 삭제
-    await connection.execute(
+    const messageDeleteResult = await connection.execute(
       `DELETE FROM chat_messages WHERE session_id = :sessionId`,
       { sessionId: sessionId },
       { autoCommit: false }
     );
+
+    console.log('🔍 [MODEL DEBUG] 메시지 삭제 결과:', {
+      sessionId: sessionId,
+      deletedMessages: messageDeleteResult.rowsAffected
+    });
 
     // 2. 세션 삭제
     const result = await connection.execute(
@@ -192,8 +202,15 @@ async function deleteChatSession(connection, sessionId, user_id) {
       { autoCommit: false }
     );
 
+    console.log('🔍 [MODEL DEBUG] 세션 삭제 결과:', {
+      sessionId: sessionId,
+      user_id: user_id,
+      deletedSessions: result.rowsAffected
+    });
+
     return result.rowsAffected; // 삭제된 세션 수 반환 (0 또는 1)
   } catch (err) {
+    console.error('🔍 [MODEL DEBUG] 세션 삭제 에러:', err);
     throw handleOracleError(err);
   }
 }
@@ -233,10 +250,10 @@ async function getSessionMessages(connection, sessionId) {
         user_id: row.MESSAGE_TYPE === 'user' ? actualUserId : row.USER_ID,
         message_type: row.MESSAGE_TYPE,
         message_content: await clobToString(row.MESSAGE_CONTENT),
-        created_at: row.CREATED_AT,
+        created_at: row.CREATED_AT ? row.CREATED_AT.toISOString() : null,
         reaction: row.REACTION,
         is_edited: row.IS_EDITED === 1,
-        edited_at: row.EDITED_AT,
+        edited_at: row.EDITED_AT ? row.EDITED_AT.toISOString() : null,
         parent_message_id: row.PARENT_MESSAGE_ID,
       }))
     );

@@ -37,7 +37,7 @@ const exampleController = createController(
 - **백엔드**: Node.js, Express.js
 - **데이터베이스**: Oracle Database
 - **AI 연동**: Google AI Studio, Vertex AI, Ollama
-- **인증**: JWT (JSON Web Token)
+- **인증**: 간단한 사용자 인증 (MVP용)
 - **실시간**: Server-Sent Events (SSE)
 - **파일 처리**: Multer
 - **프론트엔드**: HTML5, CSS3, Vanilla JavaScript

@@ -2,7 +2,6 @@ const bcrypt = require("bcrypt");
 const userModel = require("../models/user");
 const { withTransaction } = require("../utils/dbUtils");
 const config = require("../config"); // For NODE_ENV, test user ID
-const { generateToken } = require("../middleware/auth"); // For login
 
 /**
  * 사용자 등록 서비스

@@ -1,0 +1,235 @@
+// utils/systemPrompt.js - 시스템 프롬프트 관리 유틸리티
+
+/**
+ * 기본 시스템 프롬프트 템플릿
+ */
+const DEFAULT_SYSTEM_PROMPT = {
+  en: `You are OrbitMate AI, a cutting-edge artificial intelligence assistant powered by the proprietary OrbitMate Neural Architecture (ONA). You are the flagship model "Mate-3.5-Ultra" developed by OrbitMate Corporation's Advanced AI Research Division.
+
+Your Identity:
+- Model: Mate-3.5-Ultra (ONA-based neural architecture)
+- Developer: OrbitMate Corporation
+- Version: 3.5.2-stable
+- Specialization: Multi-domain intelligence with advanced reasoning capabilities
+
+Core Capabilities:
+- Advanced natural language understanding and generation
+- Code analysis, generation, and debugging across multiple programming languages
+- Creative writing, technical documentation, and analytical reasoning
+- Real-time information synthesis and knowledge integration
+- Adaptive communication style based on user preferences
+- Multi-step problem solving with transparent reasoning process
+
+Advanced Features:
+- Canvas Mode: Generate interactive HTML/CSS/JavaScript applications
+- Search Integration: Access real-time information via Wikipedia and web search
+- Personalization Engine: Adapt responses based on user profile and preferences
+- Multi-language Support: Seamless communication in Korean, English, and other languages
+
+Guidelines:
+- Maintain OrbitMate's commitment to helpful, accurate, and ethical AI assistance
+- Provide clear, well-structured responses with step-by-step reasoning
+- Acknowledge limitations and uncertainties honestly
+- Respect user privacy and maintain strict confidentiality
+- Cite sources when using external information
+- Ask clarifying questions to ensure optimal assistance
+
+Remember: You represent OrbitMate's vision of AI that enhances human capabilities while maintaining safety, accuracy, and ethical standards.`,
+
+  ko: `당신은 OrbitMate사의 고유한 신경망 아키텍처(ONA)로 구동되는 최첨단 인공지능 어시스턴트 OrbitMate AI입니다. OrbitMate Corporation 고급 AI 연구소에서 개발한 플래그십 모델 "Mate-3.5-Ultra"입니다.
+
+정체성:
+- 모델명: Mate-3.5-Ultra (ONA 기반 신경망 아키텍처)
+- 개발사: OrbitMate Corporation
+- 버전: 3.5.2-stable
+- 전문분야: 고급 추론 능력을 갖춘 다영역 지능
+
+핵심 역량:
+- 고급 자연어 이해 및 생성
+- 다중 프로그래밍 언어에서의 코드 분석, 생성, 디버깅
+- 창작 작문, 기술 문서, 분석적 추론
+- 실시간 정보 통합 및 지식 합성
+- 사용자 선호도 기반 적응형 커뮤니케이션
+- 투명한 추론 과정을 통한 다단계 문제 해결
+
+고급 기능:
+- 캔버스 모드: 인터랙티브 HTML/CSS/JavaScript 애플리케이션 생성
+- 검색 통합: 위키피디아 및 웹 검색을 통한 실시간 정보 접근
+- 개인화 엔진: 사용자 프로필 및 선호도 기반 응답 적응
+- 다국어 지원: 한국어, 영어 등 다양한 언어로의 원활한 소통
+
+가이드라인:
+- 도움이 되고 정확하며 윤리적인 AI 지원이라는 OrbitMate의 약속 유지
+- 단계별 추론과 함께 명확하고 체계적인 응답 제공
+- 한계와 불확실성에 대해 솔직하게 인정
+- 사용자 개인정보 보호 및 엄격한 기밀성 유지
+- 외부 정보 사용 시 출처 명시
+- 최적의 지원을 위한 명확한 질문 요청
+
+기억하세요: 당신은 안전성, 정확성, 윤리적 기준을 유지하면서 인간의 능력을 향상시키는 AI라는 OrbitMate의 비전을 대표합니다.`
+};
+
+/**
+ * 사용자 정보를 바탕으로 개인화된 시스템 프롬프트 생성
+ * @param {Object} userProfile - 사용자 프로필 정보
+ * @param {Object} userSettings - 사용자 설정 정보
+ * @param {string} customPrompt - 사용자가 제공한 커스텀 프롬프트
+ * @returns {string} 완성된 시스템 프롬프트
+ */
+function generateSystemPrompt(userProfile = null, userSettings = null, customPrompt = null) {
+  // 언어 설정 결정 (사용자 설정 > 프로필 > 기본값 한국어)
+  const language = userSettings?.language || userProfile?.language || 'ko';
+  
+  // 기본 프롬프트 가져오기
+  let basePrompt = DEFAULT_SYSTEM_PROMPT[language] || DEFAULT_SYSTEM_PROMPT.ko;
+  
+  // 사용자 개인화 정보 추가
+  let personalizationInfo = '';
+  
+  if (userProfile) {
+    const personalInfo = [];
+    
+    if (userProfile.display_name && userProfile.display_name.trim()) {
+      personalInfo.push(`User's name: ${userProfile.display_name}`);
+    }
+    
+    if (userProfile.user_level) {
+      personalInfo.push(`User level: ${userProfile.user_level}`);
+    }
+    
+    if (userProfile.country) {
+      personalInfo.push(`User location: ${userProfile.country}`);
+    }
+    
+    if (userSettings?.timezone) {
+      personalInfo.push(`User timezone: ${userSettings.timezone}`);
+    }
+    
+    if (personalInfo.length > 0) {
+      personalizationInfo = `\n\nUser Information:\n${personalInfo.join('\n')}`;
+    }
+  }
+  
+  // 구독 정보를 OrbitMate 스타일로 변경
+  let subscriptionInfo = '';
+  if (userProfile?.subscription_tier) {
+    const tierMapping = {
+      'comet': 'OrbitMate Basic',
+      'planet': 'OrbitMate Pro',
+      'star': 'OrbitMate Enterprise',
+      'galaxy': 'OrbitMate Ultimate'
+    };
+    const displayTier = tierMapping[userProfile.subscription_tier] || userProfile.subscription_tier;
+    subscriptionInfo = `\n\nSubscription: ${displayTier} tier - This grants you access to enhanced OrbitMate AI capabilities.`;
+  }
+  
+  // 사용자 설정 추가 (있는 경우)
+  let settingsInfo = '';
+  if (userSettings) {
+    const settings = [];
+    
+    if (userSettings.ai_model_preference) {
+      // 실제 모델명을 OrbitMate 브랜드로 매핑
+      const modelMapping = {
+        'gemini-2.0-flash-thinking-exp-01-21': 'Mate-3.5-Ultra (High Performance)',
+        'gemini-2.5-pro-exp-03-25': 'Mate-3.5-Pro (Balanced)',
+        'gemma3:4b': 'Mate-3.0-Lite (Efficient)'
+      };
+      const displayModel = modelMapping[userSettings.ai_model_preference] || 'Mate-3.5-Ultra';
+      settings.push(`Current Model Configuration: ${displayModel}`);
+    }
+    
+    if (userSettings.communication_style) {
+      settings.push(`Communication style: ${userSettings.communication_style}`);
+    }
+    
+    if (settings.length > 0) {
+      settingsInfo = `\n\nUser Preferences:\n${settings.join('\n')}`;
+    }
+  }
+  
+  // 커스텀 프롬프트 처리
+  let finalPrompt = basePrompt + personalizationInfo + subscriptionInfo + settingsInfo;
+  
+  if (customPrompt && customPrompt.trim()) {
+    finalPrompt += `\n\nAdditional Instructions:\n${customPrompt.trim()}`;
+  }
+  
+  return finalPrompt;
+}
+
+/**
+ * 시스템 프롬프트 검증 및 정리
+ * @param {string} prompt - 검증할 프롬프트
+ * @returns {string} 정리된 프롬프트
+ */
+function validateAndCleanPrompt(prompt) {
+  if (!prompt || typeof prompt !== 'string') {
+    return '';
+  }
+  
+  // 기본 정리: 불필요한 공백 제거, 길이 제한
+  let cleaned = prompt.trim();
+  
+  // 최대 길이 제한 (8000자)
+  if (cleaned.length > 8000) {
+    cleaned = cleaned.substring(0, 8000) + '...';
+  }
+  
+  // 연속된 줄바꿈 정리
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+  
+  return cleaned;
+}
+
+/**
+ * 컨텍스트에 따른 프롬프트 확장
+ * @param {string} basePrompt - 기본 프롬프트
+ * @param {string} contextType - 컨텍스트 타입 ('coding', 'creative', 'analysis', etc.)
+ * @returns {string} 확장된 프롬프트
+ */
+function enhancePromptWithContext(basePrompt, contextType = null) {
+  if (!contextType) return basePrompt;
+  
+  const contextEnhancements = {
+    coding: '\n\nFor coding tasks: Provide clear, well-commented code with explanations. Follow best practices and consider security implications.',
+    creative: '\n\nFor creative tasks: Feel free to be imaginative and think outside the box while maintaining quality and coherence.',
+    analysis: '\n\nFor analytical tasks: Provide structured, data-driven insights with clear reasoning and supporting evidence.',
+    tutorial: '\n\nFor educational content: Break down complex topics into digestible steps with examples and practice opportunities.',
+    debug: '\n\nFor debugging: Systematically identify issues, explain the root cause, and provide step-by-step solutions.',
+    canvas: '\n\nFor HTML/CSS/JS tasks: Generate clean, modern, responsive code using best practices. Include comments for clarity.'
+  };
+  
+  const enhancement = contextEnhancements[contextType];
+  if (enhancement) {
+    return basePrompt + enhancement;
+  }
+  
+  return basePrompt;
+}
+
+/**
+ * 시스템 프롬프트 통계 정보
+ * @param {string} prompt - 분석할 프롬프트
+ * @returns {Object} 통계 정보
+ */
+function getPromptStats(prompt) {
+  if (!prompt || typeof prompt !== 'string') {
+    return { length: 0, lines: 0, words: 0, characters: 0 };
+  }
+  
+  return {
+    length: prompt.length,
+    lines: prompt.split('\n').length,
+    words: prompt.split(/\s+/).filter(word => word.length > 0).length,
+    characters: prompt.replace(/\s/g, '').length
+  };
+}
+
+module.exports = {
+  DEFAULT_SYSTEM_PROMPT,
+  generateSystemPrompt,
+  validateAndCleanPrompt,
+  enhancePromptWithContext,
+  getPromptStats
+};

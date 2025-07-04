@@ -6,6 +6,11 @@ const {
   executeAiTool,
   enhancePromptWithTools,
 } = require("../utils/aiTools");
+const {
+  generateSystemPrompt,
+  validateAndCleanPrompt,
+  enhancePromptWithContext,
+} = require("../utils/systemPrompt");
 
 const GEMINI_API_KEY = config.ai.gemini.apiKey;
 
@@ -31,23 +36,23 @@ const defaultConfig = {
   maxOutputTokens: config.ai.gemini.maxOutputTokens || 8192,
 };
 
-// 안전성 설정 (필요시 중앙 설정으로 이동 가능)
+// 안전성 설정 (완화된 검열 설정)
 const safetySettings = [
   {
     category: "HARM_CATEGORY_HARASSMENT",
-    threshold: "BLOCK_MEDIUM_AND_ABOVE",
+    threshold: "BLOCK_ONLY_HIGH",
   },
   {
     category: "HARM_CATEGORY_HATE_SPEECH",
-    threshold: "BLOCK_MEDIUM_AND_ABOVE",
+    threshold: "BLOCK_ONLY_HIGH",
   },
   {
     category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-    threshold: "BLOCK_MEDIUM_AND_ABOVE",
+    threshold: "BLOCK_ONLY_HIGH",
   },
   {
     category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-    threshold: "BLOCK_MEDIUM_AND_ABOVE",
+    threshold: "BLOCK_ONLY_HIGH",
   },
 ];
 
@@ -55,8 +60,8 @@ const safetySettings = [
  * Gemini API로 채팅 완성 요청
  * @param {string} currentUserMessage - 현재 사용자 메시지
  * @param {Array} history - 대화 기록 배열
- * @param {string} systemMessageText - 시스템 프롬프트
- * @param {string} specialModeType - 특수 모드 ('stream', 'canvas' 등)
+ * @param {string} systemMessageText - 시스템 프롬프트 (utils/systemPrompt.js로 처리됨)
+ * @param {string} specialModeType - 특수 모드 ('stream', 'canvas', 'search' 등)
  * @param {Function} streamResponseCallback - 스트리밍 응답 콜백
  * @param {Object} options - 추가 옵션 객체
  * @param {Object} context - 요청 컨텍스트 (IP 주소 등)
@@ -103,19 +108,37 @@ async function getGeminiApiResponse(
     const model = genAI.getGenerativeModel(modelConfig);
     const chatHistory = [];
 
+    // 시스템 프롬프트 처리 개선
     if (systemMessageText && systemMessageText.trim()) {
-      const enhancedSystemPrompt = useTools
-        ? enhancePromptWithTools(systemMessageText.trim())
-        : systemMessageText.trim();
+      // 시스템 프롬프트 검증 및 정리
+      const cleanedSystemPrompt = validateAndCleanPrompt(systemMessageText.trim());
+      
+      // 특수 모드에 따른 컨텍스트 확장
+      let contextType = null;
+      if (specialModeType === "canvas") {
+        contextType = "canvas";
+      } else if (specialModeType === "search") {
+        contextType = "analysis";
+      }
+      
+      // 컨텍스트 확장 적용
+      const contextEnhancedPrompt = enhancePromptWithContext(cleanedSystemPrompt, contextType);
+      
+      // 도구 사용 가능 시 도구 관련 프롬프트 추가
+      const finalSystemPrompt = useTools
+        ? enhancePromptWithTools(contextEnhancedPrompt)
+        : contextEnhancedPrompt;
+
       chatHistory.push({
         role: "user",
-        parts: [{ text: `시스템 지시사항: ${enhancedSystemPrompt}` }],
+        parts: [{ text: `시스템 지시사항: ${finalSystemPrompt}` }],
       });
       chatHistory.push({
         role: "model",
         parts: [{ text: "네, 이해했습니다. 지시사항에 따라 도움을 드리겠습니다." }],
       });
     } else if (useTools) {
+      // 시스템 프롬프트가 없을 때 도구만 사용하는 경우
       const toolsOnlyPrompt = enhancePromptWithTools("");
       chatHistory.push({
         role: "user",
@@ -123,14 +146,14 @@ async function getGeminiApiResponse(
       });
       chatHistory.push({
         role: "model",
-        parts: [{ text: "네, 이해했습니다. 필요시 검색 도구와 날씨 도구를 활용하여 도움을 드리겠습니다." }],
+        parts: [{ text: "네, 이해했습니다. 필요시 도구를 활용하여 도움을 드리겠습니다." }],
       });
     }
 
     if (history && Array.isArray(history)) {
       history.forEach((msg) => {
         const messageText = (msg.parts && msg.parts[0] && msg.parts[0].text) || msg.content;
-        if (messageText && messageText.trim()) {
+        if (messageText && messageText.trim() && !chatHistory.some(h => h.parts[0].text === messageText.trim())) {
           if (msg.role === "user") {
             chatHistory.push({ role: "user", parts: [{ text: messageText.trim() }] });
           } else if (msg.role === "assistant" || msg.role === "model") {
@@ -140,6 +163,7 @@ async function getGeminiApiResponse(
       });
     }
 
+    // 메시지 전처리 및 특수 모드 처리
     let enhancedMessage = currentUserMessage;
     if (specialModeType === "canvas") {
       enhancedMessage = `${currentUserMessage}\n\n[Canvas 모드] HTML, CSS, JavaScript 코드를 생성할 때는 다음 형식을 사용해주세요:\n\`\`\`html\n(HTML 코드)\n\`\`\`\n\`\`\`css\n(CSS 코드)\n\`\`\`\n\`\`\`javascript\n(JavaScript 코드)\n\`\`\``;
@@ -147,17 +171,14 @@ async function getGeminiApiResponse(
       enhancedMessage = `${currentUserMessage}\n\n[검색 모드] 최신 정보가 필요한 질문입니다. 가능한 한 정확하고 최신의 정보를 제공해주세요.`;
     }
 
-    console.log(
-      `[GeminiAPI] 요청 시작 - 모델: ${modelName}, 기록 개수: ${chatHistory.length}, 메시지 길이: ${enhancedMessage.length}`
-    );
+    // 메시지 검증
+    if (!enhancedMessage || enhancedMessage.trim() === "") {
+      throw new Error("메시지 내용이 비어있습니다.");
+    }
 
     const chat = model.startChat({
       history: chatHistory.length > 0 ? chatHistory : [],
     });
-
-    if (!enhancedMessage || enhancedMessage.trim() === "") {
-      throw new Error("메시지 내용이 비어있습니다.");
-    }
 
     if (streamResponseCallback && typeof streamResponseCallback === "function") {
       console.log(`[GeminiAPI] 스트리밍 모드로 요청 처리 중...`);
@@ -169,7 +190,7 @@ async function getGeminiApiResponse(
 
         for await (const chunk of result.stream) {
           const chunkText = chunk.text();
-          if (chunkText) {
+          if (chunkText && !fullText.includes(chunkText)) { // 중복 방지
             fullText += chunkText;
             streamResponseCallback(chunkText);
           }
@@ -243,7 +264,6 @@ async function getGeminiApiResponse(
         throw streamError;
       }
     } else {
-      console.log(`[GeminiAPI] 일반 모드로 요청 처리 중...`);
       const result = await chat.sendMessage(enhancedMessage);
       const response = await result.response;
       const candidates = response.candidates;
@@ -312,6 +332,7 @@ async function getGeminiApiResponse(
 
 module.exports = {
   getGeminiApiResponse,
-  // genAI 인스턴스는 내부적으로만 사용하고, API 키가 없을 경우를 대비해 직접 export하지 않을 수 있음
-  // 필요하다면 export genAI;
+  // 시스템 프롬프트 관리는 utils/systemPrompt.js에서 담당
+  // 도구 관리는 utils/aiTools.js에서 담당
+  // genAI 인스턴스는 내부적으로만 사용
 };

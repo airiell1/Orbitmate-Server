@@ -50,11 +50,7 @@ async function fetchChatCompletion(
     modelToLog = options.ollamaModel || "gemma3:4b";
   }
 
-  console.log(
-    `[aiProviderUtils] Requesting chat completion. Provider: ${aiProvider}, Model: ${modelToLog}`
-  );
   if (aiProvider === "geminiapi") {
-    console.log(`[aiProviderUtils] Using Gemini API provider.`);
     return await getGeminiApiResponse(
       currentUserMessage,
       history,
@@ -65,7 +61,6 @@ async function fetchChatCompletion(
       context // Pass context for tools
     );
   } else if (aiProvider === "vertexai") {
-    console.log(`[aiProviderUtils] Using Vertex AI provider.`);
     // Prepare options for Vertex AI, separating Gemini-specific ones.
     const vertexOptions = { ...options };
     delete vertexOptions.geminiModel; // Remove geminiModel if it exists in options for Vertex call
@@ -80,9 +75,6 @@ async function fetchChatCompletion(
     );
   } else if (aiProvider === "ollama") {
     const ollamaModelToUse = options.ollamaModel || "gemma3:4b"; // Default if not provided in options
-    console.log(
-      `[aiProviderUtils] Using Ollama provider with model: ${ollamaModelToUse}`
-    );
     // Note: getOllamaResponse might also need an options parameter if it needs to handle maxOutputTokens etc.
     // For now, assuming it takes ollamaModel directly as its first argument.
     return await getOllamaResponse(
