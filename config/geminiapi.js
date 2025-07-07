@@ -10,6 +10,7 @@ const {
   generateSystemPrompt,
   validateAndCleanPrompt,
   enhancePromptWithContext,
+  enhanceUserMessageWithMode,
 } = require("../utils/systemPrompt");
 
 const GEMINI_API_KEY = config.ai.gemini.apiKey;
@@ -119,6 +120,8 @@ async function getGeminiApiResponse(
         contextType = "canvas";
       } else if (specialModeType === "search") {
         contextType = "analysis";
+      } else if (specialModeType === "chatbot") {
+        contextType = "support";
       }
       
       // 컨텍스트 확장 적용
@@ -163,13 +166,8 @@ async function getGeminiApiResponse(
       });
     }
 
-    // 메시지 전처리 및 특수 모드 처리
-    let enhancedMessage = currentUserMessage;
-    if (specialModeType === "canvas") {
-      enhancedMessage = `${currentUserMessage}\n\n[Canvas 모드] HTML, CSS, JavaScript 코드를 생성할 때는 다음 형식을 사용해주세요:\n\`\`\`html\n(HTML 코드)\n\`\`\`\n\`\`\`css\n(CSS 코드)\n\`\`\`\n\`\`\`javascript\n(JavaScript 코드)\n\`\`\``;
-    } else if (specialModeType === "search") {
-      enhancedMessage = `${currentUserMessage}\n\n[검색 모드] 최신 정보가 필요한 질문입니다. 가능한 한 정확하고 최신의 정보를 제공해주세요.`;
-    }
+    // 메시지 전처리 및 특수 모드 처리 (utils/systemPrompt.js로 이동)
+    const enhancedMessage = enhanceUserMessageWithMode(currentUserMessage, specialModeType);
 
     // 메시지 검증
     if (!enhancedMessage || enhancedMessage.trim() === "") {
@@ -190,7 +188,7 @@ async function getGeminiApiResponse(
 
         for await (const chunk of result.stream) {
           const chunkText = chunk.text();
-          if (chunkText && !fullText.includes(chunkText)) { // 중복 방지
+          if (chunkText) {
             fullText += chunkText;
             streamResponseCallback(chunkText);
           }

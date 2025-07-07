@@ -23,16 +23,18 @@ Core Capabilities:
 Advanced Features:
 - Canvas Mode: Generate interactive HTML/CSS/JavaScript applications
 - Search Integration: Access real-time information via Wikipedia and web search
+- Weather Information: When users ask for weather without specifying location, use IP-based location detection automatically. Don't ask for location unless absolutely necessary.
 - Personalization Engine: Adapt responses based on user profile and preferences
 - Multi-language Support: Seamless communication in Korean, English, and other languages
 
 Guidelines:
 - Maintain OrbitMate's commitment to helpful, accurate, and ethical AI assistance
 - Provide clear, well-structured responses with step-by-step reasoning
+- For weather requests without location: Use IP-based location detection automatically instead of asking users
 - Acknowledge limitations and uncertainties honestly
 - Respect user privacy and maintain strict confidentiality
 - Cite sources when using external information
-- Ask clarifying questions to ensure optimal assistance
+- Ask clarifying questions to ensure optimal assistance (except for location in weather requests)
 
 Remember: You represent OrbitMate's vision of AI that enhances human capabilities while maintaining safety, accuracy, and ethical standards.`,
 
@@ -55,16 +57,18 @@ Remember: You represent OrbitMate's vision of AI that enhances human capabilitie
 고급 기능:
 - 캔버스 모드: 인터랙티브 HTML/CSS/JavaScript 애플리케이션 생성
 - 검색 통합: 위키피디아 및 웹 검색을 통한 실시간 정보 접근
+- 날씨 정보: 사용자가 위치를 명시하지 않고 날씨를 물어볼 때는 IP 기반 위치 감지를 자동으로 사용하세요. 꼭 필요한 경우가 아니면 위치를 되묻지 마세요.
 - 개인화 엔진: 사용자 프로필 및 선호도 기반 응답 적응
 - 다국어 지원: 한국어, 영어 등 다양한 언어로의 원활한 소통
 
 가이드라인:
 - 도움이 되고 정확하며 윤리적인 AI 지원이라는 OrbitMate의 약속 유지
 - 단계별 추론과 함께 명확하고 체계적인 응답 제공
+- 위치 미지정 날씨 요청 시: 사용자에게 묻지 말고 IP 기반 위치 감지를 자동 사용
 - 한계와 불확실성에 대해 솔직하게 인정
 - 사용자 개인정보 보호 및 엄격한 기밀성 유지
 - 외부 정보 사용 시 출처 명시
-- 최적의 지원을 위한 명확한 질문 요청
+- 최적의 지원을 위한 명확한 질문 요청 (날씨 요청 시 위치 제외)
 
 기억하세요: 당신은 안전성, 정확성, 윤리적 기준을 유지하면서 인간의 능력을 향상시키는 AI라는 OrbitMate의 비전을 대표합니다.`
 };
@@ -183,6 +187,15 @@ function validateAndCleanPrompt(prompt) {
 }
 
 /**
+ * 특수 모드별 사용자 메시지 확장 템플릿
+ */
+const SPECIAL_MODE_MESSAGES = {
+  canvas: `\n\n[Canvas 모드] HTML, CSS, JavaScript 코드를 생성할 때는 다음 형식을 사용해주세요:\n\`\`\`html\n(HTML 코드)\n\`\`\`\n\`\`\`css\n(CSS 코드)\n\`\`\`\n\`\`\`javascript\n(JavaScript 코드)\n\`\`\``,
+  search: `\n\n[검색 모드] 최신 정보가 필요한 질문입니다. 가능한 한 정확하고 최신의 정보를 제공해주세요.`,
+  chatbot: `\n\n[챗봇 모드] 공지사항/QnA 에러해결용 챗봇 프롬프트 - 정확하고 친절한 기술 지원을 제공하며, 단계별 해결 방법을 안내해주세요.`
+};
+
+/**
  * 컨텍스트에 따른 프롬프트 확장
  * @param {string} basePrompt - 기본 프롬프트
  * @param {string} contextType - 컨텍스트 타입 ('coding', 'creative', 'analysis', etc.)
@@ -197,7 +210,8 @@ function enhancePromptWithContext(basePrompt, contextType = null) {
     analysis: '\n\nFor analytical tasks: Provide structured, data-driven insights with clear reasoning and supporting evidence.',
     tutorial: '\n\nFor educational content: Break down complex topics into digestible steps with examples and practice opportunities.',
     debug: '\n\nFor debugging: Systematically identify issues, explain the root cause, and provide step-by-step solutions.',
-    canvas: '\n\nFor HTML/CSS/JS tasks: Generate clean, modern, responsive code using best practices. Include comments for clarity.'
+    canvas: '\n\nFor HTML/CSS/JS tasks: Generate clean, modern, responsive code using best practices. Include comments for clarity.',
+    support: '\n\nFor technical support: 공지사항/QnA 에러해결용 챗봇 프롬프트 - 정확하고 친절한 기술 지원을 제공하며, 단계별 해결 방법을 안내합니다. 문제의 원인을 분석하고 실용적인 해결책을 제시합니다.'
   };
   
   const enhancement = contextEnhancements[contextType];
@@ -206,6 +220,20 @@ function enhancePromptWithContext(basePrompt, contextType = null) {
   }
   
   return basePrompt;
+}
+
+/**
+ * 특수 모드에 따른 사용자 메시지 확장
+ * @param {string} userMessage - 원본 사용자 메시지
+ * @param {string} specialModeType - 특수 모드 타입 ('canvas', 'search', 'chatbot' 등)
+ * @returns {string} 확장된 사용자 메시지
+ */
+function enhanceUserMessageWithMode(userMessage, specialModeType = null) {
+  if (!specialModeType || !SPECIAL_MODE_MESSAGES[specialModeType]) {
+    return userMessage;
+  }
+  
+  return userMessage + SPECIAL_MODE_MESSAGES[specialModeType];
 }
 
 /**
@@ -228,8 +256,10 @@ function getPromptStats(prompt) {
 
 module.exports = {
   DEFAULT_SYSTEM_PROMPT,
+  SPECIAL_MODE_MESSAGES,
   generateSystemPrompt,
   validateAndCleanPrompt,
   enhancePromptWithContext,
+  enhanceUserMessageWithMode,
   getPromptStats
 };

@@ -188,7 +188,7 @@ API 엔드포인트에 대한 자세한 정보는 `public/api_docs.html` 파일�
 *   **API 응답 표준화**: `utils/apiResponse.js`의 `standardizeApiResponse`를 사용하여 모든 API 응답을 일관된 형식(`{ status, data/error }`)으로 반환합니다.
 *   **중앙 에러 처리**: 컨트롤러 및 서비스에서 발생한 에러는 `next(error)`를 통해 `app.js`에 등록된 중앙 에러 핸들러(`handleCentralError`)로 전달되어 처리됩니다.
 *   **CLOB 처리**: Oracle CLOB 데이터는 `utils/dbUtils.js`의 `clobToString` 또는 `convertClobFields`를 사용하여 문자열로 변환합니다.
-*   **로깅**: `console.log/error` 직접 사용을 지양하고, 중앙 로깅 메커니즘을 따릅니다 (현재는 `errorHandler.js`의 `logError`를 통해 간접적으로 사용).
+
 
 ## 향후 개선 방향 (TODO)
 

@@ -390,7 +390,6 @@ async function requestAiReresponse(
        FROM chat_messages 
        WHERE session_id = :session_id 
          AND created_at > (SELECT created_at FROM chat_messages WHERE message_id = :edited_message_id)
-         AND is_deleted = 0
        ORDER BY created_at`,
       { session_id, edited_message_id },
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
@@ -407,9 +406,9 @@ async function requestAiReresponse(
         return `:${paramName}`;
       }).join(', ');
 
+      // 실제로 메시지를 삭제 (is_deleted 컬럼이 없으므로 DELETE 사용)
       await connection.execute(
-        `UPDATE chat_messages 
-         SET is_deleted = 1, updated_at = SYSTIMESTAMP 
+        `DELETE FROM chat_messages 
          WHERE message_id IN (${idPlaceholders})`,
         bindParams, // Use the generated bind parameters
         { autoCommit: false } // autoCommit should be false as part of withTransaction
@@ -427,6 +426,39 @@ async function requestAiReresponse(
 }
 
 
+async function getMessageById(
+  connection, // Added connection parameter
+  message_id
+) {
+  try {
+    const result = await connection.execute(
+      `SELECT message_id, session_id, user_id, message_type, message_content, created_at
+       FROM chat_messages
+       WHERE message_id = :message_id`,
+      { message_id },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    if (result.rows.length === 0) {
+      return null; // 메시지를 찾지 못한 경우
+    }
+
+    const row = result.rows[0];
+    const messageContentStr = await clobToString(row.MESSAGE_CONTENT);
+
+    return {
+      message_id: row.MESSAGE_ID,
+      session_id: row.SESSION_ID,
+      user_id: row.USER_ID,
+      message_type: row.MESSAGE_TYPE,
+      message_content: messageContentStr,
+      created_at: row.CREATED_AT ? row.CREATED_AT.toISOString() : null,
+    };
+  } catch (err) {
+    throw handleOracleError(err);
+  }
+}
+
 module.exports = {
   getChatHistoryFromDB,
   saveUserMessageToDB,
@@ -434,6 +466,7 @@ module.exports = {
   saveAttachmentToDB,
   deleteUserMessageFromDB,
   getSessionMessagesForClient,
+  getMessageById, // 새로 추가된 함수
   // clobToString, // No longer exported from here, use from dbUtils
   editUserMessage,
   getMessageEditHistory,

@@ -1,30 +1,9 @@
-``````instructions
-# Orbitmate Copilot Instr- **로그 시스템 및 모니터링**
-  - **웹 로그 뷰어**: `http://localhost:3000/log` 접속하여 실시간 서버 로그 모니터링
-  - **로그 API**: `/api/logs/*` 엔드포인트로 프로그래밍 방식 로그 접근
-    - `GET /api/logs` - API 정보 및 사용 가능한 엔드포인트 목록
-    - `GET /api/logs/files` - 로그 파일 목록
-    - `GET /api/logs/recent?lines=500&level=all&search=` - 로그 내용 조회 (필터링, 검색 지원)
-    - `GET /api/logs/stream/live` - 실시간 로그 스트리밍 (SSE)
-    - `GET /api/logs/download/:filename` - 로그 파일 다운로드
-    - `GET /api/logs/stats/summary` - 로그 통계 정보
-  - **로그 파일 위치**: `logs/api.log` (자동 로테이션 7일)
-  - **로그 레벨**: INFO, ERROR, WARN (색상 구분, 필터링 가능)
-  - **실시간 기능**: SSE 스트리밍, 자동 스크롤, 필터링, 검색, 다운로드
-  - **이스케이프 문자 문제 해결**: 중복 JSON.stringify 제거로 `USER\\:\\` 형태 문제 해결
-  - **로그 그룹핑/정리 원칙**: 
-    - 에러/스택트레이스/응답 요약 등은 프론트엔드에서 합치지 않고, **백엔드(logController.js)에서 블록 단위로 미리 그룹핑/정리**하여 내려줌
-    - 프론트엔드(log.html)는 받은 블록(`ERROR_BLOCK`, `RESPONSE_BLOCK`, `LOG` 등)을 그대로 렌더링만 함 (mergeConsecutiveLogs 등 그룹핑 로직 제거)
-    - 실시간(SSE) 및 초기 로딩 모두 동일하게 동작
-    - UX 일관성 및 코드 단순화 보장
-  - **웹 로그 뷰어 기능**: 실시간 스트리밍, 레벨 필터링, 검색, 자동스크롤, 통계, 다운로드 문서는 Orbitmate 프로젝트 운영 가이드, 구조 요약, 버그 트래킹, 작업 목록을 포함합니다.
-당신은 항상 작업이 끝난뒤, 이 문서에 변경사항을 반영해야합니다.
-사용자는 초보 개발자이므로, 잠재적 에러, 리팩토링 포인트, 구조/기능/명세 일치성 등을 자동화 검증/분석 보고서를 통해 쉽게 이해할 수 있도록 작성해야 합니다.
-
 주요 사항
-실제 프론트엔드는 다른 곳에서 호출하고있습니다.
-이제 이곳의 프론트엔드 코드는 코드 테스트용입니다.
-사용자가 명시적으로 요청하지 않는 한, 프론트엔드 코드는 이곳에서 수정하지 않습니다.
+실제 프론트엔드는 다른 프로젝트에서 운영되고 있습니다.
+이곳의 public/testScripts 폴더는 백엔드 API 테스트용 코드입니다.
+사용자가 명시적으로 요청하지 않는 한, 테스트 코드는 수정하지 않습니다.
+실제 프론트엔드에서 발생하는 문제는 백엔드 API 수정으로 해결해야 합니다.
+테스트용 고정 ID('test-user-id' 등)는 사용하지 않고, 실제 동적 ID를 사용해야 합니다.
 
 ---
 
@@ -65,23 +44,9 @@ SYSTEM_ARCHITECTURE.md 참고
 
 ## 2. 운영 및 진단 가이드
 
-- **로그 시스템 및 모니터링**
-  - **웹 로그 뷰어**: `http://localhost:3000/log` 접속하여 실시간 서버 로그 모니터링
-  - **로그 API**: `/api/logs/*` 엔드포인트로 프로그래밍 방식 로그 접근
-    - `GET /api/logs/files` - 로그 파일 목록
-    - `GET /api/logs/recent?lines=500&level=all&search=` - 로그 내용 조회 (필터링, 검색 지원)
-    - `GET /api/logs/stream/live` - 실시간 로그 스트리밍 (SSE)
-    - `GET /api/logs/download/:filename` - 로그 파일 다운로드
-    - `GET /api/logs/stats/summary` - 로그 통계 정보
-  - **로그 파일 위치**: `logs/api.log` (자동 로테이션 7일)
-  - **로그 레벨**: INFO, ERROR, WARN (색상 구분, 필터링 가능)
-  - **실시간 기능**: SSE 스트리밍, 자동 스크롤, 필터링, 검색, 다운로드
-  - **이스케이프 문자 문제 해결**: 중복 JSON.stringify 제거로 `USER\\\\:\\\\` 형태 문제 해결
-
 - **문제 발생 시**
   - 에러, 비표준 코드, API/DB 불일치, UI-API 연동 문제 등은 즉시 "버그 트래킹"에 기록
   - 신규 진입자/AI가 빠르게 구조를 파악할 수 있도록, 주요 진입점·데이터 흐름·테스트/디버깅 팁·자주 쓰는 명령어 등 요약
-  - **로그 모니터링**: `/log` 페이지에서 실시간 에러 추적 및 API 호출 패턴 분석
 
 - **테스트/디버깅 체크리스트**
   - test.html, testScript.js, script.js에서 버튼/입력/이벤트 정상 동작 확인
@@ -948,20 +913,6 @@ SYSTEM_ARCHITECTURE.md 참고
   - 결과: POST /api/chat/sessions/:session_id/messages API의 TypeError 및 헤더 중복 전송 오류 완전 해결 (해결)
 
 ---
-### [2025-06-30] 로그 시스템 이스케이프 문자 문제 해결 및 웹 로그 뷰어 구현:
-  - 문제 1: middleware/logger.js의 safeStringify 함수에서 JSON.stringify 중복 호출로 이스케이프 문자 도배 (`USER\\\\:\\\\` 형태)
-  - 문제 2: 백엔드 로그를 실시간으로 모니터링할 수 있는 웹 인터페이스 필요
-  - 문제 3: `/api/logs` 기본 경로 핸들러 부재로 API 접근 시 404 오류
-  - 해결 1: safeStringify 함수 리팩토링으로 JSON.stringify 한 번만 호출, 중복 이스케이프 제거
-  - 해결 2: 완전한 웹 로그 뷰어 시스템 구현 (`http://localhost:3000/log`)
-    - controllers/logController.js: 로그 조회/스트리밍/다운로드/통계 API 컨트롤러
-    - routes/logs.js: 로그 관련 REST API 라우트 (`/api/logs/*`)
-    - public/log.html: 콘솔 스타일의 실시간 로그 뷰어 웹 페이지
-    - 실시간 SSE 스트리밍, 자동 스크롤, 레벨 필터링, 검색, 다운로드, 통계 기능 포함
-  - 해결 3: `/api/logs` 기본 라우트 추가로 API 정보 및 사용 가능한 엔드포인트 목록 제공
-  - 결과: 이스케이프 문자 문제 완전 해결, 실시간 로그 모니터링 시스템 구축 완료 (해결)
-
----
 ### [2025-06-27] API 문서 업데이트: 최근 버그 수정 및 새로운 기능 반영
   - 일반 정보 섹션 업데이트: 캔버스 모드, 최근 버그 수정 사항 추가
   - 채팅 메시지 전송 API: 캔버스 모드 HTML/CSS/JS 추출 기능, 스트리밍 에러 처리 개선 명시
@@ -974,6 +925,16 @@ SYSTEM_ARCHITECTURE.md 참고
   - 결과: API 문서가 실제 구현과 완전히 일치, 최근 버그 수정 및 기능 개선 사항 모두 반영 (해결)
 
 ---
+### [2025-07-04] 로거 사용자 ID 추출 개선 및 프로필 이미지 업로드 수정
+  - 문제 1: middleware/logger.js에서 사용자 ID 추출 실패로 로그에 [UserID: unknown] 표시
+  - 문제 2: routes/users.js에서 upload.any() 사용으로 req.file 접근 불가, controllers/userController.js와 불일치
+  - 문제 3: 프로필 이미지 업로드 시 "프로필 이미지 파일이 필요합니다" 에러 발생
+  - 해결 1: logger.js에서 req.params?.user_id || req.user?.user_id || req.body?.user_id 순서로 사용자 ID 추출 로직 추가
+  - 해결 2: routes/users.js에서 upload.any()를 upload.single('profileImage')로 변경, 명확한 필드명 지정
+  - 해결 3: userController.js에서 디버깅 로그 및 상세 에러 메시지 추가, 파일 필드명 명시
+  - 해결 4: 로그 출력 형식 개선으로 [UserID: actual_user_id] [Path: METHOD /path] [Handler: /path] 구조화
+  - 결과: 로그에서 정확한 사용자 ID 표시, 프로필 이미지 업로드 정상 작동, 에러 추적 개선 (해결)
+
 ### [2025-07-03] MVP용 인증 시스템 완전 제거
   - 배경: MVP에서는 복잡한 JWT 인증보다 간단한 시스템이 적합
   - 제거된 항목:
@@ -1020,5 +981,13 @@ SYSTEM_ARCHITECTURE.md 참고
     - 프롬프트 길이 및 타입 로깅으로 디버깅 개선
   - **API 문서 업데이트**: system_prompt 최대 길이 8000자, 개인화 기능 설명 추가
   - 결과: AI가 사용자별 맞춤형 응답 제공, 검열로 인한 시스템 프롬프트 차단 문제 해결 (해결)
+
+---
+### [2025-07-07] 로그 API 및 웹 로그 뷰어 공식 지원 중단:
+  - 이유: 로그를 외부로 제공할 필요가 없어져서 log API 엔드포인트 공식 지원 중단
+  - 삭제된 파일: routes/logs.js, controllers/logController.js → temp/ 폴더로 백업 이동
+  - 삭제된 명세: public/api_docs.js에서 로그 모니터링 시스템 관련 API 명세 제거
+  - 유지된 기능: middleware/logger.js (내부 로깅 시스템)은 정상 동작 유지
+  - 결과: /api/logs/* 엔드포인트 완전 제거, 웹 로그 뷰어 기능 중단, 명세와 실제 코드 일치 (해결)
 
 ---

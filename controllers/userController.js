@@ -275,6 +275,13 @@ async function uploadProfileImageController(req, res, next) {
   const { user_id } = req.params;
   const uploadedFile = req.file;
 
+  console.log('[uploadProfileImageController] 실행:', { 
+    user_id, 
+    hasFile: !!uploadedFile,
+    files: req.files,
+    body: req.body 
+  });
+
   if (!user_id) {
     const err = new Error("User ID is required.");
     err.code = "INVALID_INPUT";
@@ -282,8 +289,13 @@ async function uploadProfileImageController(req, res, next) {
   }
 
   if (!uploadedFile) {
-    const err = new Error("프로필 이미지 파일이 필요합니다.");
+    const err = new Error("프로필 이미지 파일이 필요합니다. 'profileImage' 필드로 파일을 전송해주세요.");
     err.code = "INVALID_INPUT";
+    err.details = { 
+      expected_field: 'profileImage',
+      received_files: req.files || 'none',
+      received_file: req.file || 'none'
+    };
     return next(err);
   }
 

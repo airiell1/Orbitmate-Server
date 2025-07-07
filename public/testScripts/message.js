@@ -193,7 +193,8 @@ export async function requestAiReresponseTest() {
     try {
         const response = await fetch(`/api/chat/sessions/${session_id}/messages/${message_id}/reresponse`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: 'test-user-id' }) // MVP용 테스트 user_id 추가
         });
         const data = await response.json();
         updateApiResponse(data);

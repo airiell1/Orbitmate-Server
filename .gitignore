@@ -27,3 +27,4 @@ logs/
 .DS_Store
 # Ignore all .idea directories
 .idea/
+temp/

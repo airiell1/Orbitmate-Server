@@ -57,7 +57,7 @@ const sendMessageController = createStreamController(
           () => validateStringLength(messageData.message, "message", 1, 4000),
           () => {
             // 특수 모드 타입 검사
-            const allowedSpecialModeTypes = ["stream", "canvas"];
+            const allowedSpecialModeTypes = ["stream", "canvas", "search", "chatbot"];
             if (messageData.specialModeType && !allowedSpecialModeTypes.includes(messageData.specialModeType)) {
               const err = new Error(`잘못된 specialModeType 값입니다. 허용되는 값: ${allowedSpecialModeTypes.join(", ")}.`);
               err.code = "INVALID_INPUT";
@@ -181,13 +181,10 @@ const requestAiReresponseController = createController(
   {
     dataExtractor: (req) => {
       const { session_id, message_id } = req.params;
-      const { user_id } = req.body;
+      const body = req.body || {};
       
-      if (!user_id) {
-        const err = new Error("user_id가 필요합니다.");
-        err.code = "INVALID_INPUT";
-        throw err;
-      }
+      // user_id는 선택적으로 받고, 없으면 세션에서 조회
+      const user_id = body.user_id || null;
       
       return [session_id, message_id, user_id];
     },

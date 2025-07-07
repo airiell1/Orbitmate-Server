@@ -49,7 +49,7 @@ router.post("/check-email", userController.checkEmailExistsController);
 // 프로필 관련 라우트
 router.get("/:user_id/profile", userController.getUserProfileController);
 router.put("/:user_id/profile", userController.updateUserProfileController);
-router.post("/:user_id/profile/image", upload.any(), userController.uploadProfileImageController);
+router.post("/:user_id/profile/image", upload.single('profileImage'), userController.uploadProfileImageController);
 router.delete("/:user_id", userController.deleteUserController);
 
 // 설정 관련 라우트

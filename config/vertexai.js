@@ -147,6 +147,9 @@ async function getVertexAiApiResponse(
   } else if (specialModeType === "search") {
     const searchSystemPrompt = "Please answer based on web search results if necessary. Provide concise answers with relevant information found.";
     finalSystemMessageText = finalSystemMessageText ? `${finalSystemMessageText}\n${searchSystemPrompt}` : searchSystemPrompt;
+  } else if (specialModeType === "chatbot") {
+    const chatbotSystemPrompt = "공지사항/QnA 에러해결용 챗봇 프롬프트 - 정확하고 친절한 기술 지원을 제공하며, 단계별 해결 방법을 안내해주세요. 문제의 원인을 분석하고 실용적인 해결책을 제시합니다.";
+    finalSystemMessageText = finalSystemMessageText ? `${finalSystemMessageText}\n\n${chatbotSystemPrompt}` : chatbotSystemPrompt;
   }
 
   const systemInstruction = finalSystemMessageText && finalSystemMessageText.trim() !== ""

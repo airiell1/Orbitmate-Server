@@ -69,7 +69,12 @@ async function createChatSession(connection, user_id, title, category) {
       // commit은 withTransaction에서 처리
     } else {
       // 디버깅: 실제 DB에 삽입하려는 user_id 확인
-      console.log('🔍 [DEBUG] DB 삽입 시도 - user_id:', user_id, 'title:', title, 'category:', category);
+      console.log('🔍 [DEBUG] 새 세션 생성 요청 - user_id:', user_id, 'title:', title, 'category:', category);
+      
+      // MVP 모드에서 guest 사용자 세션 생성은 정상 동작
+      if (user_id === 'guest') {
+        console.log('🔍 [DEBUG] MVP 게스트 사용자 세션 생성 (정상 동작)');
+      }
       
       // UUID 형태의 session_id를 자동 생성하여 반환
       const result = await connection.execute(

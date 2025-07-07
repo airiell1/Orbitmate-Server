@@ -204,9 +204,17 @@ export async function sendMessage() {
         // 시스템 프롬프트 및 스트리밍 모드
         const systemPromptInput = document.getElementById('system-prompt-input');
         const streamModeCheckbox = document.getElementById('stream-mode-checkbox');
+        const specialModeSelector = document.getElementById('special-mode-selector');
         const systemPrompt = systemPromptInput.value.trim();
         const streamMode = streamModeCheckbox.checked;
-        const specialModeType = streamMode ? 'stream' : null;
+        
+        // 특수 모드 타입 결정
+        let specialModeType = specialModeSelector.value || null;
+        if (streamMode && !specialModeType) {
+            specialModeType = 'stream';
+        } else if (streamMode && specialModeType) {
+            // 스트리밍 + 특수 모드 조합 유지
+        }
 
         const requestBody = {
             message: messageText,

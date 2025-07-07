@@ -35,12 +35,16 @@ function logApiRequest(req, res, next) {
   const startTime = Date.now();
   const timestamp = new Date().toISOString();
   
+  // 사용자 ID 추출 (여러 소스에서 시도)
+  const userId = req.params?.user_id || req.user?.user_id || req.body?.user_id || 'unknown';
+  
   // 요청 정보 수집
   const requestData = {
     method: req.method,
     url: req.originalUrl,
     ip: req.ip || req.headers['x-forwarded-for'] || 'unknown',
     contentType: req.headers['content-type'] || 'none',
+    userId: userId,
     body: req.body ? maskSensitiveData(req.body) : undefined,
     query: req.query && Object.keys(req.query).length > 0 ? maskSensitiveData(req.query) : undefined,
     params: req.params && Object.keys(req.params).length > 0 ? maskSensitiveData(req.params) : undefined
@@ -63,6 +67,7 @@ function logApiRequest(req, res, next) {
       status: statusCode,
       duration,
       ip: requestData.ip,
+      userId: requestData.userId,
       requestBody: requestData.body,
       responseBody: body,
       query: requestData.query,
@@ -92,10 +97,13 @@ function logApiError(err, req, res, next) {
   if (req.originalUrl && req.originalUrl.startsWith('/api/logs')) return next(err);
   
   const timestamp = new Date().toISOString();
+  const userId = req.params?.user_id || req.user?.user_id || req.body?.user_id || 'unknown';
+  
   const errorData = {
     method: req.method,
     url: req.originalUrl,
     status: res.statusCode,
+    userId: userId,
     message: err.message,
     code: err.code || 'UNKNOWN_ERROR',
     stack: err.stack || undefined
@@ -123,14 +131,15 @@ function writeStructuredLog(logEntry) {
   // 구분자와 함께 한 줄로 작성 (파싱 최적화)
   const logLine = [
     `[${logEntry.timestamp}]`,
+    `[UserID: ${logEntry.userId || 'unknown'}]`,
+    `[Path: ${logEntry.method || ''} ${logEntry.url || ''}]`,
+    `[Handler: ${logEntry.handler || logEntry.url || 'unknown'}]`,
     `[${logEntry.level || logEntry.type}]`,
     logEntry.requestId ? `[${logEntry.requestId}]` : '',
-    logEntry.method ? `${logEntry.method}` : '',
-    logEntry.url ? `${logEntry.url}` : '',
     logEntry.status ? `${logEntry.status}` : '',
     logEntry.duration ? `${logEntry.duration}ms` : '',
     logEntry.code ? `${logEntry.code}` : '',
-    logEntry.message ? `"${logEntry.message}"` : ''
+    logEntry.message ? `${logEntry.message}` : ''
   ].filter(Boolean).join(' ');
   
   fs.appendFileSync(logFilePath, logLine + '\n', 'utf8');
@@ -180,6 +189,7 @@ function writeCombinedRequestResponseBlock(requestId, timestamp, type, data) {
     requestId,
     method: data.method,
     url: data.url,
+    userId: data.userId,
     status: data.status,
     duration: data.duration,
     ip: data.ip,
@@ -219,6 +229,7 @@ function writeErrorBlock(timestamp, errorData) {
     level: 'ERROR',
     method: errorData.method,
     url: errorData.url,
+    userId: errorData.userId,
     status: errorData.status,
     code: errorData.code,
     message: errorData.message,

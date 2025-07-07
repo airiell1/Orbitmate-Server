@@ -26,7 +26,17 @@
   Canvas Mode: When special_mode_type is "canvas", AI responses containing HTML/CSS/JS code blocks 
   will have additional fields extracted: canvas_html, canvas_css, canvas_js
   
+  Search Mode: When special_mode_type is "search", AI provides analysis-focused responses
+  
+  Chatbot Mode: When special_mode_type is "chatbot", AI acts as technical support bot for QnA/announcements
+  
   MVP Mode: No authentication required. APIs support guest users without authentication.
+  
+  Recent Bug Fixes (2025-07-04):
+  - Fixed user ID logging: Logger middleware now properly extracts user_id from req.params, req.user, or req.body
+  - Enhanced profile image upload: Changed from upload.any() to upload.single('profileImage') for proper file handling
+  - Improved error messages: Profile image upload now provides clearer error messages and debugging information
+  - Updated log format: Logs now display [UserID: actual_user_id] instead of [UserID: unknown]
   
   Recent Bug Fixes (2025-07-03):
   - Fixed message deletion API: Removed req.body usage from DELETE requests, now accepts user_id via query parameter or x-user-id header
@@ -177,13 +187,20 @@ const apis = [
     method: 'POST',
     path: '/api/users/:user_id/profile/image',
     title: '프로필 이미지 업로드',
-    desc: '특정 사용자의 프로필 이미지를 업로드합니다.<br>Validation Rules: <ul><li>`user_id` (URL param): 필수, 최대 36자.</li><li>`profileImage` (file): 필수, 이미지 파일 (jpeg, png, gif), 최대 2MB.</li></ul><span class="api-desc-note">user_id에 "API_TEST_USER_ID"를 입력하면 테스트 계정의 프로필 이미지를 업로드할 수 있습니다.</span>',
+    desc: '특정 사용자의 프로필 이미지를 업로드합니다.<br>Validation Rules: <ul><li>`user_id` (URL param): 필수, 최대 36자.</li><li>`profileImage` (file): 필수, 이미지 파일 (jpeg, png, gif), 최대 2MB.</li></ul><span class="api-desc-note">user_id에 "API_TEST_USER_ID"를 입력하면 테스트 계정의 프로필 이미지를 업로드할 수 있습니다.</span><br><span class="api-desc-note">⚠️ 최근 수정 (2025-07-04): Multer 설정을 upload.single(\'profileImage\')로 변경, 파일 필드명 명확화, 에러 메시지 개선</span>',
     params: [
       { name: 'user_id', type: 'text', label: '사용자 ID (최대 36자)', required: true, inPath: true },
-      { name: 'profileImage', type: 'file', label: '프로필 이미지 (jpg/png/gif, max 2MB)', required: true }
+      { name: 'profileImage', type: 'file', label: '프로필 이미지 (jpg/png/gif, max 2MB, 필드명: profileImage)', required: true }
     ],
     exampleReq: '(multipart/form-data: profileImage=파일 선택)',
-    exampleRes: `{\n  "message": "프로필 이미지가 성공적으로 업데이트되었습니다.",\n  "user_id": "API_TEST_USER_ID",\n  "profile_image_path": "/uploads/API_TEST_USER_ID-YYYY-MM-DDTHH:mm:ss.sssZ-Orbitmate.png"\n}`
+    exampleRes: `{
+  "status": "success",
+  "data": {
+    "message": "프로필 이미지가 성공적으로 업로드되었습니다.",
+    "profile_image_path": "/uploads/profiles/API_TEST_USER_ID-1234567890-image.jpg",
+    "user_id": "API_TEST_USER_ID"
+  }
+}`
   },
   {
     method: 'DELETE',
@@ -316,12 +333,12 @@ const apis = [
     method: 'POST',
     path: '/api/chat/sessions/:session_id/messages',
     title: '채팅 메시지 전송',
-    desc: '특정 채팅 세션에 새 메시지를 전송하고 AI의 응답을 받습니다.<br>Validation Rules: <ul><li>`session_id` (URL param): 필수, 유효한 UUID 형식, 최대 36자.</li><li>`message` (body): 필수, 1-4000자 사이의 문자열.</li><li>`system_prompt` (body): 선택, 0-8000자 사이의 문자열. 제공되지 않으면 사용자 프로필 기반 기본 프롬프트가 자동 생성됩니다.</li><li>`special_mode_type` (body): 선택, \'stream\' 또는 \'canvas\' 중 하나여야 합니다.</li></ul><br>Optional overrides:<ul><li>`ai_provider_override`: (string) "vertexai", "geminiapi" 또는 "ollama". 제공될 경우 빈 문자열이 아니어야 합니다.</li><li>`model_id_override`: (string) 특정 모델 ID. 제공될 경우 빈 문자열이 아니어야 합니다.</li><li>`user_message_token_count`: (integer >= 0) 사용자 메시지의 토큰 수.</li><li>`max_output_tokens_override`: (integer > 0) AI 응답의 최대 토큰 수 재정의.</li><li>`context_message_limit`: (integer >= 0) 컨텍스트에 포함할 과거 메시지 수 (0은 컨텍스트 없음).</li></ul><span class="api-desc-note">🤖 시스템 프롬프트 개선: 사용자별 개인화된 기본 프롬프트 자동 생성, 프로필 정보(닉네임, 레벨, 구독등급) 및 설정(언어, AI 모델 선호도) 반영, 안전성 필터 완화 적용</span><br><span class="api-desc-note">special_mode_type이 "stream"이면 SSE 스트리밍 응답, "canvas"면 HTML/CSS/JS 추출 지원. 캔버스 모드에서는 응답에 canvas_html, canvas_css, canvas_js 필드가 추가됩니다.</span>',
+    desc: '특정 채팅 세션에 새 메시지를 전송하고 AI의 응답을 받습니다.<br>Validation Rules: <ul><li>`session_id` (URL param): 필수, 유효한 UUID 형식, 최대 36자.</li><li>`message` (body): 필수, 1-4000자 사이의 문자열.</li><li>`system_prompt` (body): 선택, 0-8000자 사이의 문자열. 제공되지 않으면 사용자 프로필 기반 기본 프롬프트가 자동 생성됩니다.</li><li>`special_mode_type` (body): 선택, \'stream\', \'canvas\', \'search\', \'chatbot\' 중 하나여야 합니다.</li></ul><br>Optional overrides:<ul><li>`ai_provider_override`: (string) "vertexai", "geminiapi" 또는 "ollama". 제공될 경우 빈 문자열이 아니어야 합니다.</li><li>`model_id_override`: (string) 특정 모델 ID. 제공될 경우 빈 문자열이 아니어야 합니다.</li><li>`user_message_token_count`: (integer >= 0) 사용자 메시지의 토큰 수.</li><li>`max_output_tokens_override`: (integer > 0) AI 응답의 최대 토큰 수 재정의.</li><li>`context_message_limit`: (integer >= 0) 컨텍스트에 포함할 과거 메시지 수 (0은 컨텍스트 없음).</li></ul><span class="api-desc-note">🤖 시스템 프롬프트 개선: 사용자별 개인화된 기본 프롬프트 자동 생성, 프로필 정보(닉네임, 레벨, 구독등급) 및 설정(언어, AI 모델 선호도) 반영, 안전성 필터 완화 적용</span><br><span class="api-desc-note">특수 모드: "stream"(SSE 스트리밍), "canvas"(HTML/CSS/JS 추출), "search"(검색 모드), "chatbot"(QnA/공지사항 에러해결 지원). 캔버스 모드에서는 응답에 canvas_html, canvas_css, canvas_js 필드가 추가됩니다.</span>',
     params: [
       { name: 'session_id', type: 'text', label: '세션 ID (최대 36자)', required: true, inPath: true, default: 'API_TEST_SESSION_ID' },
       { name: 'message', type: 'text', label: '메시지 (1-4000자)', required: true },
       { name: 'system_prompt', type: 'text', label: '시스템 프롬프트 (0-8000자, 개인화 자동 적용)', required: false },
-      { name: 'special_mode_type', type: 'text', label: '특수 모드 (stream/canvas)', required: false },
+      { name: 'special_mode_type', type: 'text', label: '특수 모드 (stream/canvas/search/chatbot)', required: false },
       { name: 'ai_provider_override', type: 'text', label: 'AI 제공자 재정의 (vertexai/geminiapi/ollama, 선택)', required: false },
       { name: 'model_id_override', type: 'text', label: 'AI 모델 ID 재정의 (선택)', required: false },
       { name: 'user_message_token_count', type: 'number', label: '사용자 메시지 토큰 수 (선택, 정수 >= 0)', required: false },

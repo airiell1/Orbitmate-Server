@@ -155,9 +155,12 @@ async function sendMessageService(
     }
 
     let aiContentToSave = aiResponseFull.content || "(함수 호출 사용됨)";
-    if (aiContentToSave.includes(message)) {
-        console.warn("AI 응답에 사용자 메시지가 중복 포함됨. 중복 제거 처리.");
-        aiContentToSave = aiContentToSave.replace(message, "");
+    
+    // 더 정교한 중복 제거 로직: 연속으로 두 번 나타나는 경우만 제거
+    const duplicatePattern = new RegExp(`(.{0,50})?${message.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*${message.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(.{0,50})?`, 'gi');
+    if (duplicatePattern.test(aiContentToSave)) {
+        console.warn(`[ChatService] AI 응답에서 중복된 사용자 메시지 발견: "${message}"`);
+        aiContentToSave = aiContentToSave.replace(new RegExp(`${message.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*${message.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gi'), message);
     }
 
     const aiMessageResult = await chatModel.saveAiMessageToDB(
@@ -221,11 +224,143 @@ async function getMessageEditHistoryService(messageId) {
 }
 
 /**
- * 편집된 메시지에 대한 AI 재응답 요청 서비스 (후속 메시지 삭제)
+ * 편집된 메시지에 대한 AI 재응답 요청 서비스 (후속 메시지 삭제 + 새로운 AI 응답 생성)
  */
-async function requestAiReresponseService(sessionId, editedMessageId, userId) {
+async function requestAiReresponseService(sessionId, editedMessageId, userId = null) {
     return await withTransaction(async (connection) => {
-        return await chatModel.requestAiReresponse(connection, sessionId, editedMessageId, userId);
+        // user_id가 제공되지 않았으면 세션에서 조회
+        let actualUserId = userId;
+        if (!actualUserId) {
+            try {
+                const sessionInfo = await sessionModel.getUserIdBySessionId(connection, sessionId);
+                actualUserId = sessionInfo.user_id;
+            } catch (error) {
+                const err = new Error("세션을 찾을 수 없습니다.");
+                err.code = "SESSION_NOT_FOUND";
+                throw err;
+            }
+        }
+        
+        // 1. 편집된 메시지 이후의 모든 메시지 삭제
+        const deleteResult = await chatModel.requestAiReresponse(connection, sessionId, editedMessageId, actualUserId);
+        
+        // 2. 편집된 메시지 내용 조회
+        const editedMessage = await chatModel.getMessageById(connection, editedMessageId);
+        if (!editedMessage) {
+            const err = new Error("편집된 메시지를 찾을 수 없습니다.");
+            err.code = "MESSAGE_NOT_FOUND";
+            throw err;
+        }
+
+        // 3. 구독 사용량 체크
+        const usage = await subscriptionModel.checkDailyUsage(connection, actualUserId);
+        if (!usage.can_make_request) {
+            const err = new Error("일일 AI 요청 한도를 초과했습니다.");
+            err.code = "FORBIDDEN";
+            err.details = { usage_info: usage, upgrade_url: "/api/subscriptions/tiers" };
+            throw err;
+        }
+
+        // 4. 사용자 설정 및 AI 제공자/모델 결정
+        let actualAiProvider = config.ai.defaultProvider;
+        let actualModelId;
+
+        try {
+            const userSettings = await userModel.getUserSettings(connection, actualUserId);
+            if (userSettings && userSettings.ai_model_preference) {
+                const prefParts = userSettings.ai_model_preference.split('/');
+                if (prefParts.length === 2) {
+                    actualAiProvider = prefParts[0];
+                    actualModelId = prefParts[1];
+                } else {
+                    actualAiProvider = userSettings.ai_model_preference;
+                }
+            }
+        } catch (settingsError) {
+            console.warn(`[ChatService-Reresponse] 사용자 ${actualUserId}의 AI 설정 조회 실패: ${settingsError.message}. 기본값 사용.`);
+        }
+
+        // 모델 ID가 명시적으로 설정되지 않았을 경우, 각 제공자의 기본 모델 사용
+        if (!actualModelId) {
+            switch (actualAiProvider) {
+                case "geminiapi": actualModelId = config.ai.gemini.defaultModel; break;
+                case "ollama": actualModelId = config.ai.ollama.defaultModel; break;
+                case "vertexai": actualModelId = config.ai.vertexAi.defaultModel; break;
+                default:
+                    const err = new Error(`알 수 없는 AI 제공자입니다: ${actualAiProvider}`);
+                    err.code = "INVALID_CONFIG";
+                    throw err;
+            }
+        }
+
+        // 5. 사용자 프로필 및 설정 조회 (시스템 프롬프트 개인화용)
+        let userProfile = null;
+        let userSettings = null;
+        
+        try {
+            userProfile = await userModel.getUserProfile(connection, actualUserId);
+            userSettings = await userModel.getUserSettings(connection, actualUserId);
+        } catch (profileError) {
+            console.warn(`[ChatService-Reresponse] 사용자 ${actualUserId} 프로필/설정 조회 실패: ${profileError.message}`);
+        }
+
+        // 6. 시스템 프롬프트 생성
+        const enhancedSystemPrompt = generateSystemPrompt(userProfile, userSettings);
+        const finalSystemPrompt = validateAndCleanPrompt(enhancedSystemPrompt);
+
+        // 7. 대화 이력 조회 (편집된 메시지까지만)
+        const chatHistoryForAI = await chatModel.getChatHistoryFromDB(connection, sessionId, false);
+
+        // 8. AI 응답 요청
+        const callOptions = {
+            model_id_override: actualModelId,
+        };
+        if (actualAiProvider === "ollama") callOptions.ollamaModel = actualModelId;
+
+        const requestContext = { clientIp: "reresponse" };
+
+        console.log(`[ChatService-Reresponse] AI 재응답 요청: ${actualAiProvider}/${actualModelId}, 메시지: "${editedMessage.message_content.substring(0, 50)}..."`);
+
+        const aiResponseFull = await fetchChatCompletion(
+            actualAiProvider, 
+            editedMessage.message_content, 
+            chatHistoryForAI, 
+            finalSystemPrompt,
+            'general', // 재응답은 일반 모드로
+            null, // 스트리밍 콜백 없음
+            callOptions, 
+            requestContext
+        );
+
+        // 9. AI 응답 검증
+        if (!aiResponseFull || typeof aiResponseFull.content !== "string" || aiResponseFull.content.trim() === "") {
+            const err = new Error("AI로부터 유효한 재응답을 받지 못했습니다.");
+            err.code = "AI_RESPONSE_ERROR";
+            throw err;
+        }
+
+        // 10. AI 응답 DB에 저장
+        const aiMessageResult = await chatModel.saveAiMessageToDB(
+            connection, 
+            sessionId, 
+            actualUserId, 
+            aiResponseFull.content.trim(), 
+            aiResponseFull.actual_output_tokens
+        );
+
+        console.log(`[ChatService-Reresponse] AI 재응답 완료: messageId=${aiMessageResult.ai_message_id}, 길이=${aiResponseFull.content.length}자`);
+
+        return {
+            success: true,
+            deleted_messages: deleteResult.deleted_messages,
+            ai_message_id: aiMessageResult.ai_message_id,
+            ai_response: aiMessageResult.content,
+            created_at: aiMessageResult.created_at,
+            ai_message_token_count: aiMessageResult.ai_message_token_count,
+            ai_provider: actualAiProvider,
+            model_id: actualModelId,
+            message: "AI 재응답이 성공적으로 생성되었습니다."
+        };
     });
 }
 
