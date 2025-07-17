@@ -168,6 +168,11 @@ const updateUserProfileController = createUpdateController(
           err.code = "INVALID_INPUT";
           throw err;
         }
+        if (profileData.theme && profileData.theme.length > 100) {
+          const err = new Error("테마는 최대 100자까지 설정할 수 있습니다.");
+          err.code = "INVALID_INPUT";
+          throw err;
+        }
       }
     ],
     errorContext: 'update_user_profile'
@@ -252,11 +257,8 @@ const updateUserSettingsController = createUpdateController(
           err.code = "INVALID_INPUT";
           throw err;
         }
-        if (settingsData.language && !config.userSettings.supportedLanguages?.includes(settingsData.language)) {
-          const err = new Error(`Invalid language. Supported: ${config.userSettings.supportedLanguages?.join(', ') || 'ko, en'}`);
-          err.code = "INVALID_INPUT";
-          throw err;
-        }
+        // 언어 검증 제거 - 사용자가 원하는 언어로 설정 가능
+        // (만우절 특별 언어도 허용 🎉)
         if (settingsData.font_size && (settingsData.font_size < config.userSettings.fontSizeRange.min || settingsData.font_size > config.userSettings.fontSizeRange.max)) {
           const err = new Error(`Font size must be between ${config.userSettings.fontSizeRange.min} and ${config.userSettings.fontSizeRange.max}.`);
           err.code = "INVALID_INPUT";
@@ -544,15 +546,135 @@ const updateUserLanguageController = createUpdateController(
           throw err;
         }
 
-        const supportedLanguages = ['ko', 'en', 'ja', 'zh'];
-        if (!supportedLanguages.includes(language)) {
-          const err = new Error(`Unsupported language. Supported: ${supportedLanguages.join(', ')}`);
+        // 언어 검증 제거 - 사용자가 원하는 언어를 자유롭게 설정 가능
+        // (만우절 특별 언어도 허용 🎉)
+      }
+    ],
+    errorContext: 'update_user_language'
+  }
+);
+
+// =========================
+// 🔥 사용자 목록 조회 및 관리자 기능
+// =========================
+
+/**
+ * 사용자 목록 조회 컨트롤러
+ */
+async function getUserListController(req, res, next) {
+  try {
+    const { 
+      limit = 20, 
+      offset = 0, 
+      search = '', 
+      include_inactive = 'false',
+      sort_by = 'created_at',
+      sort_order = 'desc'
+    } = req.query;
+
+    // 유효성 검증
+    const limitNum = parseInt(limit);
+    const offsetNum = parseInt(offset);
+    
+    if (isNaN(limitNum) || limitNum < 1 || limitNum > 100) {
+      const error = new Error("limit은 1~100 사이의 숫자여야 합니다.");
+      error.code = "INVALID_INPUT";
+      throw error;
+    }
+
+    if (isNaN(offsetNum) || offsetNum < 0) {
+      const error = new Error("offset은 0 이상의 숫자여야 합니다.");
+      error.code = "INVALID_INPUT";
+      throw error;
+    }
+
+    const validSortFields = ['created_at', 'username', 'email', 'last_login'];
+    if (!validSortFields.includes(sort_by)) {
+      const error = new Error("sort_by는 created_at, username, email, last_login 중 하나여야 합니다.");
+      error.code = "INVALID_INPUT";
+      throw error;
+    }
+
+    const validSortOrders = ['asc', 'desc'];
+    if (!validSortOrders.includes(sort_order)) {
+      const error = new Error("sort_order는 asc 또는 desc여야 합니다.");
+      error.code = "INVALID_INPUT";
+      throw error;
+    }
+
+    const includeInactive = include_inactive === 'true';
+
+    const options = {
+      limit: limitNum,
+      offset: offsetNum,
+      search: search.trim(),
+      includeInactive,
+      sortBy: sort_by,
+      sortOrder: sort_order
+    };
+
+    const result = await withTransaction(async (connection) => {
+      return await userModel.getUserList(connection, options);
+    });
+
+    const apiResponse = standardizeApiResponse(result);
+    res.status(apiResponse.statusCode).json(apiResponse.body);
+
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * 관리자 권한 확인 컨트롤러
+ */
+const checkAdminStatusController = createReadController(
+  userModel.isUserAdmin,
+  {
+    dataExtractor: (req) => {
+      const { user_id } = req.params;
+      return [user_id];
+    },
+    validations: [
+      (req) => {
+        const { user_id } = req.params;
+
+        if (!user_id) {
+          const err = new Error("User ID is required.");
           err.code = "INVALID_INPUT";
           throw err;
         }
       }
     ],
-    errorContext: 'update_user_language'
+    responseTransformer: (is_admin) => ({ is_admin }),
+    errorContext: 'check_admin_status'
+  }
+);
+
+/**
+ * 관리자 권한 설정 컨트롤러
+ */
+const setAdminStatusController = createUpdateController(
+  userModel.setUserAdminStatus,
+  {
+    dataExtractor: (req) => {
+      const { user_id } = req.params;
+      const { is_admin } = req.body;
+      return [user_id, is_admin];
+    },
+    validations: [
+      (req) => {
+        const { user_id } = req.params;
+        const { is_admin } = req.body;
+
+        if (!user_id || typeof is_admin !== 'boolean') {
+          const err = new Error("User ID and is_admin (boolean) are required.");
+          err.code = "INVALID_INPUT";
+          throw err;
+        }
+      }
+    ],
+    errorContext: 'set_admin_status'
   }
 );
 
@@ -579,4 +701,11 @@ module.exports = {
   updateUserCustomizationController,
   getTranslationResourcesController,
   updateUserLanguageController,
+
+  // 사용자 목록 조회 기능
+  getUserListController,
+
+  // 관리자 권한 관리 기능
+  checkAdminStatusController,
+  setAdminStatusController,
 };

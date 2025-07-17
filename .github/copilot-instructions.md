@@ -279,6 +279,19 @@ SYSTEM_ARCHITECTURE.md 참고
 
 ---
 
+### [2025-07-17] AI 응답 메시지 중복 근본 원인 해결:
+  - **문제**: 사용자 메시지가 history와 currentUserMessage 양쪽에 중복되어 AI에 전달되는 구조적 문제
+  - **원인 분석**: 
+    1. chatService.js에서 사용자 메시지 DB 저장 → 대화 이력 조회 → AI 호출 시 같은 메시지가 두 번 전달
+    2. geminiapi.js, vertexai.js, ollama.js에서 history의 마지막 메시지와 currentUserMessage가 중복될 때 모두 AI에 전달
+  - **근본 해결**:
+    1. services/chatService.js: 대화 이력 조회를 사용자 메시지 저장 전으로 이동 (라인 순서 변경)
+    2. config/geminiapi.js: 대화 이력의 마지막 메시지가 현재 메시지와 같으면 제거 로직 추가
+    3. config/vertexai.js: 동일한 중복 방지 로직 적용
+    4. config/ollama.js: 동일한 중복 방지 로직 적용
+  - **임시 코드 제거**: services/chatService.js에서 정규식 기반 중복 제거 코드 완전 제거
+  - **결과**: "ㄴㅇㄴㄴㅇㄴ" 같은 중복 응답 근본적 해결, 모든 AI 제공자에서 일관된 동작 보장 (해결)
+
   - 날짜, 문제/원인/해결책/상태 순으로 간결하게 기록
   - 예시:
     - `[2025-05-08] 긴 AI 응답 표시 문제: testScript.js에서 addMessage로 넘길 때 잘림 → 응답 요약 표시 및 전체 내용은 패널 안내로 개선 (프론트엔드)`
@@ -989,5 +1002,18 @@ SYSTEM_ARCHITECTURE.md 참고
   - 삭제된 명세: public/api_docs.js에서 로그 모니터링 시스템 관련 API 명세 제거
   - 유지된 기능: middleware/logger.js (내부 로깅 시스템)은 정상 동작 유지
   - 결과: /api/logs/* 엔드포인트 완전 제거, 웹 로그 뷰어 기능 중단, 명세와 실제 코드 일치 (해결)
+
+---
+### [2025-07-16] 관리자 권한 시스템 완전 구현:
+  - 데이터베이스 스키마: users 테이블에 is_admin 컬럼 추가 (NUMBER(1) DEFAULT 0)
+  - 모델 함수: isUserAdmin, setUserAdminStatus 추가, 기존 함수들에 is_admin 필드 포함
+  - 컨트롤러: checkAdminStatusController, setAdminStatusController 추가
+  - 미들웨어: admin.js (requireAdminPermission, requireSelfOrAdminPermission)
+  - API 엔드포인트: GET /api/users/:user_id/admin-status, PUT /api/users/:user_id/admin-status, GET /api/users (사용자 목록)
+  - 테스트 UI: public/test.html에 관리자 권한 관리 섹션 추가
+  - 테스트 스크립트: public/testScripts/admin.js 모듈 추가
+  - 데이터베이스 업데이트: add_admin_column.sql 스크립트 생성, 기본 관리자 계정 및 설정 추가
+  - API 명세: public/api_docs.js에 관리자 권한 관련 API 3개 추가 (권한 확인/설정/사용자 목록)
+  - 결과: 완전한 관리자 권한 시스템 구현, 사용자 목록 관리 기능 추가, 권한 기반 접근 제어 가능 (해결)
 
 ---

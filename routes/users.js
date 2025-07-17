@@ -46,6 +46,9 @@ router.post("/register", userController.registerUserController);
 router.post("/login", userController.loginUserController);
 router.post("/check-email", userController.checkEmailExistsController);
 
+// 사용자 목록 조회 (관리자용)
+router.get("/", userController.getUserListController);
+
 // 프로필 관련 라우트
 router.get("/:user_id/profile", userController.getUserProfileController);
 router.put("/:user_id/profile", userController.updateUserProfileController);
@@ -91,5 +94,18 @@ router.post("/:user_id/badges/upgrade", userActivityController.upgradeBadgeLevel
 router.get("/:user_id/badge-details", userActivityController.getUserBadgeDetailsController);
 router.post("/:user_id/subscription-badge", userActivityController.upgradeSubscriptionBadgeController);
 router.post("/:user_id/approve-badge", userActivityController.approveBadgeUpgradeController);
+
+// =========================
+// 🔥 관리자 권한 관리 기능
+// =========================
+
+// 관리자 권한 확인
+router.get("/:user_id/admin-status", userController.checkAdminStatusController);
+
+// 관리자 권한 설정/해제
+router.put("/:user_id/admin-status", userController.setAdminStatusController);
+
+// 사용자 목록 조회 (관리자 권한 필요)
+router.get("/", userController.getUserListController);
 
 module.exports = router;

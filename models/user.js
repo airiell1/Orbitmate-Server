@@ -153,7 +153,7 @@ async function registerUser(connection, user_id, username, email, password) {
 async function loginUser(connection, email, password) {
   try {
     const result = await connection.execute(
-      `SELECT user_id, username, email, password_hash, is_active FROM users WHERE email = :email`,
+      `SELECT user_id, username, email, password_hash, is_active, is_admin FROM users WHERE email = :email`,
       { email: email },
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
@@ -190,6 +190,8 @@ async function loginUser(connection, email, password) {
       user_id: user.user_id,
       username: user.username,
       email: user.email,
+      is_active: user.is_active,
+      is_admin: user.is_admin,
       logged_in_at: new Date().toISOString(),
     };
   } catch (err) {
@@ -202,9 +204,11 @@ async function loginUser(connection, email, password) {
 async function getUserSettings(connection, user_id) {
   try {
     const result = await connection.execute(
-      `SELECT user_id, theme, language, font_size, notifications_enabled, ai_model_preference, updated_at
-       FROM user_settings
-       WHERE user_id = :user_id`,
+      `SELECT us.user_id, us.theme, us.language, us.font_size, us.notifications_enabled, us.ai_model_preference, us.updated_at,
+              u.is_active
+       FROM user_settings us
+       JOIN users u ON us.user_id = u.user_id
+       WHERE us.user_id = :user_id`,
       { user_id: user_id },
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
@@ -293,7 +297,7 @@ async function updateUserProfileImage(connection, user_id, profileImagePath) {
 async function getUserProfile(connection, user_id) {
   try {
     const result = await connection.execute(
-      `SELECT u.user_id, u.username, u.email, u.created_at, u.is_active, u.profile_image_path, 
+      `SELECT u.user_id, u.username, u.email, u.created_at, u.is_active, u.is_admin, u.profile_image_path, 
               p.theme_preference, p.bio, p.badge, p.experience, p."level", p.updated_at as profile_updated_at
        FROM users u
        LEFT JOIN user_profiles p ON u.user_id = p.user_id
@@ -494,7 +498,7 @@ async function getUserCustomization(connection, user_id) {
       // 기본 프로필이 없는 경우, USER_NOT_FOUND 또는 RESOURCE_NOT_FOUND 에러를 던지거나,
       // 빈 객체 또는 기본값을 반환할 수 있음. 여기서는 에러를 던지는 대신 기본값 반환.
       return toSnakeCaseObj({ // 기본값도 snake_case로
-        profile_theme: "default", profile_border: "none", profile_background: null,
+        profile_theme: "space", profile_border: "none", profile_background: null,
         status_message: null, nickname: null, introduction: null,
         is_premium: 0, premium_until: null, user_id: user_id // user_id 추가
       });
@@ -557,7 +561,9 @@ async function getUserLevel(connection, user_id) {
               (SELECT required_exp FROM level_requirements WHERE level_num = up."level" + 1) as next_level_exp
        FROM user_profiles up
        LEFT JOIN level_requirements lr ON up."level" = lr.level_num
-       WHERE up.user_id = :user_id`,
+       WHERE up.user_id = :user_id
+       ORDER BY up."level" DESC
+       FETCH FIRST 1 ROWS ONLY`,
       { user_id }, { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
 
@@ -602,7 +608,6 @@ async function getUserLevel(connection, user_id) {
     throw handleOracleError(error);
   }
 }
-
 
 // 번역 리소스 조회
 async function getTranslationResources(connection, lang_code = "ko", category = null) {
@@ -709,7 +714,7 @@ async function getUserBadges(connection, user_id) {
       `SELECT badge_id, badge_type, badge_name, badge_description, badge_icon, badge_level, is_equipped, earned_at, updated_at
        FROM user_badges
        WHERE user_id = :user_id
-       ORDER BY earned_at DESC`,
+       ORDER BY badge_level DESC, earned_at DESC`,
       { user_id }, {outFormat: oracledb.OUT_FORMAT_OBJECT}
     );
     return result.rows.map(row => toSnakeCaseObj(row));
@@ -1045,6 +1050,193 @@ async function handleTestParticipation(connection, user_id, test_type, test_deta
   });
 }
 
+/**
+ * 사용자 목록 조회 함수
+ * @param {oracledb.Connection} connection - DB connection object
+ * @param {Object} options - 조회 옵션
+ * @returns {Promise<Object>} 사용자 목록 및 메타데이터
+ */
+async function getUserList(connection, options = {}) {
+  try {
+    const {
+      limit = 20,
+      offset = 0,
+      search = '',
+      includeInactive = false,
+      sortBy = 'created_at',
+      sortOrder = 'desc'
+    } = options;
+
+    // 기본 쿼리 구성
+    let whereClause = '';
+    let searchParams = {};
+    
+    // 검색 조건 추가
+    if (search) {
+      whereClause = `WHERE (LOWER(u.username) LIKE LOWER(:search) OR LOWER(u.email) LIKE LOWER(:search))`;
+      searchParams.search = `%${search}%`;
+    }
+
+    // 활성 상태 필터
+    if (!includeInactive) {
+      whereClause += whereClause ? ' AND u.is_active = 1' : 'WHERE u.is_active = 1';
+    }
+
+    // 정렬 방향 검증
+    const orderDirection = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+    
+    // 정렬 컬럼 매핑
+    const sortColumnMap = {
+      'created_at': 'u.created_at',
+      'username': 'u.username',
+      'email': 'u.email',
+      'last_login': 'u.last_login'
+    };
+    const sortColumn = sortColumnMap[sortBy] || 'u.created_at';
+
+    // 전체 개수 조회
+    const countQuery = `
+      SELECT COUNT(*) as total_count
+      FROM users u
+      ${whereClause}
+    `;
+
+    const countResult = await connection.execute(countQuery, searchParams, { outFormat: oracledb.OUT_FORMAT_OBJECT });
+    const totalCount = countResult.rows[0].TOTAL_COUNT;
+
+    // 사용자 목록 조회 (페이징 적용)
+    const listQuery = `
+      SELECT * FROM (
+        SELECT ROWNUM rn, user_data.*
+        FROM (
+          SELECT 
+            u.user_id,
+            u.username,
+            u.email,
+            u.created_at,
+            u.last_login,
+            u.is_active,
+            u.is_admin,
+            u.profile_image_path,
+            up.nickname,
+            up.experience,
+            up."level",
+            up.profile_theme,
+            up.status_message,
+            us.language,
+            us.theme
+          FROM users u
+          LEFT JOIN user_profiles up ON u.user_id = up.user_id
+          LEFT JOIN user_settings us ON u.user_id = us.user_id
+          ${whereClause}
+          ORDER BY ${sortColumn} ${orderDirection}
+        ) user_data
+        WHERE ROWNUM <= :end_row
+      ) WHERE rn > :start_row
+    `;
+
+    const listParams = {
+      ...searchParams,
+      start_row: offset,
+      end_row: offset + limit
+    };
+
+    const listResult = await connection.execute(listQuery, listParams, { outFormat: oracledb.OUT_FORMAT_OBJECT });
+
+    // 결과 변환
+    const users = [];
+    for (const row of listResult.rows) {
+      const user = {
+        user_id: row.USER_ID,
+        username: row.USERNAME,
+        email: row.EMAIL,
+        created_at: row.CREATED_AT?.toISOString(),
+        last_login: row.LAST_LOGIN?.toISOString(),
+        is_active: row.IS_ACTIVE === 1,
+        is_admin: row.IS_ADMIN === 1,
+        profile_image_path: row.PROFILE_IMAGE_PATH,
+        nickname: row.NICKNAME,
+        experience: row.EXPERIENCE || 0,
+        level: row.LEVEL || 1,
+        profile_theme: row.PROFILE_THEME || 'space',
+        status_message: row.STATUS_MESSAGE,
+        language: row.LANGUAGE || 'ko',
+        theme: row.THEME || 'light'
+      };
+      users.push(user);
+    }
+
+    return {
+      users,
+      pagination: {
+        total_count: totalCount,
+        limit,
+        offset,
+        has_next: offset + limit < totalCount,
+        has_previous: offset > 0
+      },
+      filters: {
+        search,
+        include_inactive: includeInactive,
+        sort_by: sortBy,
+        sort_order: sortOrder
+      }
+    };
+
+  } catch (error) {
+    console.error('[getUserList] 오류:', error);
+    throw handleOracleError(error);
+  }
+}
+
+// 관리자 권한 확인 함수
+async function isUserAdmin(connection, user_id) {
+  try {
+    const result = await connection.execute(
+      `SELECT is_admin FROM users WHERE user_id = :user_id`,
+      { user_id },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    if (result.rows.length === 0) {
+      const error = new Error("사용자를 찾을 수 없습니다.");
+      error.code = "USER_NOT_FOUND";
+      throw error;
+    }
+
+    return result.rows[0].IS_ADMIN === 1;
+  } catch (error) {
+    if (error.code === "USER_NOT_FOUND") {
+      throw error;
+    }
+    throw handleOracleError(error);
+  }
+}
+
+// 관리자 권한 설정 함수
+async function setUserAdminStatus(connection, user_id, is_admin) {
+  try {
+    const result = await connection.execute(
+      `UPDATE users SET is_admin = :is_admin WHERE user_id = :user_id`,
+      { user_id, is_admin: is_admin ? 1 : 0 },
+      { autoCommit: false }
+    );
+
+    if (result.rowsAffected === 0) {
+      const error = new Error("사용자를 찾을 수 없습니다.");
+      error.code = "USER_NOT_FOUND";
+      throw error;
+    }
+
+    return { success: true, message: "관리자 권한이 업데이트되었습니다." };
+  } catch (error) {
+    if (error.code === "USER_NOT_FOUND") {
+      throw error;
+    }
+    throw handleOracleError(error);
+  }
+}
+
 module.exports = {
   registerUser,
   loginUser,
@@ -1071,5 +1263,8 @@ module.exports = {
   upgradeSubscriptionBadge,
   approveBadgeUpgrade,
   grantUserBadge,
-  handleUserActivity
+  handleUserActivity,
+  getUserList,
+  isUserAdmin,
+  setUserAdminStatus
 };

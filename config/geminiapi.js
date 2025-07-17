@@ -110,9 +110,14 @@ async function getGeminiApiResponse(
     const chatHistory = [];
 
     // 시스템 프롬프트 처리 개선
-    if (systemMessageText && systemMessageText.trim()) {
-      // 시스템 프롬프트 검증 및 정리
-      const cleanedSystemPrompt = validateAndCleanPrompt(systemMessageText.trim());
+    if (systemMessageText) {
+      // systemMessageText가 문자열인지 확인하고 변환
+      const systemText = typeof systemMessageText === 'string' ? systemMessageText : 
+                        (systemMessageText && systemMessageText.content ? systemMessageText.content : String(systemMessageText));
+      
+      if (systemText && systemText.trim()) {
+        // 시스템 프롬프트 검증 및 정리
+        const cleanedSystemPrompt = validateAndCleanPrompt(systemText.trim());
       
       // 특수 모드에 따른 컨텍스트 확장
       let contextType = null;
@@ -140,6 +145,7 @@ async function getGeminiApiResponse(
         role: "model",
         parts: [{ text: "네, 이해했습니다. 지시사항에 따라 도움을 드리겠습니다." }],
       });
+      }
     } else if (useTools) {
       // 시스템 프롬프트가 없을 때 도구만 사용하는 경우
       const toolsOnlyPrompt = enhancePromptWithTools("");
@@ -153,6 +159,7 @@ async function getGeminiApiResponse(
       });
     }
 
+    // 대화 이력 처리 (중복 방지 로직 추가)
     if (history && Array.isArray(history)) {
       history.forEach((msg) => {
         const messageText = (msg.parts && msg.parts[0] && msg.parts[0].text) || msg.content;
@@ -172,6 +179,18 @@ async function getGeminiApiResponse(
     // 메시지 검증
     if (!enhancedMessage || enhancedMessage.trim() === "") {
       throw new Error("메시지 내용이 비어있습니다.");
+    }
+
+    // 🔧 중복 방지: 대화 이력의 마지막 메시지가 현재 사용자 메시지와 같으면 제거
+    if (chatHistory.length > 0) {
+      const lastMessage = chatHistory[chatHistory.length - 1];
+      if (lastMessage.role === "user" && 
+          lastMessage.parts && 
+          lastMessage.parts[0] && 
+          lastMessage.parts[0].text === enhancedMessage.trim()) {
+        console.log(`[GeminiAPI] 중복된 사용자 메시지 발견, 이력에서 제거: "${enhancedMessage.substring(0, 50)}..."`);
+        chatHistory.pop(); // 마지막 중복 메시지 제거
+      }
     }
 
     const chat = model.startChat({

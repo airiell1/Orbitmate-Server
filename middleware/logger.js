@@ -323,11 +323,6 @@ function initializeLogger() {
     message: 'API 로깅 시스템 재시작됨 - 최적화된 구조화 로깅 활성화'
   });
   
-  // 테스트 로그들
-  logInfo('✅ INFO 레벨 테스트 - 정상 작동 중입니다');
-  logWarn('⚠️ WARN 레벨 테스트 - 경고 메시지입니다');
-  logError('ERROR 레벨 테스트 - 에러 메시지입니다', new Error('테스트 에러'));
-  
   // 자동 로그 정리 스케줄링
   setInterval(() => cleanupLogs(7), 24 * 60 * 60 * 1000);
 }

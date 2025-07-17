@@ -159,6 +159,57 @@ const apis = [
   },
   {
     method: 'GET',
+    path: '/api/users',
+    title: '사용자 목록 조회',
+    desc: '시스템에 등록된 사용자 목록을 조회합니다. 페이징, 검색, 정렬 기능을 지원합니다.<br>Query Parameters: <ul><li>`limit`: 페이지 크기 (1-100, 기본값: 20)</li><li>`offset`: 시작 위치 (0 이상, 기본값: 0)</li><li>`search`: 검색어 (사용자명, 이메일 검색)</li><li>`include_inactive`: 비활성 사용자 포함 (true/false, 기본값: false)</li><li>`sort_by`: 정렬 기준 (created_at/username/email/last_login, 기본값: created_at)</li><li>`sort_order`: 정렬 순서 (asc/desc, 기본값: desc)</li></ul>',
+    params: [
+      { name: 'limit', type: 'number', label: '페이지 크기 (1-100, 기본값: 20)', required: false },
+      { name: 'offset', type: 'number', label: '시작 위치 (0 이상, 기본값: 0)', required: false },
+      { name: 'search', type: 'text', label: '검색어 (사용자명, 이메일)', required: false },
+      { name: 'include_inactive', type: 'checkbox', label: '비활성 사용자 포함 (기본값: false)', required: false },
+      { name: 'sort_by', type: 'text', label: '정렬 기준 (created_at/username/email/last_login)', required: false },
+      { name: 'sort_order', type: 'text', label: '정렬 순서 (asc/desc)', required: false }
+    ],
+    exampleReq: '',
+    exampleRes: `{
+  "status": "success",
+  "data": {
+    "users": [
+      {
+        "user_id": "API_TEST_USER_ID",
+        "username": "APItest",
+        "email": "API@example.com",
+        "created_at": "2025-01-01T00:00:00.000Z",
+        "last_login": "2025-01-15T10:30:00.000Z",
+        "is_active": true,
+        "profile_image_path": "/uploads/profiles/user1-image.jpg",
+        "nickname": "API 테스트 사용자",
+        "experience": 150,
+        "level": 2,
+        "profile_theme": "dark",
+        "status_message": "오비메이트를 테스트하고 있습니다.",
+        "language": "ko",
+        "theme": "dark"
+      }
+    ],
+    "pagination": {
+      "total_count": 1,
+      "limit": 20,
+      "offset": 0,
+      "has_next": false,
+      "has_previous": false
+    },
+    "filters": {
+      "search": "",
+      "include_inactive": false,
+      "sort_by": "created_at",
+      "sort_order": "desc"
+    }
+  }
+}`
+  },
+  {
+    method: 'GET',
     path: '/api/users/:user_id/settings',    title: '사용자 설정 조회',
     desc: '특정 사용자의 설정을 조회합니다.<br>Validation Rules: <ul><li>`user_id` (URL param): 필수, 최대 36자.</li>',
     params: [
@@ -171,11 +222,11 @@ const apis = [
     method: 'PUT',
     path: '/api/users/:user_id/settings',
     title: '사용자 설정 수정',
-    desc: '특정 사용자의 설정을 업데이트합니다.<br>Validation Rules: <ul><li>`user_id` (URL param): 필수, 최대 36자.</li><li>`theme`: "light", "dark", "system" 중 하나.</li><li>`language`: "en", "ko", "ja" 중 하나.</li><li>`font_size`: 10-30 사이의 숫자.</li><li>`notifications_enabled`: boolean.</li><li>`ai_model_preference`: 문자열, 최대 50자.</li></ul><span class="api-desc-note">user_id에 "API_TEST_USER_ID"를 입력하면 테스트 계정의 설정을 수정할 수 있습니다.</span>',
+    desc: '특정 사용자의 설정을 업데이트합니다.<br>Validation Rules: <ul><li>`user_id` (URL param): 필수, 최대 36자.</li><li>`theme`: "light", "dark", "system" 중 하나.</li><li>`language`: 모든 언어 코드 허용 (AI가 판단).</li><li>`font_size`: 10-30 사이의 숫자.</li><li>`notifications_enabled`: boolean.</li><li>`ai_model_preference`: 문자열, 최대 50자.</li></ul><span class="api-desc-note">user_id에 "API_TEST_USER_ID"를 입력하면 테스트 계정의 설정을 수정할 수 있습니다.</span>',
     params: [
       { name: 'user_id', type: 'text', label: '사용자 ID (최대 36자)', required: true, inPath: true },
       { name: 'theme', type: 'text', label: '테마 (light/dark/system)', required: false },
-      { name: 'language', type: 'text', label: '언어 (en/ko/ja)', required: false },
+      { name: 'language', type: 'text', label: '언어 (모든 언어 허용: ko/en/ja/...)', required: false },
       { name: 'font_size', type: 'number', label: '글꼴 크기 (10-30)', required: false },
       { name: 'notifications_enabled', type: 'checkbox', label: '알림 사용 (true/false)', required: false },
       { name: 'ai_model_preference', type: 'text', label: 'AI 모델 (최대 50자)', required: false }
@@ -238,6 +289,98 @@ const apis = [
     ],
     exampleReq:  `{\n  "username": "APItestUser",\n  "theme_preference": "dark",\n  "bio": "새로운 자기소개입니다.",\n  "badge": "Gold Star"\n}`,
     exampleRes:  `{\n  "user_id": "API_TEST_USER_ID",\n  "username": "APItest",\n  "email": "API@example.com",\n  "created_at": "YYYY-MM-DDTHH:mm:ss.sssZ",\n  "is_active": 1,\n  "profile_image_path": null,\n  "theme_preference": "light",\n  "bio": "테스트 계정입니다.",\n  "badge": null,\n  "experience": 0,\n  "level": 1,\n  "updated_at": "YYYY-MM-DDTHH:mm:ss.sssZ"\n}`  },
+  
+  /* 2-1. 관리자 권한 관리 */
+  {
+    method: 'GET',
+    path: '/api/users/:user_id/admin-status',
+    title: '관리자 권한 확인',
+    desc: '특정 사용자의 관리자 권한 여부를 확인합니다.<br>Validation Rules: <ul><li>`user_id` (URL param): 필수, 최대 36자.</li></ul><span class="api-desc-note">user_id에 "admin"을 입력하면 관리자 계정의 권한을 확인할 수 있습니다.</span>',
+    params: [
+      { name: 'user_id', type: 'text', label: '사용자 ID (최대 36자)', required: true, inPath: true }
+    ],
+    exampleReq: '',
+    exampleRes: `{
+  "status": "success",
+  "data": {
+    "is_admin": true
+  }
+}`
+  },
+  {
+    method: 'PUT',
+    path: '/api/users/:user_id/admin-status',
+    title: '관리자 권한 설정',
+    desc: '특정 사용자의 관리자 권한을 설정하거나 해제합니다. 관리자 권한이 필요한 작업입니다.<br>Validation Rules: <ul><li>`user_id` (URL param): 필수, 최대 36자.</li><li>`is_admin` (body): 불린 값, 필수.</li></ul><span class="api-desc-note">관리자 권한이 있는 사용자만 다른 사용자의 권한을 변경할 수 있습니다.</span>',
+    params: [
+      { name: 'user_id', type: 'text', label: '사용자 ID (최대 36자)', required: true, inPath: true },
+      { name: 'is_admin', type: 'checkbox', label: '관리자 권한', required: true }
+    ],
+    exampleReq: `{
+  "is_admin": true,
+  "user_id": "admin"
+}`,
+    exampleRes: `{
+  "status": "success",
+  "data": {
+    "success": true,
+    "message": "관리자 권한이 업데이트되었습니다."
+  }
+}`
+  },
+  {
+    method: 'GET',
+    path: '/api/users',
+    title: '사용자 목록 조회',
+    desc: '시스템의 모든 사용자 목록을 조회합니다. 관리자 권한이 필요한 작업입니다.<br>Validation Rules: <ul><li>`limit` (query): 1-100 사이의 숫자, 기본값 20.</li><li>`offset` (query): 0 이상의 숫자, 기본값 0.</li><li>`search` (query): 선택적, 사용자명 또는 이메일 검색.</li><li>`sort_by` (query): created_at, username, email, last_login 중 하나, 기본값 created_at.</li><li>`sort_order` (query): asc 또는 desc, 기본값 desc.</li><li>`include_inactive` (query): true 또는 false, 기본값 false.</li></ul><span class="api-desc-note">관리자 권한이 있는 사용자만 전체 사용자 목록을 조회할 수 있습니다.</span>',
+    params: [
+      { name: 'limit', type: 'number', label: '페이지 크기 (1-100)', required: false },
+      { name: 'offset', type: 'number', label: '시작 위치 (0 이상)', required: false },
+      { name: 'search', type: 'text', label: '검색어 (사용자명/이메일)', required: false },
+      { name: 'sort_by', type: 'text', label: '정렬 기준 (created_at/username/email/last_login)', required: false },
+      { name: 'sort_order', type: 'text', label: '정렬 순서 (asc/desc)', required: false },
+      { name: 'include_inactive', type: 'checkbox', label: '비활성 사용자 포함', required: false },
+      { name: 'user_id', type: 'text', label: '요청자 ID (관리자 권한 확인용)', required: true }
+    ],
+    exampleReq: '',
+    exampleRes: `{
+  "status": "success",
+  "data": {
+    "users": [
+      {
+        "user_id": "admin",
+        "username": "Administrator",
+        "email": "admin@orbitmate.com",
+        "created_at": "2025-07-16T10:00:00.000Z",
+        "last_login": "2025-07-16T15:30:00.000Z",
+        "is_active": true,
+        "is_admin": true,
+        "profile_image_path": null,
+        "nickname": "Administrator",
+        "experience": 10000,
+        "level": 20,
+        "profile_theme": "admin",
+        "status_message": "시스템 관리자",
+        "language": "ko",
+        "theme": "dark"
+      }
+    ],
+    "pagination": {
+      "total_count": 1,
+      "limit": 20,
+      "offset": 0,
+      "has_next": false,
+      "has_previous": false
+    },
+    "filters": {
+      "search": "",
+      "include_inactive": false,
+      "sort_by": "created_at",
+      "sort_order": "desc"
+    }
+  }
+}`
+  },
   
   /* 3. 채팅 세션 관리 */  {
     method: 'GET',
@@ -819,6 +962,427 @@ data: {
 }`
   },
   
+  /* 7. 다국어 AI 번역 게시물 시스템 */
+  {
+    method: 'POST',
+    path: '/api/posts',
+    title: '게시물 생성',
+    desc: '새로운 게시물을 생성합니다. 원본 언어로 게시물을 작성하며, 다른 언어로 번역이 필요한 경우 자동으로 AI 번역을 요청합니다.<br>Validation Rules: <ul><li>`user_id`: 작성자 ID (필수, 최대 50자)</li><li>`subject`: 제목 (필수, 최대 1000자)</li><li>`content`: 내용 (필수, 최대 10000자)</li><li>`origin_language`: 원본 언어 코드 (필수, ko/en/ja/zh)</li><li>`pwd`: 비밀번호 (선택, 최대 255자, 공지사항은 NULL)</li><li>`is_notice`: 공지사항 여부 (선택, 0 또는 1, 기본값: 0)</li></ul>',
+    params: [
+      { name: 'user_id', type: 'text', label: '작성자 ID (최대 50자)', required: true },
+      { name: 'subject', type: 'text', label: '제목 (최대 1000자)', required: true },
+      { name: 'content', type: 'text', label: '내용 (최대 10000자)', required: true },
+      { name: 'origin_language', type: 'text', label: '원본 언어 (ko/en/ja/zh)', required: true },
+      { name: 'pwd', type: 'password', label: '비밀번호 (선택, 공지사항은 비워두세요)', required: false },
+      { name: 'is_notice', type: 'number', label: '공지사항 여부 (0 또는 1)', required: false }
+    ],
+    exampleReq: `{
+  "user_id": "user123",
+  "subject": "안녕하세요",
+  "content": "한국어로 작성된 게시물입니다.",
+  "origin_language": "ko",
+  "pwd": "mypassword",
+  "is_notice": 0
+}`,
+    exampleRes: `{
+  "status": "success",
+  "data": {
+    "post_id": 123,
+    "user_id": "user123",
+    "origin_language": "ko",
+    "is_notice": 0,
+    "created_at": "2025-07-15T10:30:00.000Z",
+    "original_translation": {
+      "language_code": "ko",
+      "subject": "안녕하세요",
+      "content": "한국어로 작성된 게시물입니다.",
+      "is_original": 1,
+      "translation_method": "manual"
+    }
+  }
+}`
+  },
+  {
+    method: 'GET',
+    path: '/api/posts',
+    title: '게시물 목록 조회',
+    desc: '게시물 목록을 특정 언어로 조회합니다. 번역이 없는 경우 자동으로 AI 번역을 수행합니다.<br>Query Parameters: <ul><li>`language`: 언어 코드 (필수, ko/en/ja/zh)</li><li>`limit`: 조회 개수 (선택, 1-100, 기본값: 20)</li><li>`offset`: 조회 시작 위치 (선택, 기본값: 0)</li><li>`include_notices`: 공지사항 포함 여부 (선택, true/false, 기본값: true)</li></ul>',
+    params: [
+      { name: 'language', type: 'text', label: '언어 코드 (ko/en/ja/zh)', required: true, default: 'ko' },
+      { name: 'limit', type: 'number', label: '조회 개수 (1-100, 기본값: 20)', required: false, default: '20' },
+      { name: 'offset', type: 'number', label: '조회 시작 위치 (기본값: 0)', required: false, default: '0' },
+      { name: 'include_notices', type: 'text', label: '공지사항 포함 (true/false)', required: false, default: 'true' }
+    ],
+    exampleReq: '?language=ko&limit=10&offset=0&include_notices=true',
+    exampleRes: `{
+  "status": "success",
+  "data": {
+    "posts": [
+      {
+        "post_id": 123,
+        "user_id": "user123",
+        "is_notice": 0,
+        "subject": "안녕하세요",
+        "content": "한국어로 작성된 게시물입니다.",
+        "created_at": "2025-07-15T10:30:00.000Z",
+        "updated_at": "2025-07-15T10:30:00.000Z",
+        "origin_language": "ko",
+        "current_language": "ko",
+        "translation_method": "manual",
+        "is_original": 1
+      },
+      {
+        "post_id": 124,
+        "user_id": "admin",
+        "is_notice": 1,
+        "subject": "[공지] 시스템 점검 안내",
+        "content": "내일 오전 2시부터 시스템 점검이 있습니다.",
+        "created_at": "2025-07-15T09:00:00.000Z",
+        "updated_at": "2025-07-15T09:00:00.000Z",
+        "origin_language": "ko",
+        "current_language": "ko",
+        "translation_method": "manual",
+        "is_original": 1
+      }
+    ],
+    "pagination": {
+      "total_count": 50,
+      "current_page": 1,
+      "total_pages": 5,
+      "limit": 10,
+      "offset": 0,
+      "has_next": true,
+      "has_prev": false
+    },
+    "requested_language": "ko"
+  }
+}`
+  },
+  {
+    method: 'GET',
+    path: '/api/posts/:post_id',
+    title: '게시물 상세 조회',
+    desc: '특정 게시물을 상세 조회합니다. 요청한 언어로 번역이 없는 경우 자동으로 AI 번역을 수행합니다.<br>Query Parameters: <ul><li>`language`: 언어 코드 (필수, ko/en/ja/zh)</li><li>`include_all_translations`: 모든 번역 포함 여부 (선택, true/false, 기본값: false)</li></ul>',
+    params: [
+      { name: 'post_id', type: 'number', label: '게시물 ID', required: true, inPath: true },
+      { name: 'language', type: 'text', label: '언어 코드 (ko/en/ja/zh)', required: true, default: 'ko' },
+      { name: 'include_all_translations', type: 'text', label: '모든 번역 포함 (true/false)', required: false, default: 'false' }
+    ],
+    exampleReq: '?language=ko&include_all_translations=true',
+    exampleRes: `{
+  "status": "success",
+  "data": {
+    "post": {
+      "post_id": 123,
+      "user_id": "user123",
+      "user_ip": "192.168.1.100",
+      "origin_language": "ko",
+      "is_notice": 0,
+      "created_at": "2025-07-15T10:30:00.000Z",
+      "updated_at": "2025-07-15T10:30:00.000Z",
+      "has_password": true
+    },
+    "current_translation": {
+      "language_code": "ko",
+      "subject": "안녕하세요",
+      "content": "한국어로 작성된 게시물입니다.",
+      "is_original": 1,
+      "translation_method": "manual",
+      "created_at": "2025-07-15T10:30:00.000Z"
+    },
+    "all_translations": [
+      {
+        "language_code": "ko",
+        "subject": "안녕하세요",
+        "content": "한국어로 작성된 게시물입니다.",
+        "is_original": 1,
+        "translation_method": "manual",
+        "created_at": "2025-07-15T10:30:00.000Z"
+      },
+      {
+        "language_code": "en",
+        "subject": "Hello",
+        "content": "This is a post written in Korean.",
+        "is_original": 0,
+        "translation_method": "ai",
+        "created_at": "2025-07-15T10:35:00.000Z"
+      }
+    ],
+    "requested_language": "ko"
+  }
+}`
+  },
+  {
+    method: 'PUT',
+    path: '/api/posts/:post_id',
+    title: '게시물 수정',
+    desc: '특정 게시물을 수정합니다. 원본 언어의 번역만 수정 가능하며, 다른 언어 번역은 자동으로 업데이트됩니다.<br>Validation Rules: <ul><li>`post_id`: 게시물 ID (필수, URL 경로)</li><li>`user_id`: 작성자 ID (필수, 권한 확인용)</li><li>`subject`: 제목 (선택, 최대 1000자)</li><li>`content`: 내용 (선택, 최대 10000자)</li><li>`pwd`: 비밀번호 (일반 게시물의 경우 필수)</li></ul>',
+    params: [
+      { name: 'post_id', type: 'number', label: '게시물 ID', required: true, inPath: true },
+      { name: 'user_id', type: 'text', label: '작성자 ID (권한 확인용)', required: true },
+      { name: 'subject', type: 'text', label: '제목 (최대 1000자)', required: false },
+      { name: 'content', type: 'text', label: '내용 (최대 10000자)', required: false },
+      { name: 'pwd', type: 'password', label: '비밀번호 (일반 게시물 수정 시 필수)', required: false }
+    ],
+    exampleReq: `{
+  "user_id": "user123",
+  "subject": "수정된 제목",
+  "content": "수정된 내용입니다.",
+  "pwd": "mypassword"
+}`,
+    exampleRes: `{
+  "status": "success",
+  "data": {
+    "post_id": 123,
+    "updated_at": "2025-07-15T11:00:00.000Z",
+    "updated_translation": {
+      "language_code": "ko",
+      "subject": "수정된 제목",
+      "content": "수정된 내용입니다.",
+      "is_original": 1,
+      "translation_method": "manual"
+    },
+    "ai_translation_queued": true,
+    "message": "게시물이 수정되었습니다. 다른 언어 번역은 자동으로 업데이트됩니다."
+  }
+}`
+  },
+  {
+    method: 'DELETE',
+    path: '/api/posts/:post_id',
+    title: '게시물 삭제',
+    desc: '특정 게시물을 삭제합니다. 모든 번역도 함께 삭제됩니다.<br>Validation Rules: <ul><li>`post_id`: 게시물 ID (필수, URL 경로)</li><li>`user_id`: 작성자 ID (필수, 권한 확인용)</li><li>`pwd`: 비밀번호 (일반 게시물의 경우 필수)</li></ul>',
+    params: [
+      { name: 'post_id', type: 'number', label: '게시물 ID', required: true, inPath: true },
+      { name: 'user_id', type: 'text', label: '작성자 ID (권한 확인용)', required: true },
+      { name: 'pwd', type: 'password', label: '비밀번호 (일반 게시물 삭제 시 필수)', required: false }
+    ],
+    exampleReq: `{
+  "user_id": "user123",
+  "pwd": "mypassword"
+}`,
+    exampleRes: `{
+  "status": "success",
+  "data": {
+    "message": "게시물이 성공적으로 삭제되었습니다.",
+    "deleted_post_id": 123,
+    "deleted_translations_count": 3
+  }
+}`
+  },
+  {
+    method: 'POST',
+    path: '/api/posts/:post_id/translations',
+    title: '게시물 번역 요청',
+    desc: '특정 게시물을 지정된 언어로 번역을 요청합니다. AI 번역이 수행되며, 결과는 즉시 반환됩니다.<br>Validation Rules: <ul><li>`post_id`: 게시물 ID (필수, URL 경로)</li><li>`target_language`: 대상 언어 코드 (필수, 모든 언어 코드 허용 - AI가 판단)</li><li>`force_retranslate`: 기존 번역 강제 재번역 여부 (선택, true/false, 기본값: false)</li></ul>',
+    params: [
+      { name: 'post_id', type: 'number', label: '게시물 ID', required: true, inPath: true },
+      { name: 'target_language', type: 'text', label: '대상 언어 코드 (모든 언어 허용: ko/en/ja/zh/...)', required: true },
+      { name: 'force_retranslate', type: 'text', label: '강제 재번역 (true/false)', required: false, default: 'false' }
+    ],
+    exampleReq: `{
+  "target_language": "en",
+  "force_retranslate": false
+}`,
+    exampleRes: `{
+  "status": "success",
+  "data": {
+    "post_id": 123,
+    "translation": {
+      "language_code": "en",
+      "subject": "Hello",
+      "content": "This is a post written in Korean.",
+      "is_original": 0,
+      "translation_method": "ai",
+      "created_at": "2025-07-15T11:15:00.000Z"
+    },
+    "original_language": "ko",
+    "target_language": "en",
+    "translation_status": "completed",
+    "was_retranslated": false
+  }
+}`
+  },
+  {
+    method: 'GET',
+    path: '/api/posts/:post_id/translations',
+    title: '게시물 번역 목록 조회',
+    desc: '특정 게시물의 모든 번역을 조회합니다.<br>Query Parameters: <ul><li>`include_original`: 원본 번역 포함 여부 (선택, true/false, 기본값: true)</li></ul>',
+    params: [
+      { name: 'post_id', type: 'number', label: '게시물 ID', required: true, inPath: true },
+      { name: 'include_original', type: 'text', label: '원본 번역 포함 (true/false)', required: false, default: 'true' }
+    ],
+    exampleReq: '?include_original=true',
+    exampleRes: `{
+  "status": "success",
+  "data": {
+    "post_id": 123,
+    "origin_language": "ko",
+    "translations": [
+      {
+        "language_code": "ko",
+        "subject": "안녕하세요",
+        "content": "한국어로 작성된 게시물입니다.",
+        "is_original": 1,
+        "translation_method": "manual",
+        "created_at": "2025-07-15T10:30:00.000Z"
+      },
+      {
+        "language_code": "en",
+        "subject": "Hello",
+        "content": "This is a post written in Korean.",
+        "is_original": 0,
+        "translation_method": "ai",
+        "created_at": "2025-07-15T10:35:00.000Z"
+      },
+      {
+        "language_code": "ja",
+        "subject": "こんにちは",
+        "content": "これは韓国語で書かれた投稿です。",
+        "is_original": 0,
+        "translation_method": "ai",
+        "created_at": "2025-07-15T10:40:00.000Z"
+      }
+    ],
+    "total_translations": 3,
+    "available_languages": ["ko", "en", "ja"]
+  }
+}`
+  },
+  
+  // ==================== 댓글 관리 API ====================
+  {
+    method: 'POST',
+    path: '/api/posts/:post_id/comments',
+    title: '댓글 생성',
+    desc: '특정 게시물에 댓글을 생성합니다.<br>대댓글인 경우 `parent_comment_id`를 포함하세요.',
+    params: [
+      { name: 'post_id', type: 'number', label: '게시물 ID', required: true, inPath: true },
+      { name: 'content', type: 'text', label: '댓글 내용', required: true },
+      { name: 'user_id', type: 'text', label: '사용자 ID', required: true },
+      { name: 'parent_comment_id', type: 'number', label: '부모 댓글 ID (대댓글인 경우)', required: false }
+    ],
+    exampleReq: `{
+  "content": "좋은 게시물이네요!",
+  "user_id": "user123",
+  "parent_comment_id": null
+}`,
+    exampleRes: `{
+  "status": "success",
+  "data": {
+    "comment_id": 1,
+    "post_id": 21,
+    "parent_comment_id": null,
+    "user_id": "user123",
+    "user_ip": "192.168.1.100",
+    "content": "좋은 게시물이네요!",
+    "is_deleted": 0,
+    "created_date": "2025-07-15T11:00:00.000Z",
+    "updated_date": "2025-07-15T11:00:00.000Z"
+  }
+}`
+  },
+  {
+    method: 'GET',
+    path: '/api/posts/:post_id/comments',
+    title: '댓글 목록 조회',
+    desc: '특정 게시물의 댓글 목록을 조회합니다.<br>트리 구조로 반환되며, 대댓글은 replies 배열에 포함됩니다.<br>Query Parameters: <ul><li>`limit`: 한 페이지당 댓글 수 (기본값: 100)</li><li>`offset`: 시작 위치 (기본값: 0)</li></ul>',
+    params: [
+      { name: 'post_id', type: 'number', label: '게시물 ID', required: true, inPath: true },
+      { name: 'limit', type: 'number', label: '페이지 크기', required: false, default: '100' },
+      { name: 'offset', type: 'number', label: '시작 위치', required: false, default: '0' }
+    ],
+    exampleReq: '?limit=50&offset=0',
+    exampleRes: `{
+  "status": "success",
+  "data": {
+    "post_id": 21,
+    "comments": [
+      {
+        "comment_id": 1,
+        "post_id": 21,
+        "parent_comment_id": null,
+        "user_id": "user123",
+        "user_ip": "192.168.1.100",
+        "content": "좋은 게시물이네요!",
+        "is_deleted": 0,
+        "created_date": "2025-07-15T11:00:00.000Z",
+        "updated_date": "2025-07-15T11:00:00.000Z",
+        "replies": [
+          {
+            "comment_id": 2,
+            "post_id": 21,
+            "parent_comment_id": 1,
+            "user_id": "user456",
+            "user_ip": "192.168.1.101",
+            "content": "저도 동의합니다!",
+            "is_deleted": 0,
+            "created_date": "2025-07-15T11:05:00.000Z",
+            "updated_date": "2025-07-15T11:05:00.000Z",
+            "replies": []
+          }
+        ]
+      }
+    ],
+    "total_count": 2,
+    "page_info": {
+      "limit": 50,
+      "offset": 0,
+      "has_more": false
+    }
+  }
+}`
+  },
+  {
+    method: 'PUT',
+    path: '/api/comments/:comment_id',
+    title: '댓글 수정',
+    desc: '기존 댓글을 수정합니다.<br>댓글 작성자만 수정할 수 있습니다.',
+    params: [
+      { name: 'comment_id', type: 'number', label: '댓글 ID', required: true, inPath: true },
+      { name: 'content', type: 'text', label: '수정할 댓글 내용', required: true },
+      { name: 'user_id', type: 'text', label: '사용자 ID', required: true }
+    ],
+    exampleReq: `{
+  "content": "수정된 댓글 내용입니다.",
+  "user_id": "user123"
+}`,
+    exampleRes: `{
+  "status": "success",
+  "data": {
+    "comment_id": 1,
+    "post_id": 21,
+    "parent_comment_id": null,
+    "user_id": "user123",
+    "user_ip": "192.168.1.100",
+    "content": "수정된 댓글 내용입니다.",
+    "is_deleted": 0,
+    "created_date": "2025-07-15T11:00:00.000Z",
+    "updated_date": "2025-07-15T11:10:00.000Z"
+  }
+}`
+  },
+  {
+    method: 'DELETE',
+    path: '/api/comments/:comment_id',
+    title: '댓글 삭제',
+    desc: '기존 댓글을 삭제합니다.<br>댓글 작성자만 삭제할 수 있습니다.<br>소프트 삭제 방식으로 처리됩니다.',
+    params: [
+      { name: 'comment_id', type: 'number', label: '댓글 ID', required: true, inPath: true },
+      { name: 'user_id', type: 'text', label: '사용자 ID', required: true }
+    ],
+    exampleReq: `{
+  "user_id": "user123"
+}`,
+    exampleRes: `{
+  "status": "success",
+  "data": {
+    "success": true,
+    "message": "댓글이 삭제되었습니다."
+  }
+}`
+  },
+  
   {
     method: 'GET',
     path: '/api/search/weather',
@@ -905,31 +1469,33 @@ data: {
   "data": [
     {
       "tier_id": 1,
-      "tier_name": "코멧",
+      "tier_name": "free",
+      "tier_display_name": "오비메이트 코멧",
       "tier_emoji": "☄️",
-      "price_monthly": 0,
-      "price_yearly": 0,
-      "max_sessions_per_day": 10,
-      "max_messages_per_session": 50,
-      "max_file_upload_mb": 5,
-      "ai_model_access": ["geminiapi"],
-      "features": ["basic_chat", "file_upload"],
-      "is_active": true,
-      "created_at": "2025-01-27T00:00:00.000Z"
+      "tier_description": "✔ Mate-3.0-Lite 액세스\\n✔ 표준 음성 모드\\n✔ 검색으로 웹에서 가져온 실시간 데이터 사용\\n✔ OrbitMate 제한적 액세스\\n✔ 파일 업로드, 고급 데이터 분석, 이미지 생성 등에 제한적 액세스\\n✔ 맞춤형 OrbitMate 사용",
+      "monthly_price": 0,
+      "yearly_price": 0,
+      "tier_level": 0,
+      "max_ai_requests_per_day": 30,
+      "max_file_upload_size": 10,
+      "features_included": ["basic_chat", "profile_edit", "basic_search", "wikipedia_search"],
+      "is_enterprise": false,
+      "is_active": true
     },
     {
       "tier_id": 2,
-      "tier_name": "플래닛",
+      "tier_name": "planet",
+      "tier_display_name": "오비메이트 플래닛",
       "tier_emoji": "🪐",
-      "price_monthly": 15000,
-      "price_yearly": 150000,
-      "max_sessions_per_day": 100,
-      "max_messages_per_session": 200,
-      "max_file_upload_mb": 20,
-      "ai_model_access": ["geminiapi", "vertexai"],
-      "features": ["basic_chat", "file_upload", "priority_support"],
-      "is_active": true,
-      "created_at": "2025-01-27T00:00:00.000Z"
+      "tier_description": "✔ 코멧의 모든 기능\\n✔ 메시지, 파일 업로드, 고급 데이터 분석, 이미지 생성에 한도 증가\\n✔ 심층 리서치 및 여러 추론 모델(Mate-3.0-Lite, Mate-3.0-high), Mate-3.5-Pro 리서치 프리뷰에 액세스\\n✔ 작업, 프로젝트를 생성, 사용하고 OrbitMate를 맞춤 설정하세요\\n✔ 파일 업로드, 고급 데이터 분석 제한적 액세스\\n✔ 새 기능 테스트 기회",
+      "monthly_price": 15000,
+      "yearly_price": 150000,
+      "tier_level": 1,
+      "max_ai_requests_per_day": 1000,
+      "max_file_upload_size": 50,
+      "features_included": ["unlimited_chat", "advanced_ai_models", "file_upload", "premium_search", "weather_widget", "custom_themes", "message_edit", "reaction_features"],
+      "is_enterprise": false,
+      "is_active": true
     }
   ]
 }`

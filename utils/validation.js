@@ -58,11 +58,16 @@ function validateStringLength(value, fieldName, min = 1, max = 500) {
 function validateRequiredFields(data, requiredFields) {
   for (const field of requiredFields) {
     if (!data[field]) {
-      const error = new Error(`${field} is required.`);
-      error.code = "INVALID_INPUT";
-      throw error;
+      return {
+        isValid: false,
+        message: `${field} is required.`
+      };
     }
   }
+  return {
+    isValid: true,
+    message: null
+  };
 }
 
 // 타입 체크

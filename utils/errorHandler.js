@@ -10,6 +10,7 @@ function getHttpStatusByErrorCode(errorCode) {
     INVALID_MESSAGE: 400,
     INVALID_SESSION: 400,
     INVALID_USER: 400,
+    INVALID_PASSWORD: 400,
     UNIQUE_CONSTRAINT_VIOLATED: 400, // 중복 에러도 400으로 처리 (또는 409 Conflict)
     FOREIGN_KEY_VIOLATION: 400,
     NULL_VALUE_ERROR: 400,
@@ -17,6 +18,10 @@ function getHttpStatusByErrorCode(errorCode) {
     SESSION_NOT_FOUND: 404,
     MESSAGE_NOT_FOUND: 404,
     USER_NOT_FOUND: 404,
+    POST_NOT_FOUND: 404,
+    COMMENT_NOT_FOUND: 404,
+    PARENT_COMMENT_NOT_FOUND: 404,
+    TRANSLATION_NOT_FOUND: 404,
     RESOURCE_NOT_FOUND: 404, // 일반적인 Not Found
     UNAUTHORIZED: 401,
     FORBIDDEN: 403,
@@ -52,6 +57,11 @@ function handleOracleError(oraError) {
   
   // Node.js 일반 오류 (DB 오류가 아닌 경우)
   if (!oraError.errorNum && oraError.message) {
+    // 이미 코드가 설정된 Error 객체인 경우 그대로 반환
+    if (oraError.code) {
+      return oraError;
+    }
+    
     const error = new Error(oraError.message);
     error.code = "APPLICATION_ERROR";
     error.details = {

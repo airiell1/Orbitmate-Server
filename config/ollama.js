@@ -48,6 +48,15 @@ async function getOllamaResponse(
     }
   });
 
+  // 🔧 중복 방지: 대화 이력의 마지막 메시지가 현재 사용자 메시지와 같으면 제거
+  if (messages.length > 0) {
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg.role === "user" && lastMsg.content === currentUserMessage) {
+      console.log(`[Ollama] 중복된 사용자 메시지 발견, 이력에서 제거: "${currentUserMessage.substring(0, 50)}..."`);
+      messages.pop(); // 마지막 중복 메시지 제거
+    }
+  }
+
   messages.push({ role: "user", content: currentUserMessage });
 
   if (!OLLAMA_API_URL) {

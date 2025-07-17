@@ -90,13 +90,7 @@ async function sendMessageService(
         }
     }
 
-    // 3. 사용자 메시지 DB에 저장 (actualUserId 사용)
-    const userMessageResult = await chatModel.saveUserMessageToDB(
-      connection, sessionId, actualUserId, message, user_message_token_count
-    );
-    const userMessageId = userMessageResult.user_message_id;
-
-    // 4. 사용자 프로필 및 설정 조회 (시스템 프롬프트 개인화용)
+    // 3. 사용자 프로필 및 설정 조회 (시스템 프롬프트 개인화용)
     let userProfile = null;
     let userSettings = null;
     
@@ -111,7 +105,7 @@ async function sendMessageService(
       // 프로필 조회 실패는 치명적이지 않음
     }
 
-    // 5. 시스템 프롬프트 생성 및 개선
+    // 4. 시스템 프롬프트 생성 및 개선
     const enhancedSystemPrompt = generateSystemPrompt(userProfile, userSettings, system_prompt);
     const finalSystemPrompt = enhancePromptWithContext(
       validateAndCleanPrompt(enhancedSystemPrompt), 
@@ -120,10 +114,16 @@ async function sendMessageService(
 
     console.log(`[ChatService] 시스템 프롬프트 적용 - 길이: ${finalSystemPrompt.length}자, 타입: ${specialModeType || 'general'}`);
 
-    // 6. 대화 이력 조회
+    // 5. 대화 이력 조회 (사용자 메시지 저장 전에 조회하여 중복 방지)
     const chatHistoryForAI = await chatModel.getChatHistoryFromDB(
       connection, sessionId, false, context_message_limit
     );
+
+    // 6. 사용자 메시지 DB에 저장 (actualUserId 사용)
+    const userMessageResult = await chatModel.saveUserMessageToDB(
+      connection, sessionId, actualUserId, message, user_message_token_count
+    );
+    const userMessageId = userMessageResult.user_message_id;
 
     // 7. AI 응답 요청
     const callOptions = {
@@ -156,13 +156,6 @@ async function sendMessageService(
 
     let aiContentToSave = aiResponseFull.content || "(함수 호출 사용됨)";
     
-    // 더 정교한 중복 제거 로직: 연속으로 두 번 나타나는 경우만 제거
-    const duplicatePattern = new RegExp(`(.{0,50})?${message.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*${message.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(.{0,50})?`, 'gi');
-    if (duplicatePattern.test(aiContentToSave)) {
-        console.warn(`[ChatService] AI 응답에서 중복된 사용자 메시지 발견: "${message}"`);
-        aiContentToSave = aiContentToSave.replace(new RegExp(`${message.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*${message.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gi'), message);
-    }
-
     const aiMessageResult = await chatModel.saveAiMessageToDB(
       connection, sessionId, actualUserId, aiContentToSave.trim(), aiResponseFull.actual_output_tokens
     );

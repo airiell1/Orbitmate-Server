@@ -78,7 +78,7 @@ const AI_TOOLS = {
 
   execute_code: {
     name: "execute_code",
-    description: "코드를 실행하고 결과를 반환합니다. Python, JavaScript, SQL 등을 지원합니다. 계산, 데이터 처리, 알고리즘 실행 등에 사용하세요.",
+    description: "코드를 실행하고 결과를 반환합니다. Python, JavaScript, shell 등을 지원합니다. 계산, 데이터 처리, 알고리즘 실행 등에 사용하세요.",
     parameters: {
       type: "object",
       properties: {
@@ -89,7 +89,7 @@ const AI_TOOLS = {
         language: {
           type: "string",
           description: "코드 언어",
-          enum: ["python", "javascript", "sql", "shell"],
+          enum: ["python", "javascript", "shell"],
           default: "python"
         },
         timeout: {

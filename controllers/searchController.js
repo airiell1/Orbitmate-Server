@@ -54,13 +54,8 @@ const searchWikipediaController = createExternalApiController(
           throw err;
         }
         
-        // 언어 코드 유효성 검사
-        const validLanguages = config.wikipedia.supportedLanguages || ["ko", "en", "ja", "zh", "fr", "de", "es", "ru"];
-        if (language && !validLanguages.includes(language)) {
-          const err = new Error(`Unsupported language: ${language}. Supported: ${validLanguages.join(", ")}`);
-          err.code = "INVALID_INPUT";
-          throw err;
-        }
+        // 언어 코드 검증 제거 - 사용자가 원하는 언어로 검색 가능
+        // (만우절 특별 언어도 허용 🎉)
       }
     ],
     responseTransformer: (results, req) => {

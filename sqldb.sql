@@ -26,6 +26,8 @@ DROP INDEX idx_chat_msg_session_created;
 DROP INDEX idx_chat_sessions_user;
 DROP INDEX idx_users_email;
 
+DROP TABLE post_translations;
+DROP TABLE posts;
 DROP TABLE feedback_reports;
 DROP TABLE bug_reports;
 DROP TABLE translation_resources;
@@ -120,7 +122,7 @@ CREATE TABLE user_profiles (
   birth_date DATE,         -- 생년월일
   gender VARCHAR2(10),     -- 성별
   introduction CLOB,       -- 자기소개
-  profile_theme VARCHAR2(50) DEFAULT 'default', -- 프로필 테마
+  profile_theme VARCHAR2(50) DEFAULT 'space', -- 프로필 테마
   profile_border VARCHAR2(50) DEFAULT 'none',   -- 프로필 테두리
   profile_background VARCHAR2(100),             -- 프로필 배경
   status_message VARCHAR2(200),                 -- 상태 메시지
@@ -136,6 +138,7 @@ CREATE TABLE subscription_tiers (
     tier_name VARCHAR2(50) NOT NULL UNIQUE, -- 'free', 'planet', 'star', 'galaxy'
     tier_display_name VARCHAR2(100) NOT NULL, -- '오비메이트 코멧', '오비메이트 플래닛' 등
     tier_emoji VARCHAR2(10), -- '☄️', '🪐', '☀️', '🌌'
+    tier_description CLOB, -- 구독 등급 상세 설명 및 혜택 목록
     monthly_price NUMBER(10,2), -- 월 요금 (원 단위)
     yearly_price NUMBER(10,2), -- 연 요금 (원 단위, 할인 적용)
     tier_level NUMBER NOT NULL, -- 등급 레벨 (0: 무료, 1: 플래닛, 2: 스타, 3: 갤럭시)
@@ -329,17 +332,39 @@ ALTER TABLE chat_messages ADD CONSTRAINT chk_message_type CHECK (message_type IN
 -- 초기 데이터 삽입
 
 -- 구독 등급 기본 데이터 삽입
-INSERT INTO subscription_tiers (tier_name, tier_display_name, tier_emoji, monthly_price, yearly_price, tier_level, max_ai_requests_per_day, max_file_upload_size, features_included, is_enterprise) VALUES
-('free', '오비메이트 코멧', '☄️', 0, 0, 0, 30, 10, '["basic_chat", "profile_edit", "basic_search", "wikipedia_search"]', 0);
+INSERT INTO subscription_tiers (tier_name, tier_display_name, tier_emoji, tier_description, monthly_price, yearly_price, tier_level, max_ai_requests_per_day, max_file_upload_size, features_included, is_enterprise) VALUES
+('free', '오비메이트 코멧', '☄️', '✔ Mate-3.0-Lite 액세스
+✔ 표준 음성 모드
+✔ 검색으로 웹에서 가져온 실시간 데이터 사용
+✔ OrbitMate 제한적 액세스
+✔ 파일 업로드, 고급 데이터 분석, 이미지 생성 등에 제한적 액세스
+✔ 맞춤형 OrbitMate 사용', 0, 0, 0, 30, 10, '["basic_chat", "profile_edit", "basic_search", "wikipedia_search"]', 0);
 
-INSERT INTO subscription_tiers (tier_name, tier_display_name, tier_emoji, monthly_price, yearly_price, tier_level, max_ai_requests_per_day, max_file_upload_size, features_included, is_enterprise) VALUES
-('planet', '오비메이트 플래닛', '🪐', 15000, 150000, 1, 1000, 50, '["unlimited_chat", "advanced_ai_models", "file_upload", "premium_search", "weather_widget", "custom_themes", "message_edit", "reaction_features"]', 0);
+INSERT INTO subscription_tiers (tier_name, tier_display_name, tier_emoji, tier_description, monthly_price, yearly_price, tier_level, max_ai_requests_per_day, max_file_upload_size, features_included, is_enterprise) VALUES
+('planet', '오비메이트 플래닛', '🪐', '✔ 코멧의 모든 기능
+✔ 메시지, 파일 업로드, 고급 데이터 분석, 이미지 생성에 한도 증가
+✔ 심층 리서치 및 여러 추론 모델(Mate-3.0-Lite, Mate-3.0-high), Mate-3.5-Pro 리서치 프리뷰에 액세스
+✔ 작업, 프로젝트를 생성, 사용하고 OrbitMate를 맞춤 설정하세요
+✔ 파일 업로드, 고급 데이터 분석 제한적 액세스
+✔ 새 기능 테스트 기회', 15000, 150000, 1, 1000, 50, '["unlimited_chat", "advanced_ai_models", "file_upload", "premium_search", "weather_widget", "custom_themes", "message_edit", "reaction_features"]', 0);
 
-INSERT INTO subscription_tiers (tier_name, tier_display_name, tier_emoji, monthly_price, yearly_price, tier_level, max_ai_requests_per_day, max_file_upload_size, features_included, is_enterprise) VALUES
-('star', '오비메이트 스타', '☀️', 150000, 1500000, 2, NULL, 200, '["unlimited_everything", "priority_support", "advanced_analytics", "api_access", "custom_integrations", "exclusive_models", "beta_features", "premium_widgets"]', 0);
+INSERT INTO subscription_tiers (tier_name, tier_display_name, tier_emoji, tier_description, monthly_price, yearly_price, tier_level, max_ai_requests_per_day, max_file_upload_size, features_included, is_enterprise) VALUES
+('star', '오비메이트 스타', '☀️', '✔ 플래닛의 모든 기능
+✔ 모든 추론 모델 및 OrbitMate-3.5 Ultra에 무제한 액세스
+✔ 고급 음성에 무제한 액세스
+✔ 복잡한 작업에 여러 단계의 온라인 리서치를 수행하는 심층 리서치에 더 넉넉한 액세스 한도
+✔ BlackHoleCode 에이전트 리서치 프리뷰에 액세스
+✔ 어려운 질문에 최고의 답변을 드리고자 더 많이 계산하는, OrbitMate pro 모드를 이용하세요
+✔ 새 기능 테스트 기회', 150000, 1500000, 2, NULL, 200, '["unlimited_everything", "priority_support", "advanced_analytics", "api_access", "custom_integrations", "exclusive_models", "beta_features", "premium_widgets"]', 0);
 
-INSERT INTO subscription_tiers (tier_name, tier_display_name, tier_emoji, monthly_price, yearly_price, tier_level, max_ai_requests_per_day, max_file_upload_size, features_included, is_enterprise) VALUES
-('galaxy', '오비메이트 갤럭시', '🌌', 3000000, 30000000, 3, NULL, 1000, '["enterprise_features", "dedicated_support", "custom_deployment", "advanced_security", "user_management", "analytics_dashboard", "api_unlimited", "white_labeling"]', 1);
+INSERT INTO subscription_tiers (tier_name, tier_display_name, tier_emoji, tier_description, monthly_price, yearly_price, tier_level, max_ai_requests_per_day, max_file_upload_size, features_included, is_enterprise) VALUES
+('galaxy', '오비메이트 갤럭시', '🌌', '✔ 전 직원 무제한 사용자 계정 제공
+✔ 맞춤형 AI 모델 및 전용 리서치 기능 지원
+✔ 대규모 데이터 분석 및 맞춤 보고서 생성
+✔ 전담 고객 지원 및 기술 컨설팅 서비스
+✔ 강화된 보안 및 데이터 프라이버시 관리
+✔ 다양한 협업 툴과 시스템 연동 지원
+✔ 우선 신기능 및 업데이트 적용 권한', 3000000, 30000000, 3, NULL, 1000, '["enterprise_features", "dedicated_support", "custom_deployment", "advanced_security", "user_management", "analytics_dashboard", "api_unlimited", "white_labeling"]', 1);
 
 -- 기본 레벨 데이터 삽입
 INSERT INTO level_requirements (level_num, required_exp, level_name, level_description, unlock_features) VALUES
@@ -372,6 +397,54 @@ INSERT INTO translation_resources (lang_code, resource_key, resource_value, cate
 
 INSERT INTO translation_resources (lang_code, resource_key, resource_value, category) VALUES
 ('en', 'welcome_message', 'Welcome to Orbitmate!', 'ui');
+
+-- 게시물 관련 테이블 생성
+CREATE TABLE posts (
+    idx NUMBER PRIMARY KEY,
+    user_id VARCHAR2(50),                    -- 작성자 ID
+    user_ip VARCHAR2(45),                    -- 작성자 IP (IPv6 고려)
+    pwd VARCHAR2(255),                       -- 비밀번호 (공지사항은 NULL)
+    origin_language VARCHAR2(10),           -- 원본 언어 ('ko', 'en', 'ja' 등)
+    is_notice NUMBER(1) DEFAULT 0,          -- 공지사항 여부 (1: 공지, 0: 일반)
+    created_date DATE DEFAULT SYSDATE,
+    updated_date DATE DEFAULT SYSDATE
+);
+
+-- 번역 테이블
+CREATE TABLE post_translations (
+    post_id NUMBER,
+    language_code VARCHAR2(10),             -- 언어 코드 ('ko', 'en', 'ja', 'zh' 등)
+    subject CLOB,                           -- 제목
+    content CLOB,                           -- 내용
+    is_original NUMBER(1) DEFAULT 0,        -- 원본 여부 (1: 원본, 0: 번역)
+    translation_method VARCHAR2(20) DEFAULT 'manual',        -- 번역 방법 ('manual', 'ai', 'auto')
+    created_date DATE DEFAULT SYSDATE,
+    CONSTRAINT fk_post_trans FOREIGN KEY (post_id) REFERENCES posts(idx) ON DELETE CASCADE,
+    CONSTRAINT pk_post_trans PRIMARY KEY (post_id, language_code)
+);
+
+-- 시퀀스 생성
+CREATE SEQUENCE posts_seq START WITH 1 INCREMENT BY 1;
+
+-- 게시물 관련 인덱스
+CREATE INDEX idx_posts_user_id ON posts(user_id);
+CREATE INDEX idx_posts_notice ON posts(is_notice);
+CREATE INDEX idx_posts_created ON posts(created_date);
+CREATE INDEX idx_trans_lang ON post_translations(language_code);
+CREATE INDEX idx_trans_post ON post_translations(post_id);
+
+-- 게시물 샘플 데이터 생성
+INSERT INTO posts (idx, user_id, user_ip, pwd, origin_language, is_notice, created_date, updated_date) VALUES 
+(posts_seq.NEXTVAL, 'admin', '127.0.0.1', NULL, 'ko', 1, SYSDATE, SYSDATE);
+
+INSERT INTO post_translations (post_id, language_code, subject, content, is_original, translation_method, created_date) VALUES 
+(posts_seq.CURRVAL, 'ko', '[공지] 오비메이트 게시판 오픈', '오비메이트 다국어 게시판이 오픈되었습니다. AI 자동 번역 기능을 통해 다양한 언어로 소통할 수 있습니다.', 1, 'manual', SYSDATE);
+
+INSERT INTO posts (idx, user_id, user_ip, pwd, origin_language, is_notice, created_date, updated_date) VALUES 
+(posts_seq.NEXTVAL, 'user123', '192.168.1.100', 'password123', 'ko', 0, SYSDATE, SYSDATE);
+
+INSERT INTO post_translations (post_id, language_code, subject, content, is_original, translation_method, created_date) VALUES 
+(posts_seq.CURRVAL, 'ko', '첫 번째 게시물입니다', '안녕하세요! 오비메이트를 사용해보고 있습니다. 정말 신기한 기능들이 많네요.', 1, 'manual', SYSDATE);
 
 INSERT INTO translation_resources (lang_code, resource_key, resource_value, category) VALUES
 ('ko', 'level_up', '레벨업! 새로운 기능이 해금되었습니다.', 'notification');
@@ -431,7 +504,7 @@ WHEN NOT MATCHED THEN
   VALUES (src.user_id, src.theme, src.language, src.ai_model_preference);
 
 MERGE INTO user_profiles up
-USING (SELECT 'guest' as user_id, 'Guest' as nickname, '안녕하세요! 오비메이트를 체험하고 있는 게스트 사용자입니다.' as introduction, 'default' as profile_theme, 150 as experience, 2 as level_num FROM dual) src
+USING (SELECT 'guest' as user_id, 'Guest' as nickname, '안녕하세요! 오비메이트를 체험하고 있는 게스트 사용자입니다.' as introduction, 'space' as profile_theme, 150 as experience, 2 as level_num FROM dual) src
 ON (up.user_id = src.user_id)
 WHEN NOT MATCHED THEN
   INSERT (user_id, nickname, introduction, profile_theme, experience, "level")

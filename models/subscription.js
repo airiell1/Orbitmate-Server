@@ -3,7 +3,7 @@
 const { oracledb } = require("../config/database");
 // const { standardizeApiResponse } = require("../utils/apiResponse"); // Removed, controller will handle
 const { handleOracleError } = require("../utils/errorHandler");
-const { toSnakeCaseObj } = require("../utils/dbUtils");
+const { toSnakeCaseObj, clobToString } = require("../utils/dbUtils");
 
 
 /**
@@ -16,7 +16,7 @@ async function getSubscriptionTiers(connection) {
     const query = `
             SELECT 
                 tier_id, tier_name, tier_display_name, tier_emoji,
-                monthly_price, yearly_price, tier_level,
+                tier_description, monthly_price, yearly_price, tier_level,
                 max_ai_requests_per_day, max_file_upload_size,
                 features_included, is_enterprise, is_active
             FROM subscription_tiers
@@ -42,6 +42,26 @@ async function getSubscriptionTiers(connection) {
           featuresIncluded = [];
         }
       }
+      
+      // CLOB 필드 변환 - tier_description 처리 (getSubscriptionTiers)
+      let tierDescription = '';
+      if (row.TIER_DESCRIPTION) {
+        if (typeof row.TIER_DESCRIPTION === 'string') {
+          tierDescription = row.TIER_DESCRIPTION;
+        } else if (Buffer.isBuffer(row.TIER_DESCRIPTION)) {
+          tierDescription = row.TIER_DESCRIPTION.toString('utf8');
+        } else if (row.TIER_DESCRIPTION && typeof row.TIER_DESCRIPTION.toString === 'function') {
+          try {
+            const result = row.TIER_DESCRIPTION.toString();
+            tierDescription = result === '[object Object]' ? '' : result;
+          } catch (e) {
+            tierDescription = '';
+          }
+        } else {
+          tierDescription = '';
+        }
+      }
+      
       // Return snake_case directly from model, or let controller handle it.
       // For consistency, models should return data as close to DB as possible, or a defined DTO.
       // Here, returning a mapped object is fine. Controller will ensure final snake_case.
@@ -50,6 +70,7 @@ async function getSubscriptionTiers(connection) {
         tier_name: row.TIER_NAME,
         tier_display_name: row.TIER_DISPLAY_NAME,
         tier_emoji: row.TIER_EMOJI,
+        tier_description: tierDescription,
         monthly_price: row.MONTHLY_PRICE,
         yearly_price: row.YEARLY_PRICE,
         tier_level: row.TIER_LEVEL,
@@ -80,7 +101,7 @@ async function getUserSubscription(connection, user_id) {
                 us.payment_method, us.auto_renewal,
                 us.created_at, us.updated_at,
                 st.tier_name, st.tier_display_name, st.tier_emoji,
-                st.monthly_price, st.yearly_price, st.tier_level,
+                st.tier_description, st.monthly_price, st.yearly_price, st.tier_level,
                 st.max_ai_requests_per_day, st.max_file_upload_size,
                 st.features_included, st.is_enterprise
             FROM user_subscriptions us
@@ -112,22 +133,42 @@ async function getUserSubscription(connection, user_id) {
         }
     }
 
+    // CLOB 필드 변환 - tier_description 처리 (getUserSubscription)
+    let tierDescription = '';
+    if (row.TIER_DESCRIPTION) {
+      if (typeof row.TIER_DESCRIPTION === 'string') {
+        tierDescription = row.TIER_DESCRIPTION;
+      } else if (Buffer.isBuffer(row.TIER_DESCRIPTION)) {
+        tierDescription = row.TIER_DESCRIPTION.toString('utf8');
+      } else if (row.TIER_DESCRIPTION && typeof row.TIER_DESCRIPTION.toString === 'function') {
+        try {
+          const result = row.TIER_DESCRIPTION.toString();
+          tierDescription = result === '[object Object]' ? '' : result;
+        } catch (e) {
+          tierDescription = '';
+        }
+      } else {
+        tierDescription = '';
+      }
+    }
+
     return {
       subscription_id: row.SUBSCRIPTION_ID,
       user_id: row.USER_ID,
       tier_id: row.TIER_ID,
-      subscription_start: row.SUBSCRIPTION_START,
-      subscription_end: row.SUBSCRIPTION_END,
+      subscription_start: row.SUBSCRIPTION_START ? row.SUBSCRIPTION_START.toISOString() : null,
+      subscription_end: row.SUBSCRIPTION_END ? row.SUBSCRIPTION_END.toISOString() : null,
       is_active: row.IS_ACTIVE === 1,
       payment_method: row.PAYMENT_METHOD,
       auto_renewal: row.AUTO_RENEWAL === 1,
-      created_at: row.CREATED_AT,
-      updated_at: row.UPDATED_AT,
+      created_at: row.CREATED_AT ? row.CREATED_AT.toISOString() : null,
+      updated_at: row.UPDATED_AT ? row.UPDATED_AT.toISOString() : null,
       tier: {
         tier_id: row.TIER_ID, // tier 객체에도 tier_id 포함
         tier_name: row.TIER_NAME,
         tier_display_name: row.TIER_DISPLAY_NAME,
         tier_emoji: row.TIER_EMOJI,
+        tier_description: tierDescription,
         monthly_price: row.MONTHLY_PRICE,
         yearly_price: row.YEARLY_PRICE,
         tier_level: row.TIER_LEVEL,
@@ -187,11 +228,13 @@ async function createDefaultSubscription(connection, user_id) {
     return {
         user_id: user_id,
         tier_id: freeTierId,
-        subscription_start: new Date().toISOString(), // Approximate
+        subscription_start: new Date().toISOString(),
         subscription_end: null,
         is_active: true,
         payment_method: 'free',
         auto_renewal: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
         tier: freeTierDetails
     };
 
@@ -300,7 +343,7 @@ async function getUserSubscriptionHistory(connection, user_id) {
             SELECT 
                 us.subscription_id, us.subscription_start, us.subscription_end,
                 us.is_active, us.payment_method, us.auto_renewal, us.created_at,
-                st.tier_name, st.tier_display_name, st.tier_emoji, st.tier_level
+                st.tier_name, st.tier_display_name, st.tier_emoji, st.tier_level, st.tier_description
             FROM user_subscriptions us
             JOIN subscription_tiers st ON us.tier_id = st.tier_id
             WHERE us.user_id = :user_id
@@ -308,21 +351,43 @@ async function getUserSubscriptionHistory(connection, user_id) {
         `;
     const result = await connection.execute(query, { user_id }, { outFormat: oracledb.OUT_FORMAT_OBJECT });
 
-    return result.rows.map((row) => ({ // 직접 snake_case로 변환 또는 DTO 사용
-      subscription_id: row.SUBSCRIPTION_ID,
-      subscription_start: row.SUBSCRIPTION_START,
-      subscription_end: row.SUBSCRIPTION_END,
-      is_active: row.IS_ACTIVE === 1,
-      payment_method: row.PAYMENT_METHOD,
-      auto_renewal: row.AUTO_RENEWAL === 1,
-      created_at: row.CREATED_AT,
-      tier: {
-        tier_name: row.TIER_NAME,
-        tier_display_name: row.TIER_DISPLAY_NAME,
-        tier_emoji: row.TIER_EMOJI,
-        tier_level: row.TIER_LEVEL,
-      },
-    }));
+    return result.rows.map((row) => {
+      // CLOB 필드 변환 - tier_description 처리 (getUserSubscriptionHistory)
+      let tierDescription = '';
+      if (row.TIER_DESCRIPTION) {
+        if (typeof row.TIER_DESCRIPTION === 'string') {
+          tierDescription = row.TIER_DESCRIPTION;
+        } else if (Buffer.isBuffer(row.TIER_DESCRIPTION)) {
+          tierDescription = row.TIER_DESCRIPTION.toString('utf8');
+        } else if (row.TIER_DESCRIPTION && typeof row.TIER_DESCRIPTION.toString === 'function') {
+          try {
+            const result = row.TIER_DESCRIPTION.toString();
+            tierDescription = result === '[object Object]' ? '' : result;
+          } catch (e) {
+            tierDescription = '';
+          }
+        } else {
+          tierDescription = '';
+        }
+      }
+      
+      return { // 직접 snake_case로 변환 또는 DTO 사용
+        subscription_id: row.SUBSCRIPTION_ID,
+        subscription_start: row.SUBSCRIPTION_START ? row.SUBSCRIPTION_START.toISOString() : null,
+        subscription_end: row.SUBSCRIPTION_END ? row.SUBSCRIPTION_END.toISOString() : null,
+        is_active: row.IS_ACTIVE === 1,
+        payment_method: row.PAYMENT_METHOD,
+        auto_renewal: row.AUTO_RENEWAL === 1,
+        created_at: row.CREATED_AT ? row.CREATED_AT.toISOString() : null,
+        tier: {
+          tier_name: row.TIER_NAME,
+          tier_display_name: row.TIER_DISPLAY_NAME,
+          tier_emoji: row.TIER_EMOJI,
+          tier_level: row.TIER_LEVEL,
+          tier_description: tierDescription,
+        },
+      };
+    });
   } catch (error) {
     throw handleOracleError(error);
   }

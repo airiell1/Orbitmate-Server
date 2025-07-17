@@ -138,6 +138,11 @@ async function convertClobFields(data) {
 function toSnakeCaseObj(obj) {
   if (Array.isArray(obj)) return obj.map(toSnakeCaseObj);
   if (obj && typeof obj === "object") {
+    // Oracle DATE 객체 처리 - Date 객체를 ISO 문자열로 변환
+    if (obj instanceof Date) {
+      return obj.toISOString();
+    }
+    
     return Object.fromEntries(
       Object.entries(obj).map(([k, v]) => [
         k

@@ -97,6 +97,22 @@ import {
     testFeedbackSystemComplete
 } from './testScripts/feedback.js';
 
+// 게시물 관리 시스템 import
+import {
+    createPost,
+    getPostList,
+    getPostDetail,
+    updatePost,
+    deletePost,
+    translatePost,
+    demonstratePostSystem
+} from './testScripts/post.js';
+
+// 관리자 권한 관리 기능 import
+import { 
+    setupAdminEventListeners 
+} from './testScripts/admin.js';
+
 // 유틸리티 함수들 import
 import {
     updateApiResponse
@@ -408,6 +424,15 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('get-feedback-statistics-button')?.addEventListener('click', testGetFeedbackStatistics);
     document.getElementById('test-feedback-system-complete-button')?.addEventListener('click', testFeedbackSystemComplete);
 
+    // 게시물 관리 시스템 이벤트 리스너
+    document.getElementById('create-post-button')?.addEventListener('click', createPost);
+    document.getElementById('get-post-list-button')?.addEventListener('click', getPostList);
+    document.getElementById('get-post-detail-button')?.addEventListener('click', getPostDetail);
+    document.getElementById('update-post-button')?.addEventListener('click', updatePost);
+    document.getElementById('delete-post-button')?.addEventListener('click', deletePost);
+    document.getElementById('translate-post-button')?.addEventListener('click', translatePost);
+    document.getElementById('demonstrate-post-system-button')?.addEventListener('click', demonstratePostSystem);
+
     // 자동 API 테스트 이벤트 리스너
     document.getElementById('run-auto-api-test')?.addEventListener('click', async function() {
         const button = this;
@@ -453,4 +478,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // 기존의 중복된 자동 API 테스트 코드 제거
     // (파일 끝부분에 있던 중복 코드는 제거됨)
+    
+    // 관리자 권한 관리 기능 이벤트 리스너 설정
+    setupAdminEventListeners();
 });

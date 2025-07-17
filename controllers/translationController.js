@@ -33,13 +33,8 @@ const getTranslationResourcesController = createController(
           throw err;
         }
 
-        // 지원 언어 체크
-        const supportedLanguages = config.supportedLanguages || ["ko", "en", "ja", "zh"];
-        if (!supportedLanguages.includes(lang)) {
-          const err = new Error(`Unsupported language: ${lang}. Supported: ${supportedLanguages.join(", ")}`);
-          err.code = "INVALID_INPUT";
-          throw err;
-        }
+        // 언어 검증 제거 - 사용자가 원하는 언어로 번역 리소스 요청 가능
+        // (만우절 특별 언어도 허용 🎉)
 
         // 카테고리 타입 체크
         if (category && typeof category !== 'string') {
