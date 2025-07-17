@@ -382,6 +382,28 @@ const apis = [
 }`
   },
   
+  /* 2-2. 사용자 활성화 상태 관리 */
+  {
+    method: 'PUT',
+    path: '/api/users/:user_id/active-status',
+    title: '사용자 활성화 상태 설정',
+    desc: '특정 사용자의 활성화 상태를 설정하거나 해제합니다. 관리자 권한이 필요한 작업입니다.<br>Validation Rules: <ul><li>`user_id` (URL param): 필수, 최대 36자.</li><li>`is_active` (body): 불린 값, 필수.</li></ul><span class="api-desc-note">관리자 권한이 있는 사용자만 다른 사용자의 활성화 상태를 변경할 수 있습니다.</span>',
+    params: [
+      { name: 'user_id', type: 'text', label: '사용자 ID (최대 36자)', required: true, inPath: true },
+      { name: 'is_active', type: 'checkbox', label: '활성화 상태', required: true }
+    ],
+    exampleReq: `{
+  "is_active": false
+}`,
+    exampleRes: `{
+  "status": "success",
+  "data": {
+    "success": true,
+    "message": "사용자 활성화 상태가 업데이트되었습니다."
+  }
+}`
+  },
+  
   /* 3. 채팅 세션 관리 */  {
     method: 'GET',
     path: '/api/sessions/:user_id/chat/sessions',
@@ -469,6 +491,61 @@ const apis = [
       "model_id": "gemini-2.0-flash-thinking-exp-01-21"
     }
   ]
+}`
+  },
+  {
+    method: 'POST',
+    path: '/api/sessions/admin/all',
+    title: '관리자용 전체 세션 조회',
+    desc: '모든 사용자의 채팅 세션을 조회합니다. 관리자 권한이 필요합니다.<br>Validation Rules: <ul><li>`user_id` (body): 필수, 관리자 권한 확인용 사용자 ID, 최대 36자.</li><li>`filter_user_id` (body): 선택, 특정 사용자 ID로 필터링, 최대 36자.</li><li>`include_empty` (body): 선택, 빈 세션 포함 여부 (true/false), 기본값 false.</li><li>`limit` (body): 선택, 1-100 사이의 숫자, 기본값 50.</li><li>`offset` (body): 선택, 0 이상의 숫자, 기본값 0.</li></ul><span class="api-desc-note">관리자 권한이 있는 사용자만 전체 세션 목록을 조회할 수 있습니다. 세션별 메시지 통계와 사용자 정보가 포함됩니다.</span>',
+    params: [
+      { name: 'user_id', type: 'text', label: '관리자 권한 확인용 사용자 ID (필수, 최대 36자)', required: true },
+      { name: 'filter_user_id', type: 'text', label: '필터링할 사용자 ID (선택, 최대 36자)', required: false },
+      { name: 'include_empty', type: 'checkbox', label: '빈 세션 포함 여부', required: false },
+      { name: 'limit', type: 'number', label: '페이지 크기 (1-100)', required: false },
+      { name: 'offset', type: 'number', label: '시작 위치 (0 이상)', required: false }
+    ],
+    exampleReq: `{
+  "user_id": "admin",
+  "filter_user_id": "API_TEST_USER_ID",
+  "include_empty": true,
+  "limit": 20,
+  "offset": 0
+}`,
+    exampleRes: `{
+  "status": "success",
+  "data": {
+    "sessions": [
+      {
+        "session_id": "API_TEST_SESSION_ID",
+        "user_id": "API_TEST_USER_ID",
+        "title": "테스트 세션",
+        "category": "일반",
+        "created_at": "2025-07-17T10:00:00.000Z",
+        "updated_at": "2025-07-17T10:30:00.000Z",
+        "is_archived": false,
+        "user_info": {
+          "username": "TestUser",
+          "email": "API@example.com",
+          "is_active": true,
+          "is_admin": false
+        },
+        "message_stats": {
+          "total_messages": 4,
+          "user_messages": 2,
+          "ai_messages": 2,
+          "last_message_at": "2025-07-17T10:25:00.000Z",
+          "last_message_preview": "안녕하세요! 무엇을 도와드릴까요?"
+        }
+      }
+    ],
+    "pagination": {
+      "total_count": 1,
+      "limit": 50,
+      "offset": 0,
+      "has_more": false
+    }
+  }
 }`
   },
   /* 4. 채팅 메시지 관리 */

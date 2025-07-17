@@ -1,7 +1,7 @@
 // models/post.js
 const { oracledb } = require("../config/database");
 const { handleOracleError } = require("../utils/errorHandler");
-const { toSnakeCaseObj, clobToString } = require("../utils/dbUtils");
+const { clobToString } = require("../utils/dbUtils");
 const bcrypt = require("bcrypt");
 
 /**
@@ -83,13 +83,20 @@ async function getPostList(connection, languageCode, options = {}) {
     // Oracle 11xe 호환: ROWNUM을 사용한 페이징
     const result = await connection.execute(
       `SELECT * FROM (
-         SELECT ROWNUM rn, post_data.idx, post_data.user_id, post_data.is_notice, 
-                post_data.created_date, post_data.updated_date, post_data.subject, post_data.content
+         SELECT ROWNUM rn, post_data.idx, post_data.user_id, post_data.origin_language, post_data.is_notice, 
+                post_data.created_date, post_data.updated_date, post_data.subject, post_data.content, 
+                post_data.has_translation, post_data.translation_method
          FROM (
-           SELECT p.idx, p.user_id, p.is_notice, p.created_date, p.updated_date, 
-                  pt.subject, pt.content
+           SELECT p.idx, p.user_id, p.origin_language, p.is_notice, p.created_date, p.updated_date, 
+                  COALESCE(pt.subject, pt_orig.subject) as subject, 
+                  COALESCE(pt.content, pt_orig.content) as content,
+                  CASE WHEN pt.post_id IS NOT NULL THEN 1 ELSE 0 END as has_translation,
+                  CASE WHEN pt.post_id IS NOT NULL AND pt.is_original = 0 THEN 'ai'
+                       WHEN pt.post_id IS NOT NULL AND pt.is_original = 1 THEN 'original'
+                       ELSE 'original' END as translation_method
            FROM posts p 
            LEFT JOIN post_translations pt ON p.idx = pt.post_id AND pt.language_code = :language_code
+           LEFT JOIN post_translations pt_orig ON p.idx = pt_orig.post_id AND pt_orig.is_original = 1
            ORDER BY p.is_notice DESC, p.created_date DESC
          ) post_data
          WHERE ROWNUM <= :end_row
@@ -109,13 +116,14 @@ async function getPostList(connection, languageCode, options = {}) {
       const post = {
         post_id: row.IDX,
         user_id: row.USER_ID,
+        origin_language: row.ORIGIN_LANGUAGE,
         is_notice: row.IS_NOTICE === 1,
         created_date: row.CREATED_DATE?.toISOString(),
         updated_date: row.UPDATED_DATE?.toISOString(),
         subject: row.SUBJECT ? await clobToString(row.SUBJECT) : null,
         content: row.CONTENT ? await clobToString(row.CONTENT) : null,
-        translation_method: 'manual', // 기본값으로 설정
-        has_translation: !!row.SUBJECT
+        translation_method: row.TRANSLATION_METHOD, // SQL에서 계산된 값 사용
+        has_translation: row.HAS_TRANSLATION === 1 // SQL에서 계산된 값 사용
       };
       posts.push(post);
     }

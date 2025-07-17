@@ -105,6 +105,13 @@ router.get("/:user_id/admin-status", userController.checkAdminStatusController);
 // 관리자 권한 설정/해제
 router.put("/:user_id/admin-status", userController.setAdminStatusController);
 
+// =========================
+// 🔥 사용자 활성화 상태 관리 기능
+// =========================
+
+// 사용자 활성화 상태 설정/해제
+router.put("/:user_id/active-status", userController.setActiveStatusController);
+
 // 사용자 목록 조회 (관리자 권한 필요)
 router.get("/", userController.getUserListController);
 

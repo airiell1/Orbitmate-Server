@@ -30,13 +30,11 @@ import {
 } from './testScripts/message.js';
 
 import { 
-    getBadgeDetailsTest,
     submitBugReportTest,
     submitFeedbackTest,
     testParticipationTest,
     upgradeSubscriptionBadgeTest,
     approveBadgeTest,
-    upgradeBadgeLevelDirectTest
 } from './testScripts/badgeLevel.js';
 
 import { 

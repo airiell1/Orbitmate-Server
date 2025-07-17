@@ -396,30 +396,6 @@ function createSearchService(modelFunction, options = {}) {
 }
 
 /**
- * 세션 관련 서비스 헬퍼들
- */
-
-// 세션 서비스 (채팅 세션 관리)
-function createSessionService(modelFunction, options = {}) {
-  return createUserService(modelFunction, {
-    preprocessor: (userId, ...otherArgs) => {
-      if (!userId) {
-        throw new Error("User ID is required for session operations");
-      }
-      return [userId, ...otherArgs];
-    },
-    postprocessor: (result, userId) => {
-      return {
-        user_id: userId,
-        session_info: result,
-        timestamp: new Date().toISOString()
-      };
-    },
-    ...options
-  });
-}
-
-/**
  * 활동 관련 서비스 헬퍼들  
  */
 

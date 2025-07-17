@@ -289,6 +289,157 @@ async function getUserIdBySessionId(connection, sessionId) {
   }
 }
 
+// 관리자용 전체 세션 조회 함수
+async function getAllSessionsForAdmin(connection, options = {}) {
+  try {
+    const { 
+      user_id, 
+      include_empty = false, 
+      limit = 50, 
+      offset = 0 
+    } = options;
+
+    console.log('[DEBUG] getAllSessionsForAdmin options:', { user_id, include_empty, limit, offset });
+
+    let whereClause = '';
+    const bindings = {};
+
+    if (user_id) {
+      whereClause = 'WHERE cs.user_id = :user_id';
+      bindings.user_id = user_id;
+    }
+
+    if (!include_empty) {
+      const emptyFilter = 'COALESCE(msg_count, 0) > 0';
+      whereClause = whereClause ? `${whereClause} AND ${emptyFilter}` : `WHERE ${emptyFilter}`;
+      console.log('[DEBUG] 빈 세션 필터링 적용');
+    } else {
+      console.log('[DEBUG] 빈 세션 포함하여 조회');
+    }
+
+    console.log('[DEBUG] WHERE clause:', whereClause);
+    console.log('[DEBUG] Bindings:', bindings);
+
+    const query = `
+      SELECT cs.session_id,
+             cs.user_id,
+             cs.title,
+             cs.category,
+             cs.created_at,
+             cs.updated_at,
+             cs.is_archived,
+             u.username,
+             u.email,
+             u.is_active,
+             u.is_admin,
+             COALESCE(msg_count, 0) as message_count,
+             COALESCE(user_msg_count, 0) as user_message_count,
+             COALESCE(ai_msg_count, 0) as ai_message_count,
+             last_message_at,
+             last_message_content
+      FROM chat_sessions cs
+      LEFT JOIN users u ON cs.user_id = u.user_id
+      LEFT JOIN (
+        SELECT session_id,
+               COUNT(*) as msg_count,
+               SUM(CASE WHEN message_type = 'user' THEN 1 ELSE 0 END) as user_msg_count,
+               SUM(CASE WHEN message_type = 'ai' THEN 1 ELSE 0 END) as ai_msg_count,
+               MAX(created_at) as last_message_at
+        FROM chat_messages
+        GROUP BY session_id
+      ) msg_stats ON cs.session_id = msg_stats.session_id
+      LEFT JOIN (
+        SELECT session_id,
+               SUBSTR(message_content, 1, 100) as last_message_content
+        FROM (
+          SELECT session_id,
+                 message_content,
+                 ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY created_at DESC) as rn
+          FROM chat_messages
+        )
+        WHERE rn = 1
+      ) last_msg ON cs.session_id = last_msg.session_id
+      ${whereClause}
+      ORDER BY cs.updated_at DESC`;
+
+    // Oracle 11g 호환 페이지네이션 구문 사용
+    const finalQuery = `
+      SELECT * FROM (
+        SELECT rownum as rn, sub.* FROM (
+          ${query}
+        ) sub
+        WHERE rownum <= :maxRow
+      )
+      WHERE rn > :minRow`;
+
+    bindings.minRow = offset;
+    bindings.maxRow = offset + limit;
+
+    const result = await connection.execute(finalQuery, bindings, { 
+      outFormat: oracledb.OUT_FORMAT_OBJECT 
+    });
+
+    const sessions = await Promise.all(
+      result.rows.map(async (row) => ({
+        session_id: row.SESSION_ID,
+        user_id: row.USER_ID,
+        title: row.TITLE,
+        category: row.CATEGORY,
+        created_at: row.CREATED_AT ? row.CREATED_AT.toISOString() : null,
+        updated_at: row.UPDATED_AT ? row.UPDATED_AT.toISOString() : null,
+        is_archived: row.IS_ARCHIVED === 1,
+        user_info: {
+          username: row.USERNAME,
+          email: row.EMAIL,
+          is_active: row.IS_ACTIVE === 1,
+          is_admin: row.IS_ADMIN === 1
+        },
+        message_stats: {
+          total_messages: row.MESSAGE_COUNT || 0,
+          user_messages: row.USER_MESSAGE_COUNT || 0,
+          ai_messages: row.AI_MESSAGE_COUNT || 0,
+          last_message_at: row.LAST_MESSAGE_AT ? row.LAST_MESSAGE_AT.toISOString() : null,
+          last_message_preview: row.LAST_MESSAGE_CONTENT ? 
+            await clobToString(row.LAST_MESSAGE_CONTENT) : null
+        }
+      }))
+    );
+
+    // 총 세션 수 조회
+    const countQuery = `
+      SELECT COUNT(*) as total_count
+      FROM chat_sessions cs
+      LEFT JOIN (
+        SELECT session_id,
+               COUNT(*) as msg_count
+        FROM chat_messages
+        GROUP BY session_id
+      ) msg_stats ON cs.session_id = msg_stats.session_id
+      ${whereClause}`;
+
+    // 카운트 쿼리용 바인딩 (페이지네이션 제외)
+    const countBindings = { ...bindings };
+    delete countBindings.minRow;
+    delete countBindings.maxRow;
+
+    const countResult = await connection.execute(countQuery, countBindings, { 
+      outFormat: oracledb.OUT_FORMAT_OBJECT 
+    });
+
+    return {
+      sessions,
+      pagination: {
+        total_count: countResult.rows[0].TOTAL_COUNT,
+        limit,
+        offset,
+        has_more: (offset + limit) < countResult.rows[0].TOTAL_COUNT
+      }
+    };
+  } catch (err) {
+    throw handleOracleError(err);
+  }
+}
+
 module.exports = {
   createChatSession,
   getUserChatSessions,
@@ -296,4 +447,5 @@ module.exports = {
   getSessionMessages,
   deleteChatSession,
   getUserIdBySessionId, // export 추가
+  getAllSessionsForAdmin, // export 추가
 };

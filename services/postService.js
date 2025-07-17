@@ -40,15 +40,8 @@ async function getPostListService(languageCode, options = {}) {
         return [];
       }
       
-      // 번역이 없는 게시물들에 대해 AI 번역 요청
-      const needTranslation = posts.filter(post => !post.has_translation);
-      
-      if (needTranslation.length > 0) {
-        // 백그라운드에서 번역 처리 (사용자 응답 속도를 위해 비동기)
-        setImmediate(() => {
-          translatePostsInBackground(needTranslation, languageCode);
-        });
-      }
+      // 목록 조회에서는 번역하지 않음 (API 테러 방지)
+      // 번역은 개별 게시물 조회 또는 명시적 번역 요청 시에만 수행
       
       return posts;
     });
@@ -295,17 +288,20 @@ async function translatePostService(postId, targetLanguage, forceRetranslate = f
  */
 async function getPostTranslationsService(postId, includeOriginal = true) {
   return await withTransaction(async (connection) => {
-    // 게시물 존재 여부 확인
-    const postExists = await connection.execute(
-      `SELECT idx FROM posts WHERE idx = :post_id`,
-      { post_id: postId }
+    // 게시물 존재 여부 및 원본 언어 확인
+    const postResult = await connection.execute(
+      `SELECT idx, origin_language FROM posts WHERE idx = :post_id`,
+      { post_id: postId },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
     
-    if (postExists.rows.length === 0) {
+    if (postResult.rows.length === 0) {
       const error = new Error("게시물을 찾을 수 없습니다.");
       error.code = "POST_NOT_FOUND";
       throw error;
     }
+
+    const originLanguage = postResult.rows[0].ORIGIN_LANGUAGE;
 
     // 번역 목록 조회
     let query = `SELECT language_code, subject, content, is_original, created_date 
@@ -332,44 +328,45 @@ async function getPostTranslationsService(postId, includeOriginal = true) {
         content: await clobToString(row.CONTENT),
         is_original: row.IS_ORIGINAL === 1,
         translation_method: row.IS_ORIGINAL === 1 ? 'original' : 'ai',
-        created_date: row.CREATED_DATE?.toISOString()
+        created_date: row.CREATED_DATE?.toISOString(),
+        has_translation: true
       };
       translations.push(translation);
     }
 
+    // 번역이 없는 경우 원본 언어로 표시
+    if (translations.length === 0) {
+      // 원본 번역 데이터가 없는 경우 posts 테이블에서 직접 조회
+      const originalPost = await connection.execute(
+        `SELECT p.idx, p.origin_language, p.created_date
+         FROM posts p
+         WHERE p.idx = :post_id`,
+        { post_id: postId },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
+      );
+
+      if (originalPost.rows.length > 0) {
+        const row = originalPost.rows[0];
+        translations.push({
+          language_code: row.ORIGIN_LANGUAGE,
+          subject: null,
+          content: null,
+          is_original: true,
+          translation_method: 'original',
+          created_date: row.CREATED_DATE?.toISOString(),
+          has_translation: false
+        });
+      }
+    }
+
     return {
       post_id: postId,
+      origin_language: originLanguage,
       translations: translations,
       total_count: translations.length
     };
   });
 }
-async function translatePostsInBackground(posts, languageCode) {
-  if (!posts || posts.length === 0) {
-    return;
-  }
-  
-  for (const post of posts) {
-    try {
-      if (post.post_id) {
-        await withTransaction(async (connection) => {
-          try {
-            const fullPost = await postModel.getPostDetail(connection, post.post_id, post.origin_language || 'ko');
-            if (fullPost && fullPost.translation) {
-              const translationResult = await translatePostContent(fullPost, languageCode);
-              await postModel.addTranslation(connection, post.post_id, languageCode, translationResult);
-            }
-          } catch (detailError) {
-            console.error(`[postService] 게시물 상세 조회 실패 (post_id: ${post.post_id}):`, detailError);
-          }
-        });
-      }
-    } catch (error) {
-      console.error(`[postService] 백그라운드 번역 실패 (post_id: ${post.post_id}):`, error);
-    }
-  }
-}
-
 module.exports = {
   createPostService,
   getPostListService,

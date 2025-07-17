@@ -802,6 +802,75 @@
         </div>
       </div>
 
+      <!-- 🔄 사용자 활성화 상태 관리 -->
+      <div class="api-section">
+        <h3>🔄 사용자 활성화 상태 관리</h3>
+
+        <!-- 사용자 활성화 상태 확인 -->
+        <h4>사용자 활성화 상태 확인</h4>
+        <div>
+          <input
+            type="text"
+            id="active-check-user-id"
+            placeholder="사용자 ID"
+            value="API_TEST_USER_ID"
+          />
+          <button id="check-active-status-button">활성화 상태 확인</button>
+        </div>
+
+        <!-- 사용자 활성화 상태 설정 -->
+        <h4>사용자 활성화 상태 설정</h4>
+        <div>
+          <input
+            type="text"
+            id="active-set-user-id"
+            placeholder="사용자 ID"
+            value="API_TEST_USER_ID"
+          />
+          <select id="active-status-select">
+            <option value="true">활성화</option>
+            <option value="false">비활성화</option>
+          </select>
+          <button id="set-active-status-button">활성화 상태 설정</button>
+        </div>
+      </div>
+
+      <!-- 📊 관리자용 세션 전체 조회 -->
+      <div class="api-section">
+        <h3>📊 관리자용 세션 전체 조회</h3>
+
+        <!-- 전체 세션 조회 -->
+        <h4>전체 세션 조회</h4>
+        <div>
+          <input
+            type="text"
+            id="admin-session-user-id"
+            placeholder="사용자 ID 필터 (선택)"
+            value=""
+          />
+          <input
+            type="number"
+            id="admin-session-limit"
+            placeholder="페이지 크기"
+            value="20"
+            min="1"
+            max="100"
+          />
+          <input
+            type="number"
+            id="admin-session-offset"
+            placeholder="시작 위치"
+            value="0"
+            min="0"
+          />
+          <label>
+            <input type="checkbox" id="admin-session-include-empty" />
+            빈 세션 포함
+          </label>
+          <button id="get-admin-sessions-button">전체 세션 조회</button>
+        </div>
+      </div>
+
       <!-- �🔍 검색 기능 테스트 -->
       <div class="test-section">
         <h3>🔍 검색 기능 테스트</h3>

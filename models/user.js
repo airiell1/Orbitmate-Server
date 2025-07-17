@@ -1237,6 +1237,30 @@ async function setUserAdminStatus(connection, user_id, is_admin) {
   }
 }
 
+// 사용자 활성화 여부 설정 함수
+async function setUserActiveStatus(connection, user_id, is_active) {
+  try {
+    const result = await connection.execute(
+      `UPDATE users SET is_active = :is_active WHERE user_id = :user_id`,
+      { user_id, is_active: is_active ? 1 : 0 },
+      { autoCommit: false }
+    );
+
+    if (result.rowsAffected === 0) {
+      const error = new Error("사용자를 찾을 수 없습니다.");
+      error.code = "USER_NOT_FOUND";
+      throw error;
+    }
+
+    return { success: true, message: "사용자 활성화 상태가 업데이트되었습니다." };
+  } catch (error) {
+    if (error.code === "USER_NOT_FOUND") {
+      throw error;
+    }
+    throw handleOracleError(error);
+  }
+}
+
 module.exports = {
   registerUser,
   loginUser,
@@ -1266,5 +1290,6 @@ module.exports = {
   handleUserActivity,
   getUserList,
   isUserAdmin,
-  setUserAdminStatus
+  setUserAdminStatus,
+  setUserActiveStatus
 };

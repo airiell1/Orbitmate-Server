@@ -130,6 +130,26 @@ async function getUserIdBySessionIdService(sessionId) {
     });
 }
 
+/**
+ * 관리자용 전체 세션 조회 서비스
+ * @param {Object} options - 조회 옵션
+ * @param {string} options.user_id - 특정 사용자 ID로 필터링 (선택적)
+ * @param {boolean} options.include_empty - 빈 세션 포함 여부 (기본값: false)
+ * @param {number} options.limit - 페이지 크기 (기본값: 50)
+ * @param {number} options.offset - 페이지 오프셋 (기본값: 0)
+ * @returns {Promise<Object>} 세션 목록 및 페이지네이션 정보
+ */
+async function getAllSessionsForAdminService(options = {}) {
+  return await withTransaction(async (connection) => {
+    // 모델 함수 호출
+    const result = await sessionModel.getAllSessionsForAdmin(connection, options);
+    
+    // 필요시 추가 비즈니스 로직 수행 가능
+    // 예: 세션 데이터 후처리, 통계 계산 등
+    
+    return result;
+  });
+}
 
 module.exports = {
   createSessionService,
@@ -138,4 +158,5 @@ module.exports = {
   getSessionMessagesService,
   deleteSessionService,
   getUserIdBySessionIdService,
+  getAllSessionsForAdminService,
 };

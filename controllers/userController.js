@@ -678,6 +678,36 @@ const setAdminStatusController = createUpdateController(
   }
 );
 
+/**
+ * 사용자 활성화 상태 설정 컨트롤러
+ */
+const setActiveStatusController = createUpdateController(
+  userModel.setUserActiveStatus,
+  {
+    dataExtractor: (req) => {
+      const { user_id } = req.params;
+      const { is_active } = req.body;
+      console.log('[DEBUG] setActiveStatusController dataExtractor:', { user_id, is_active, type: typeof is_active });
+      return [user_id, is_active];
+    },
+    validations: [
+      (req) => {
+        const { user_id } = req.params;
+        const { is_active } = req.body;
+
+        console.log('[DEBUG] setActiveStatusController validation:', { user_id, is_active, type: typeof is_active });
+
+        if (!user_id || typeof is_active !== 'boolean') {
+          const err = new Error("User ID and is_active (boolean) are required.");
+          err.code = "INVALID_INPUT";
+          throw err;
+        }
+      }
+    ],
+    errorContext: 'set_active_status'
+  }
+);
+
 module.exports = {
   // Phase 1: 핵심 기능
   registerUserController,
@@ -708,4 +738,7 @@ module.exports = {
   // 관리자 권한 관리 기능
   checkAdminStatusController,
   setAdminStatusController,
+
+  // 사용자 활성화 상태 관리 기능
+  setActiveStatusController,
 };

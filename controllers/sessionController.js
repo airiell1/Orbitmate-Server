@@ -191,10 +191,99 @@ const deleteSessionController = createController(
   }
 );
 
+/**
+ * 관리자용 전체 세션 조회 컨트롤러
+ */
+async function getAllSessionsForAdminController(req, res, next) {
+  try {
+    // 관리자 권한 확인을 위한 user_id 가져오기
+    const requesting_user_id = req.body.user_id;
+    
+    if (!requesting_user_id) {
+      const err = new Error("관리자 권한 확인을 위해 user_id가 필요합니다.");
+      err.code = "UNAUTHORIZED";
+      throw err;
+    }
+
+    // 관리자 권한 확인
+    const userModel = require("../models/user");
+    const { withTransaction } = require("../utils/dbUtils");
+    
+    const isAdmin = await withTransaction(async (connection) => {
+      return await userModel.isUserAdmin(connection, requesting_user_id);
+    });
+
+    if (!isAdmin) {
+      const err = new Error("관리자 권한이 필요합니다.");
+      err.code = "FORBIDDEN";
+      throw err;
+    }
+
+    const {
+      filter_user_id,
+      include_empty,
+      limit = 50,
+      offset = 0
+    } = req.body;
+
+    console.log('[DEBUG] 관리자 세션 조회 요청:', { 
+      requesting_user_id, 
+      filter_user_id, 
+      include_empty, 
+      limit, 
+      offset,
+      include_empty_type: typeof include_empty
+    });
+
+    // 입력값 검증
+    if (filter_user_id && (typeof filter_user_id !== "string" || filter_user_id.trim() === "" || filter_user_id.length > 36)) {
+      const err = new Error("필터링할 사용자 ID는 문자열이어야 하며 최대 36자입니다.");
+      err.code = "INVALID_INPUT";
+      throw err;
+    }
+
+    const limitNum = parseInt(limit, 10);
+    const offsetNum = parseInt(offset, 10);
+
+    if (isNaN(limitNum) || limitNum < 1 || limitNum > 100) {
+      const err = new Error("limit은 1-100 사이의 숫자여야 합니다.");
+      err.code = "INVALID_INPUT";
+      throw err;
+    }
+
+    if (isNaN(offsetNum) || offsetNum < 0) {
+      const err = new Error("offset은 0 이상의 숫자여야 합니다.");
+      err.code = "INVALID_INPUT";
+      throw err;
+    }
+
+    const options = {
+      user_id: filter_user_id,
+      include_empty: include_empty === true || include_empty === 'true',
+      limit: limitNum,
+      offset: offsetNum
+    };
+
+    console.log('[DEBUG] 서비스 호출 옵션:', options);
+
+    const result = await sessionService.getAllSessionsForAdminService(options);
+    
+    console.log('[DEBUG] 서비스 결과:', {
+      session_count: result.sessions ? result.sessions.length : 0,
+      total_count: result.pagination ? result.pagination.total_count : 0
+    });
+    const apiResponse = standardizeApiResponse(result);
+    res.status(apiResponse.statusCode).json(apiResponse.body);
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   createSessionController,
   getUserSessionsController,
   updateSessionController,
   getSessionMessagesController,
   deleteSessionController,
+  getAllSessionsForAdminController,
 };

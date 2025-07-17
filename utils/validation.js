@@ -174,53 +174,6 @@ function validateSessionId(sessionIdOrReq, fieldName = 'Session ID') {
   return null;
 }
 
-// 메시지 ID 유효성 검사
-function validateMessageId(req) {
-  const { message_id } = req.params;
-  if (!message_id || typeof message_id !== "string" || message_id.trim() === "" || message_id.length > 36) {
-    const error = new Error("메시지 ID는 필수이며 최대 36자입니다.");
-    error.code = "INVALID_INPUT";
-    return error;
-  }
-  return null;
-}
-
-// 사용자 접근 권한 검사
-function validateUserAccess(req) {
-  // 기본적인 사용자 권한 검사 로직
-  const user_id = req.body ? req.body.user_id : null;
-  if (!user_id) {
-    const error = new Error("user_id가 필요합니다.");
-    error.code = "INVALID_INPUT";
-    return error;
-  }
-  return null;
-}
-
-// 파일 타입 유효성 검사
-function validateFileType(file) {
-  if (!file) {
-    const error = new Error("파일이 필요합니다.");
-    error.code = "INVALID_INPUT";
-    return error;
-  }
-  
-  const allowedMimeTypes = [
-    'image/jpeg', 'image/png', 'image/gif', 'image/webp',
-    'text/plain', 'application/pdf',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-  ];
-  
-  if (!allowedMimeTypes.includes(file.mimetype)) {
-    const error = new Error(`지원하지 않는 파일 형식입니다. 허용되는 형식: ${allowedMimeTypes.join(', ')}`);
-    error.code = "INVALID_FILE_TYPE";
-    return error;
-  }
-  
-  return null;
-}
-
 // 배치 유효성 검사 실행
 function validateBatch(validators) {
   if (!Array.isArray(validators)) {
