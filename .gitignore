@@ -28,3 +28,6 @@ logs/
 # Ignore all .idea directories
 .idea/
 temp/
+
+temp.tem
+to.do

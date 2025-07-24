@@ -401,7 +401,7 @@ INSERT INTO translation_resources (lang_code, resource_key, resource_value, cate
 -- 게시물 관련 테이블 생성
 CREATE TABLE posts (
     idx NUMBER PRIMARY KEY,
-    user_id VARCHAR2(50),                    -- 작성자 ID
+    user_name VARCHAR2(100),                 -- 작성자 이름
     user_ip VARCHAR2(45),                    -- 작성자 IP (IPv6 고려)
     pwd VARCHAR2(255),                       -- 비밀번호 (공지사항은 NULL)
     origin_language VARCHAR2(10),           -- 원본 언어 ('ko', 'en', 'ja' 등)
@@ -427,7 +427,7 @@ CREATE TABLE post_translations (
 CREATE SEQUENCE posts_seq START WITH 1 INCREMENT BY 1;
 
 -- 게시물 관련 인덱스
-CREATE INDEX idx_posts_user_id ON posts(user_id);
+CREATE INDEX idx_posts_user_name ON posts(user_name);
 CREATE INDEX idx_posts_notice ON posts(is_notice);
 CREATE INDEX idx_posts_created ON posts(created_date);
 CREATE INDEX idx_trans_lang ON post_translations(language_code);

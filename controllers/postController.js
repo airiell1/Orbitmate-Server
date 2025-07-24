@@ -8,11 +8,11 @@ const { validateRequiredFields } = require("../utils/validation");
  */
 async function createPostController(req, res, next) {
   try {
-    const { user_id, subject, content, pwd, origin_language = 'ko', is_notice = false } = req.body;
+    const { user_name, subject, content, pwd, origin_language = 'ko', is_notice = false } = req.body;
     const user_ip = req.ip || req.connection.remoteAddress;
 
     // 필수 필드 검증
-    const requiredFields = ['user_id', 'subject', 'content'];
+    const requiredFields = ['user_name', 'subject', 'content'];
     const validation = validateRequiredFields(req.body, requiredFields);
     if (!validation.isValid) {
       const error = new Error(validation.message);
@@ -28,7 +28,7 @@ async function createPostController(req, res, next) {
     }
 
     const postData = {
-      user_id,
+      user_name,
       user_ip,
       pwd: pwd,
       origin_language,
@@ -96,7 +96,7 @@ async function getPostDetailController(req, res, next) {
 async function updatePostController(req, res, next) {
   try {
     const { post_id } = req.params;
-    const { user_id, subject, content, pwd } = req.body;
+    const { user_name, subject, content, pwd } = req.body;
 
     if (!post_id) {
       const error = new Error("게시물 ID가 필요합니다.");
@@ -105,7 +105,7 @@ async function updatePostController(req, res, next) {
     }
 
     // 필수 필드 검증
-    const requiredFields = ['user_id', 'subject', 'content'];
+    const requiredFields = ['user_name', 'subject', 'content'];
     const validation = validateRequiredFields(req.body, requiredFields);
     if (!validation.isValid) {
       const error = new Error(validation.message);
@@ -114,7 +114,7 @@ async function updatePostController(req, res, next) {
     }
 
     const updateData = {
-      user_id,
+      user_name,
       subject,
       content,
       pwd: pwd
@@ -135,7 +135,7 @@ async function updatePostController(req, res, next) {
 async function deletePostController(req, res, next) {
   try {
     const { post_id } = req.params;
-    const { user_id, pwd } = req.body;
+    const { user_name, pwd } = req.body;
 
     if (!post_id) {
       const error = new Error("게시물 ID가 필요합니다.");
@@ -143,13 +143,13 @@ async function deletePostController(req, res, next) {
       throw error;
     }
 
-    if (!user_id) {
-      const error = new Error("사용자 ID가 필요합니다.");
+    if (!user_name) {
+      const error = new Error("사용자 이름이 필요합니다.");
       error.code = "INVALID_INPUT";
       throw error;
     }
 
-    const result = await postService.deletePostService(parseInt(post_id), user_id, pwd);
+    const result = await postService.deletePostService(parseInt(post_id), user_name, pwd);
     const apiResponse = standardizeApiResponse(result);
     res.status(apiResponse.statusCode).json(apiResponse.body);
 

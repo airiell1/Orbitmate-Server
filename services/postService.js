@@ -102,13 +102,13 @@ async function updatePostService(postId, updateData) {
 /**
  * 게시물 삭제 서비스
  * @param {number} postId - 게시물 ID
- * @param {string} user_id - 사용자 ID
+ * @param {string} user_name - 사용자 이름
  * @param {string} pwd - 비밀번호
  * @returns {Promise<Object>} 삭제 결과
  */
-async function deletePostService(postId, user_id, pwd) {
+async function deletePostService(postId, user_name, pwd) {
   return await withTransaction(async (connection) => {
-    const result = await postModel.deletePost(connection, postId, user_id, pwd);
+    const result = await postModel.deletePost(connection, postId, user_name, pwd);
     return result;
   });
 }

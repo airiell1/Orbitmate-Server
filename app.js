@@ -28,6 +28,7 @@ let translationsRouter; // translationsRouter 변수 선언 추가
 let feedbackRouter; // feedbackRouter 변수 선언 추가
 let postsRouter; // postsRouter 변수 선언 추가
 let commentsRouter; // commentsRouter 변수 선언 추가
+let systemRouter; // systemRouter 변수 선언 추가
 
 
 // 미들웨어 설정
@@ -90,6 +91,7 @@ async function startServer() {  try {
     feedbackRouter = require('./routes/feedback'); // feedbackRouter 로드
     postsRouter = require('./routes/posts'); // postsRouter 로드
     commentsRouter = require('./routes/comments'); // commentsRouter 로드
+    systemRouter = require('./routes/system'); // systemRouter 로드
 
 
     app.use('/api/users', usersRouter);
@@ -102,6 +104,7 @@ async function startServer() {  try {
     app.use('/api/feedback', feedbackRouter); // feedbackRouter 마운트
     app.use('/api/posts', postsRouter); // postsRouter 마운트
     app.use('/api', commentsRouter); // commentsRouter 마운트
+    app.use('/api/system', systemRouter); // systemRouter 마운트
 
     // 서버 상태 확인용 엔드포인트
     app.get('/api/health', (req, res) => {

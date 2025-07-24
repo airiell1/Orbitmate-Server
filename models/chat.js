@@ -12,7 +12,7 @@ async function getChatHistoryFromDB(
 ) {
   try {
     let sql = `
-      SELECT message_id, session_id, user_id, message_type, message_content, created_at
+      SELECT DISTINCT message_id, session_id, user_id, message_type, message_content, created_at
       FROM chat_messages
       WHERE session_id = :sessionId
       ORDER BY created_at ASC`;
@@ -25,7 +25,7 @@ async function getChatHistoryFromDB(
       sql = `
         SELECT * FROM (
             SELECT inner_q.* FROM (
-                SELECT message_id, session_id, user_id, message_type, message_content, created_at
+                SELECT DISTINCT message_id, session_id, user_id, message_type, message_content, created_at
                 FROM chat_messages
                 WHERE session_id = :sessionId
                 ORDER BY created_at DESC
@@ -115,6 +115,47 @@ async function saveAiMessageToDB(
       message && typeof message === "string" && message.trim() !== ""
         ? message.trim()
         : "(응답이 생성되지 않았습니다. 다시 시도해 주세요.)";
+
+    // 중복 메시지 체크: 같은 세션의 최근 AI 메시지와 비교
+    const duplicateCheck = await connection.execute(
+      `SELECT message_id 
+       FROM (
+         SELECT message_id, message_content 
+         FROM chat_messages 
+         WHERE session_id = :sessionId AND message_type = 'ai' 
+         ORDER BY created_at DESC
+       ) 
+       WHERE ROWNUM = 1 AND DBMS_LOB.COMPARE(message_content, :messageContent) = 0`,
+      {
+        sessionId: sessionId,
+        messageContent: { val: safeMessage, type: oracledb.CLOB }
+      },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    // 중복된 메시지가 있으면 저장하지 않고 기존 메시지 정보 반환
+    if (duplicateCheck.rows && duplicateCheck.rows.length > 0) {
+      console.log(`[Chat Model] 중복 AI 메시지 저장 방지: sessionId=${sessionId}`);
+      const existingMessage = await connection.execute(
+        `SELECT message_id, message_content, created_at 
+         FROM chat_messages 
+         WHERE message_id = :messageId`,
+        { messageId: duplicateCheck.rows[0].MESSAGE_ID },
+        { outFormat: oracledb.OUT_FORMAT_OBJECT }
+      );
+      
+      if (existingMessage.rows && existingMessage.rows.length > 0) {
+        const row = existingMessage.rows[0];
+        const contentStr = await clobToString(row.MESSAGE_CONTENT);
+        return {
+          ai_message_id: row.MESSAGE_ID,
+          content: contentStr,
+          created_at: row.CREATED_AT ? row.CREATED_AT.toISOString() : null,
+          ai_message_token_count: aiTokenCount,
+          is_duplicate: true
+        };
+      }
+    }
 
     const result = await connection.execute(
       `INSERT INTO chat_messages (session_id, user_id, message_type, message_content, created_at, ai_message_token_count) 
@@ -459,6 +500,50 @@ async function getMessageById(
   }
 }
 
+/**
+ * 제목 생성용 세션 메시지 조회 (간단한 형태)
+ * @param {Object} connection - 데이터베이스 연결 객체
+ * @param {string} sessionId - 세션 ID
+ * @param {number} limit - 최대 메시지 수 (기본값: 10)
+ * @returns {Promise<Array>} 메시지 배열
+ */
+async function getMessagesBySessionId(connection, sessionId, limit = 10) {
+  try {
+    const result = await connection.execute(
+      `SELECT * FROM (
+         SELECT message_type, message_content, created_at
+         FROM chat_messages
+         WHERE session_id = :sessionId
+         ORDER BY created_at ASC
+       )
+       WHERE ROWNUM <= :limit`,
+      { 
+        sessionId: sessionId,
+        limit: limit
+      },
+      { outFormat: oracledb.OUT_FORMAT_OBJECT }
+    );
+
+    const messages = await Promise.all(
+      result.rows.map(async (row) => {
+        let messageContentStr = await clobToString(row.MESSAGE_CONTENT);
+        if (messageContentStr === null || messageContentStr === undefined || messageContentStr.trim() === "") {
+          messageContentStr = "(내용 없음)";
+        }
+        return {
+          message_type: row.MESSAGE_TYPE,
+          message: messageContentStr,
+          created_at: row.CREATED_AT ? row.CREATED_AT.toISOString() : null
+        };
+      })
+    );
+
+    return messages;
+  } catch (err) {
+    throw handleOracleError(err);
+  }
+}
+
 module.exports = {
   getChatHistoryFromDB,
   saveUserMessageToDB,
@@ -471,4 +556,5 @@ module.exports = {
   editUserMessage,
   getMessageEditHistory,
   requestAiReresponse,
+  getMessagesBySessionId, // 제목 생성용 함수 추가
 };

@@ -16,7 +16,8 @@ const {
 const { 
   createSessionController, 
   updateSessionController, 
-  deleteSessionController
+  deleteSessionController,
+  generateSessionTitleController
 } = require('../controllers/sessionController');
 
 // 구독 관리 미들웨어 import
@@ -52,6 +53,9 @@ router.put('/sessions/:session_id', updateSessionController);
 
 // 채팅 세션 삭제
 router.delete('/sessions/:session_id', deleteSessionController);
+
+// 채팅 세션 제목 자동 생성
+router.post('/sessions/:session_id/generate-title', generateSessionTitleController);
 
 // 특정 세션의 메시지 목록 조회
 router.get('/sessions/:session_id/messages', getSessionMessagesController);

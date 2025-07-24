@@ -20,7 +20,7 @@ async function createCommentController(req, res, next) {
     const commentData = {
       post_id: parseInt(post_id),
       parent_comment_id: parent_comment_id ? parseInt(parent_comment_id) : null,
-      user_id: req.body.user_id || 'anonymous',
+      user_name: req.body.user_name,
       user_ip: req.ip || req.connection.remoteAddress,
       content: content.trim()
     };
@@ -62,7 +62,7 @@ async function getCommentsController(req, res, next) {
 async function updateCommentController(req, res, next) {
   try {
     const { comment_id } = req.params;
-    const { content, user_id } = req.body;
+  const { content, user_name } = req.body;
     
     // 입력값 검증
     if (!content || content.trim() === '') {
@@ -71,8 +71,8 @@ async function updateCommentController(req, res, next) {
       throw error;
     }
 
-    if (!user_id) {
-      const error = new Error("사용자 ID가 필요합니다.");
+    if (!user_name) {
+      const error = new Error("사용자 이름이 필요합니다.");
       error.code = "INVALID_INPUT";
       throw error;
     }
@@ -84,7 +84,7 @@ async function updateCommentController(req, res, next) {
     const result = await commentService.updateCommentService(
       parseInt(comment_id), 
       updateData, 
-      user_id
+      user_name
     );
     
     const apiResponse = standardizeApiResponse(result);
@@ -101,17 +101,17 @@ async function updateCommentController(req, res, next) {
 async function deleteCommentController(req, res, next) {
   try {
     const { comment_id } = req.params;
-    const { user_id } = req.body;
+  const { user_name } = req.body;
     
-    if (!user_id) {
-      const error = new Error("사용자 ID가 필요합니다.");
+    if (!user_name) {
+      const error = new Error("사용자 이름이 필요합니다.");
       error.code = "INVALID_INPUT";
       throw error;
     }
 
     const result = await commentService.deleteCommentService(
       parseInt(comment_id), 
-      user_id
+      user_name
     );
     
     const apiResponse = standardizeApiResponse({ 

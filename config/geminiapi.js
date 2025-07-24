@@ -1,6 +1,7 @@
 // config/geminiapi.js - Google Gemini API (AI Studio) 연동
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const config = require("./index"); // 중앙 설정 파일 import
+const { sanitizeModelId, validateAiModel } = require("../utils/modelValidator"); // 모델 검증
 const {
   getGeminiTools,
   executeAiTool,
@@ -83,8 +84,14 @@ async function getGeminiApiResponse(
   }
 
   try {
-    // 모델 설정
-    const modelName = options.model_id_override || defaultModel;
+    // 모델 설정 및 검증
+    const requestedModel = options.model_id_override || defaultModel;
+    const modelName = sanitizeModelId('geminiapi', requestedModel);
+    
+    // 모델이 변경된 경우 경고 로그
+    if (requestedModel !== modelName) {
+      console.warn(`[GeminiAPI] 요청된 모델 '${requestedModel}'이 '${modelName}'으로 변경됨 (모델 락 적용)`);
+    }
 
     // Function Calling 도구 사용 여부 결정
     const useTools = options.enableTools !== false; // 기본적으로 도구 사용 활성화
@@ -104,6 +111,12 @@ async function getGeminiApiResponse(
 
     if (tools.length > 0) {
       modelConfig.tools = tools;
+      // AI가 도구를 더 적극적으로 사용하도록 설정
+      modelConfig.toolConfig = {
+        functionCallingConfig: {
+          mode: "AUTO", // AUTO, ANY, NONE 중 선택
+        }
+      };
     }
 
     const model = genAI.getGenerativeModel(modelConfig);
@@ -198,7 +211,8 @@ async function getGeminiApiResponse(
     });
 
     if (streamResponseCallback && typeof streamResponseCallback === "function") {
-      console.log(`[GeminiAPI] 스트리밍 모드로 요청 처리 중...`);
+      console.log(`[GeminiAPI] 스트리밍 모드로 요청 처리 중... (specialModeType: ${specialModeType})`);
+      console.log(`[GeminiAPI] Message length: ${enhancedMessage.length}, Callback type: ${typeof streamResponseCallback}`);
       try {
         const result = await chat.sendMessageStream(enhancedMessage);
         let fullText = "";
@@ -207,8 +221,12 @@ async function getGeminiApiResponse(
 
         for await (const chunk of result.stream) {
           const chunkText = chunk.text();
+          
           if (chunkText) {
+            // 수정: Gemini API가 실제로는 증분 청크를 보내므로 누적 필요
             fullText += chunkText;
+            
+            // 청크를 그대로 전송 (증분 청크)
             streamResponseCallback(chunkText);
           }
           if (chunk.candidates && chunk.candidates.length > 0) {
@@ -216,6 +234,7 @@ async function getGeminiApiResponse(
             if (candidate.content && candidate.content.parts) {
               const functionCallParts = candidate.content.parts.filter(part => part.functionCall);
               if (functionCallParts.length > 0) {
+                console.log(`[GeminiAPI] Function call 감지: ${functionCallParts.map(p => p.functionCall.name).join(', ')}`);
                 hasFunctionCalls = true;
                 break;
               }
@@ -223,6 +242,8 @@ async function getGeminiApiResponse(
           }
         }
         finalResult = await result.response;
+
+        console.log(`[GeminiAPI Debug] 스트리밍 완료 - fullText 길이: ${fullText.length}, 내용 미리보기: "${fullText.substring(0, 100)}..."`);
 
         if (hasFunctionCalls || (finalResult.candidates && finalResult.candidates.length > 0)) {
           const candidate = finalResult.candidates[0];
@@ -244,15 +265,38 @@ async function getGeminiApiResponse(
               let followUpText = "";
               for await (const chunk of followUpResult.stream) {
                 const chunkText = chunk.text();
+                console.log(`[GeminiAPI Debug] FollowUp chunk - Length: ${chunkText?.length || 0}`);
+                
                 if (chunkText) {
+                  // 🔧 수정: follow-up도 증분 청크이므로 직접 누적
                   followUpText += chunkText;
                   streamResponseCallback(chunkText);
                 }
               }
               const followUpFinal = await followUpResult.response;
               const usageMetadata = followUpFinal.usageMetadata || {};
+              
+              // follow-up 응답에서도 추가 function call이 있는지 확인
+              let additionalToolCalls = [];
+              if (followUpFinal.candidates && followUpFinal.candidates.length > 0) {
+                const candidate = followUpFinal.candidates[0];
+                if (candidate.content && candidate.content.parts) {
+                  const additionalFunctionCallParts = candidate.content.parts.filter(part => part.functionCall);
+                  if (additionalFunctionCallParts.length > 0) {
+                    console.log(`[GeminiAPI] Follow-up에서 추가 도구 호출: ${additionalFunctionCallParts.map(p => p.functionCall.name).join(', ')}`);
+                  }
+                  additionalToolCalls = additionalFunctionCallParts.map(part => ({
+                    toolName: part.functionCall.name,
+                    parameters: part.functionCall.args || {}
+                  }));
+                }
+              }
+              
+              // 🔧 수정: fullText와 followUpText를 합쳐서 완전한 응답 생성
+              const completeContent = fullText + followUpText;
+              
               return {
-                content: followUpText,
+                content: completeContent,
                 actual_input_tokens: usageMetadata.promptTokenCount || 0,
                 actual_output_tokens: usageMetadata.candidatesTokenCount || 0,
                 total_tokens: usageMetadata.totalTokenCount || 0,
@@ -261,11 +305,26 @@ async function getGeminiApiResponse(
                 finish_reason: "stop",
                 streaming: true,
                 function_calls_used: functionCallParts.map(part => part.functionCall.name),
+                toolCalls: additionalToolCalls // Function Calling Loop을 위한 추가 toolCalls
               };
             }
           }
         }
         const usageMetadata = finalResult.usageMetadata || {};
+        
+        // 스트리밍 모드에서도 function call 확인
+        let toolCalls = [];
+        if (finalResult.candidates && finalResult.candidates.length > 0) {
+          const candidate = finalResult.candidates[0];
+          if (candidate.content && candidate.content.parts) {
+            const functionCallParts = candidate.content.parts.filter(part => part.functionCall);
+            toolCalls = functionCallParts.map(part => ({
+              toolName: part.functionCall.name,
+              parameters: part.functionCall.args || {}
+            }));
+          }
+        }
+        
         return {
           content: fullText,
           actual_input_tokens: usageMetadata.promptTokenCount || 0,
@@ -275,6 +334,7 @@ async function getGeminiApiResponse(
           provider: "geminiapi",
           finish_reason: "stop",
           streaming: true,
+          toolCalls: toolCalls // Function Calling Loop을 위한 toolCalls 추가
         };
       } catch (streamError) {
         console.error("Gemini API 스트리밍 오류:", streamError);

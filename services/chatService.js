@@ -9,7 +9,8 @@ const config = require("../config");
 const { 
   generateSystemPrompt, 
   validateAndCleanPrompt, 
-  enhancePromptWithContext 
+  enhancePromptWithContext,
+  generateTitleGenerationPrompt 
 } = require("../utils/systemPrompt");
 
 /**
@@ -26,12 +27,16 @@ async function sendMessageService(
     message,
     system_prompt,
     specialModeType,
+    special_mode_type, // snake_case도 지원
     max_output_tokens_override,
     context_message_limit,
     ai_provider_override,
     model_id_override,
     user_message_token_count,
   } = messageData;
+
+  // specialModeType과 special_mode_type 중 하나라도 있으면 사용 (snake_case 우선)
+  const finalSpecialModeType = special_mode_type || specialModeType;
 
   // withTransaction을 사용하여 모든 DB 작업을 하나의 트랜잭션으로 묶음
   return await withTransaction(async (connection) => {
@@ -79,25 +84,24 @@ async function sendMessageService(
 
     // 모델 ID가 명시적으로 오버라이드되지 않았을 경우, 각 제공자의 기본 모델 사용
     if (!actualModelId) {
-        switch (actualAiProvider) {
-            case "geminiapi": actualModelId = config.ai.gemini.defaultModel; break;
-            case "ollama": actualModelId = config.ai.ollama.defaultModel; break;
-            case "vertexai": actualModelId = config.ai.vertexAi.defaultModel; break;
-            default: // 이 경우는 발생하지 않아야 하지만, 방어적으로
-                const err = new Error(`알 수 없는 AI 제공자입니다: ${actualAiProvider}`);
-                err.code = "INVALID_CONFIG"; // 서버 설정 오류로 간주
-                throw err;
-        }
+      switch (actualAiProvider) {
+        case "geminiapi": actualModelId = config.ai.gemini.defaultModel; break;
+        case "ollama": actualModelId = config.ai.ollama.defaultModel; break;
+        case "vertexai": actualModelId = config.ai.vertexAi.defaultModel; break;
+        default: // 이 경우는 발생하지 않아야 하지만, 방어적으로
+          const err = new Error(`알 수 없는 AI 제공자입니다: ${actualAiProvider}`);
+          err.code = "INVALID_CONFIG"; // 서버 설정 오류로 간주
+          throw err;
+      }
     }
 
     // 3. 사용자 프로필 및 설정 조회 (시스템 프롬프트 개인화용)
     let userProfile = null;
     let userSettings = null;
-    
+
     try {
       // 사용자 프로필 정보 조회
       userProfile = await userModel.getUserProfile(connection, actualUserId);
-      
       // 사용자 설정 조회
       userSettings = await userModel.getUserSettings(connection, actualUserId);
     } catch (profileError) {
@@ -109,10 +113,10 @@ async function sendMessageService(
     const enhancedSystemPrompt = generateSystemPrompt(userProfile, userSettings, system_prompt);
     const finalSystemPrompt = enhancePromptWithContext(
       validateAndCleanPrompt(enhancedSystemPrompt), 
-      specialModeType
+      finalSpecialModeType
     );
 
-    console.log(`[ChatService] 시스템 프롬프트 적용 - 길이: ${finalSystemPrompt.length}자, 타입: ${specialModeType || 'general'}`);
+    console.log(`[ChatService] 시스템 프롬프트 적용 - 길이: ${finalSystemPrompt.length}자, 타입: ${finalSpecialModeType || 'general'}`);
 
     // 5. 대화 이력 조회 (사용자 메시지 저장 전에 조회하여 중복 방지)
     const chatHistoryForAI = await chatModel.getChatHistoryFromDB(
@@ -125,39 +129,35 @@ async function sendMessageService(
     );
     const userMessageId = userMessageResult.user_message_id;
 
-    // 7. AI 응답 요청
-    const callOptions = {
-      max_output_tokens_override,
-      model_id_override: actualModelId, // 최종 결정된 모델 ID
+
+    // 7. GPT-style Function Calling Loop 실행
+    // runFunctionCallingLoop의 첫 번째 인자는 AI 프롬프트 함수여야 함
+    const { runFunctionCallingLoop } = require("../utils/aiTools");
+    const { fetchChatCompletion } = require("../utils/aiProvider");
+
+    // toolCallRequest: function calling loop에 전달할 요청 객체
+    const toolCallRequest = {
+      sessionId,
+      userId: actualUserId,
+      message,
+      systemPrompt: finalSystemPrompt,
+      chatHistory: chatHistoryForAI,
+      aiProvider: typeof actualAiProvider === 'string' ? actualAiProvider : (actualAiProvider?.name || 'geminiapi'),
+      modelId: typeof actualModelId === 'string' ? actualModelId : (actualModelId?.name || config.ai.gemini.defaultModel),
+      specialModeType: finalSpecialModeType,
+      maxOutputTokens: max_output_tokens_override,
+      streamResponseCallback,
+      clientIp,
     };
-    if (actualAiProvider === "ollama") callOptions.ollamaModel = actualModelId;
 
-    const requestContext = { clientIp };
+    // function calling loop 실행 (여러 도구를 순차적으로 호출)
+    const loopResult = await runFunctionCallingLoop(fetchChatCompletion, toolCallRequest);
 
-    const aiResponseFull = await fetchChatCompletion(
-      actualAiProvider, message, chatHistoryForAI, finalSystemPrompt,
-      specialModeType,
-      specialModeType === 'stream' ? streamResponseCallback : null, // 스트리밍 모드일 때만 콜백 전달
-      callOptions, requestContext
-    );
-
-    // 8. AI 응답 DB에 저장
-    // 스트리밍의 경우, fetchChatCompletion이 최종 fullContent를 반환해야 DB 저장 가능.
-    // 또는, 컨트롤러에서 스트리밍 완료 후 별도 API로 AI 메시지 ID와 content를 받아 저장할 수도 있음.
-    // 여기서는 fetchChatCompletion이 스트리밍 여부와 관계없이 최종 content를 반환한다고 가정.
-    if (!aiResponseFull || typeof aiResponseFull.content !== "string" || (aiResponseFull.content.trim() === "" && !aiResponseFull.function_calls_used) ) {
-      // 함수 호출이 있었다면 content가 비어있을 수 있음
-      if (!aiResponseFull?.function_calls_used?.length > 0) {
-        const err = new Error("AI로부터 유효한 응답을 받지 못했습니다 (내용 없음).");
-        err.code = "AI_RESPONSE_ERROR";
-        throw err;
-      }
-    }
-
-    let aiContentToSave = aiResponseFull.content || "(함수 호출 사용됨)";
-    
+    // loopResult: { finalAnswer, functionCallsUsed, aiResponseFull, ... }
+    // 최종 AI 응답을 DB에 저장
+    let aiContentToSave = loopResult.finalAnswer || loopResult.aiResponseFull?.content || "(함수 호출 사용됨)";
     const aiMessageResult = await chatModel.saveAiMessageToDB(
-      connection, sessionId, actualUserId, aiContentToSave.trim(), aiResponseFull.actual_output_tokens
+      connection, sessionId, actualUserId, aiContentToSave.trim(), loopResult.aiResponseFull?.actual_output_tokens
     );
 
     // 🎯 채팅 메시지 전송 성공 시 경험치 지급 (1 경험치)
@@ -177,34 +177,68 @@ async function sendMessageService(
       ai_message_token_count: aiMessageResult.ai_message_token_count,
       ai_provider: actualAiProvider,
       model_id: actualModelId,
-      // 스트리밍 모드 여부나, 함수 호출 사용 여부 등 추가 정보 반환 가능
-      special_mode_type: specialModeType,
-      function_calls_used: aiResponseFull.function_calls_used || null,
-      streaming_handled_by_service: specialModeType === 'stream' && !!streamResponseCallback, // 서비스가 스트림을 직접 처리했는지 여부
+      special_mode_type: finalSpecialModeType,
+      function_calls_used: loopResult.functionCallsUsed || null,
+      streaming_handled_by_service: finalSpecialModeType === 'stream' && !!streamResponseCallback,
+      // 추가 정보: function calling loop 결과
+      tool_calling_loop: {
+        steps: loopResult.steps,
+        ai_response_full: loopResult.aiResponseFull,
+      },
     };
   });
 }
 
 /**
  * 메시지 편집 서비스
+ * @param {string} messageId - 편집할 메시지 ID
+ * @param {string} newContent - 새 메시지 내용
+ * @param {string} editReason - 편집 사유(선택)
+ * @param {string} userId - 편집자 ID(권한 체크)
+ * @returns {Promise<Object>} 편집 결과
  */
-async function editMessageService(messageId, userId, newContent, editReason = null) {
-    return await withTransaction(async (connection) => {
-        const editResult = await chatModel.editUserMessage(connection, messageId, userId, newContent, editReason);
+async function editMessageService(messageId, newContent, editReason = null, userId = null) {
+  return await withTransaction(async (connection) => {
+    // 1. 메시지 존재 및 권한 확인
+    const message = await chatModel.getMessageById(connection, messageId);
+    if (!message) {
+      const error = new Error("메시지를 찾을 수 없습니다.");
+      error.code = "MESSAGE_NOT_FOUND";
+      throw error;
+    }
+    if (userId && message.user_id !== userId) {
+      const error = new Error("메시지에 대한 권한이 없습니다.");
+      error.code = "FORBIDDEN";
+      throw error;
+    }
 
-        // 경험치 지급 로직 (userActivityService 호출 또는 직접 userModel 호출)
-        // 여기서는 userModel을 직접 호출한다고 가정 (userActivityService가 아직 없을 수 있으므로)
-        if (editResult.success) { // editResult.success 등으로 성공 여부 확인
-            try {
-                // addUserExperience가 connection을 받도록 수정되었다고 가정
-                await userModel.addUserExperience(connection, userId, 5, "message_edit", "메시지 편집");
-            } catch (expError) {
-                console.warn(`[ChatService-Edit] 사용자 ${userId} 경험치 지급 실패: ${expError.message}`);
-                // 경험치 지급 실패는 주 트랜잭션 실패로 이어지지 않도록 처리
-            }
-        }
-        return editResult;
-    });
+    // 2. 메시지 내용 업데이트
+    const editResult = await chatModel.editMessageContent(connection, messageId, newContent, editReason);
+    if (!editResult || !editResult.success) {
+      const error = new Error("메시지 편집에 실패했습니다.");
+      error.code = "DB_ERROR";
+      throw error;
+    }
+
+    // 3. 편집 이력 저장 (모델에서 처리한다고 가정)
+
+    // 4. 경험치 지급 (메시지 편집 시 1점)
+    try {
+      await userModel.addUserExperience(connection, userId || message.user_id, 1, "message_edit", "메시지 편집");
+    } catch (expError) {
+      console.warn(`[ChatService-Edit] 사용자 ${userId || message.user_id} 경험치 지급 실패: ${expError.message}`);
+      // 경험치 지급 실패는 주 트랜잭션 실패로 이어지지 않도록 처리
+    }
+
+    return {
+      success: true,
+      message_id: messageId,
+      new_content: newContent,
+      edit_reason: editReason,
+      edited_by: userId || message.user_id,
+      edited_at: editResult.edited_at,
+    };
+  });
 }
 
 /**
@@ -493,6 +527,186 @@ async function getSessionMessagesService(sessionId) {
     });
 }
 
+/**
+ * 채팅 세션의 제목 자동 생성 서비스
+ * @param {string} sessionId - 세션 ID
+ * @param {string} userId - 사용자 ID (권한 확인용)
+ * @returns {Promise<Object>} 생성된 제목과 세션 정보
+ */
+async function generateSessionTitleService(sessionId, userId) {
+  return await withTransaction(async (connection) => {
+    console.log(`[DEBUG] 세션 ${sessionId}에 대한 제목 생성 시작 (사용자: ${userId})`);
+
+    // 1. 세션 존재 여부 및 권한 확인
+    let sessionInfo;
+    try {
+      sessionInfo = await sessionModel.getUserIdBySessionId(connection, sessionId);
+      if (sessionInfo.user_id !== userId) {
+        const error = new Error("세션에 대한 권한이 없습니다");
+        error.code = "FORBIDDEN";
+        throw error;
+      }
+    } catch (error) {
+      if (error.code === "FORBIDDEN") {
+        throw error;
+      }
+      const notFoundError = new Error("세션을 찾을 수 없습니다");
+      notFoundError.code = "SESSION_NOT_FOUND";
+      throw notFoundError;
+    }
+
+    // 2. 세션의 메시지 목록 가져오기 (최대 10개 메시지로 제한)
+    const messages = await chatModel.getMessagesBySessionId(connection, sessionId, 10);
+    
+    if (!messages || messages.length === 0) {
+      const error = new Error("제목을 생성할 메시지가 없습니다");
+      error.code = "NO_MESSAGES_FOUND";
+      throw error;
+    }
+
+    console.log(`[DEBUG] 제목 생성을 위해 ${messages.length}개 메시지 분석 중`);
+
+    // 3. 사용자 설정 조회 (언어 설정을 위해)
+    let userSettings = null;
+    try {
+      userSettings = await userModel.getUserSettings(connection, userId);
+    } catch (error) {
+      console.warn(`[WARN] 사용자 설정을 가져올 수 없습니다: ${error.message}`);
+    }
+
+    const language = userSettings?.language || 'ko';
+
+    // 4. 메시지를 분석용 텍스트로 변환
+    const conversationText = messages
+      .map(msg => `${msg.message_type === 'user' ? '사용자' : 'AI'}: ${msg.message}`)
+      .join('\n\n');
+
+    console.log(`[DEBUG] 대화 내용 길이: ${conversationText.length}자`);
+
+    // 5. 제목 생성을 위한 시스템 프롬프트 생성
+    const titleSystemPrompt = generateTitleGenerationPrompt(language);
+
+    // 6. AI 제공자 설정 (기본값 사용)
+    const aiProvider = config.ai.defaultProvider;
+    let modelId;
+    
+    // 제공자별 모델 ID 설정
+    switch (aiProvider) {
+      case "geminiapi": 
+        modelId = config.ai.gemini.defaultModel; 
+        break;
+      case "vertexai": 
+        modelId = config.ai.vertexAi.defaultModel; 
+        break;
+      case "ollama": 
+        modelId = config.ai.ollama.defaultModel; 
+        break;
+      default:
+        modelId = config.ai.gemini.defaultModel; // 기본값
+        break;
+    }
+
+    console.log(`[DEBUG] 제목 생성 AI 설정 - Provider: ${aiProvider}, Model: ${modelId}`);
+
+    // 7. AI API 호출하여 제목 생성
+    let generatedTitle;
+    try {
+      const aiResponse = await fetchChatCompletion(
+        aiProvider, // AI 제공자
+        `다음 대화를 분석하여 적절한 제목을 생성해주세요:\n\n${conversationText}`, // 사용자 메시지
+        [], // 히스토리 (제목 생성은 독립적)
+        titleSystemPrompt, // 시스템 프롬프트
+        null, // 특수 모드 없음
+        null, // 스트리밍 콜백 없음
+        { 
+          model_id_override: modelId,
+          max_output_tokens_override: 100,
+          temperature: 0.3
+        }, // 옵션
+        {} // 컨텍스트
+      );
+
+      // AI 응답 타입 확인
+      console.log(`[DEBUG] AI 응답 타입: ${typeof aiResponse}`);
+      
+      // AI 응답 처리 - 다양한 응답 형태에 대응
+      if (typeof aiResponse === 'string') {
+        generatedTitle = aiResponse.trim();
+      } else if (aiResponse && typeof aiResponse === 'object') {
+        // 가능한 모든 속성을 체크
+        generatedTitle = aiResponse.content?.trim() || 
+                        aiResponse.text?.trim() || 
+                        aiResponse.message?.trim() ||
+                        aiResponse.response?.trim() ||
+                        '';
+        
+        // content가 비어있는 경우 처리
+        if (!generatedTitle) {
+          generatedTitle = ''; // 빈 문자열로 설정하여 아래 기본 제목 로직 실행
+        }
+      } else {
+        generatedTitle = '';
+      }
+      
+      // 제목이 비어있거나 생성되지 않은 경우 기본 제목 사용
+      if (!generatedTitle || generatedTitle.trim() === '') {
+        const firstUserMessage = messages.find(msg => msg.message_type === 'user');
+        if (firstUserMessage) {
+          const shortMessage = firstUserMessage.message.length > 30 
+            ? firstUserMessage.message.substring(0, 27) + '...'
+            : firstUserMessage.message;
+          generatedTitle = `대화: ${shortMessage}`;
+        } else {
+          generatedTitle = "새로운 대화";
+        }
+        console.log(`[DEBUG] 기본 제목 사용: "${generatedTitle}"`);
+      } else {
+        // 제목 길이 제한 및 정리 (정상적으로 생성된 경우만)
+        if (generatedTitle.length > 50) {
+          generatedTitle = generatedTitle.substring(0, 47) + '...';
+        }
+        console.log(`[DEBUG] AI 생성 제목: "${generatedTitle}"`);
+      }
+
+    } catch (aiError) {
+      console.error(`[ERROR] 제목 생성 AI 호출 실패:`, aiError);
+      
+      // AI 호출 실패 시 기본 제목 생성
+      const firstUserMessage = messages.find(msg => msg.message_type === 'user');
+      if (firstUserMessage) {
+        const shortMessage = firstUserMessage.message.length > 30 
+          ? firstUserMessage.message.substring(0, 27) + '...'
+          : firstUserMessage.message;
+        generatedTitle = `대화: ${shortMessage}`;
+      } else {
+        generatedTitle = "새로운 대화";
+      }
+      
+      console.log(`[DEBUG] 기본 제목 사용: "${generatedTitle}"`);
+    }
+
+    // 8. 생성된 제목으로 세션 업데이트
+    try {
+      await sessionModel.updateSessionTitle(connection, sessionId, generatedTitle);
+      console.log(`[DEBUG] 세션 ${sessionId} 제목 업데이트 완료: "${generatedTitle}"`);
+    } catch (updateError) {
+      console.error(`[ERROR] 세션 제목 업데이트 실패:`, updateError);
+      const error = new Error("제목 업데이트에 실패했습니다");
+      error.code = "TITLE_UPDATE_FAILED";
+      throw error;
+    }
+
+    return {
+      session_id: sessionId,
+      generated_title: generatedTitle,
+      message_count: messages.length,
+      language: language,
+      ai_provider: aiProvider,
+      model: modelId
+    };
+  });
+}
+
 module.exports = {
   sendMessageService,
   editMessageService,
@@ -503,4 +717,5 @@ module.exports = {
   deleteMessageService,
   uploadFileService,
   getSessionMessagesService,
+  generateSessionTitleService,
 };

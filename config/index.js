@@ -27,6 +27,43 @@ const config = {
   // AI Provider Configuration
   ai: {
     defaultProvider: process.env.DEFAULT_AI_PROVIDER || 'geminiapi',
+    
+    // 모델 락 설정
+    modelLock: {
+      enabled: process.env.AI_MODEL_LOCK_ENABLED !== 'false', // 기본적으로 활성화
+      allowedModels: {
+        geminiapi: [
+          'gemini-2.0-flash-thinking-exp-01-21' // 무료 실험 모델
+          // 사실상 gemini 2.5 preview로 폴백됨. 근데 무료임 와아
+          // 'gemini-2.5-pro-exp-03-25' // 기간 종료 RIP
+        ],
+        vertexai: [
+          // 'gemini-2.5-pro-exp-03-25' // 디짐
+        ],
+        ollama: [] // 로컬 모델이므로 제한 없음
+      },
+      // 나는 가난한 개발자에요 비싼거 쓰면 파산해 버려요
+      blockedModels: [
+        'gemini-2.5-pro',
+        'gemini-2.5-flash',
+        'gemini-2.5-pro-preview',
+        'claude-3-opus',
+        'claude-3-sonnet',
+        'claude-3-haiku',
+        'claude-3.5-sonnet',
+        'claude-3.5-opus',
+        'claude-3.7-sonnet',
+        'claude-3.7-opus',
+        'claude-4-sonnet',
+        'claude-4-opus',
+        'gpt-4',
+        'gpt-4-turbo',
+        'gpt-4.1',
+        'gpt-4o',
+        'gpt-4o-mini'
+      ]
+    },
+    
     gemini: { 
       apiKey: process.env.GEMINI_API_KEY,
       defaultModel: process.env.GEMINI_MODEL || 'gemini-2.0-flash-thinking-exp-01-21',

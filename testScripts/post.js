@@ -8,15 +8,15 @@ const API_BASE_URL = 'http://localhost:3000/api';
  */
 export async function createPost() {
   try {
-    const userId = document.getElementById('post-user-id').value;
+    const userName = document.getElementById('post-user-id').value;
     const subject = document.getElementById('post-subject').value;
     const content = document.getElementById('post-content').value;
     const password = document.getElementById('post-password').value;
     const originLanguage = document.getElementById('post-origin-language').value;
     const isNotice = document.getElementById('post-is-notice').checked;
 
-    if (!userId || !subject || !content) {
-      displayError('사용자 ID, 제목, 내용을 모두 입력해주세요.');
+    if (!userName || !subject || !content) {
+      displayError('사용자 이름, 제목, 내용을 모두 입력해주세요.');
       return;
     }
 
@@ -26,7 +26,7 @@ export async function createPost() {
     }
 
     const postData = {
-      user_id: userId,
+      user_name: userName,
       subject: subject,
       content: content,
       password: password,
@@ -145,18 +145,18 @@ export async function getPostDetail() {
 export async function updatePost() {
   try {
     const postId = document.getElementById('update-post-id').value;
-    const userId = document.getElementById('update-post-user-id').value;
+    const userName = document.getElementById('update-post-user-id').value;
     const subject = document.getElementById('update-post-subject').value;
     const content = document.getElementById('update-post-content').value;
     const password = document.getElementById('update-post-password').value;
 
-    if (!postId || !userId || !subject || !content) {
-      displayError('게시물 ID, 사용자 ID, 제목, 내용을 모두 입력해주세요.');
+    if (!postId || !userName || !subject || !content) {
+      displayError('게시물 ID, 사용자 이름, 제목, 내용을 모두 입력해주세요.');
       return;
     }
 
     const updateData = {
-      user_id: userId,
+      user_name: userName,
       subject: subject,
       content: content,
       password: password
@@ -188,16 +188,16 @@ export async function updatePost() {
 export async function deletePost() {
   try {
     const postId = document.getElementById('update-post-id').value;
-    const userId = document.getElementById('update-post-user-id').value;
+    const userName = document.getElementById('update-post-user-id').value;
     const password = document.getElementById('update-post-password').value;
 
-    if (!postId || !userId) {
-      displayError('게시물 ID와 사용자 ID를 입력해주세요.');
+    if (!postId || !userName) {
+      displayError('게시물 ID와 사용자 이름을 입력해주세요.');
       return;
     }
 
     const deleteData = {
-      user_id: userId,
+      user_name: userName,
       password: password
     };
 
@@ -279,7 +279,7 @@ export async function demonstratePostSystem() {
     // 1. 한국어 게시물 생성
     document.getElementById('post-user-id').value = 'demo_user';
     document.getElementById('post-subject').value = '시연용 게시물';
-    document.getElementById('post-content').value = '안녕하세요! 오비메이트 다국어 게시판 시연입니다.';
+    document.getElementById('post-content').value = '안녕하세요! 오빗메이트 다국어 게시판 시연입니다.';
     document.getElementById('post-password').value = 'demo123';
     document.getElementById('post-origin-language').value = 'ko';
     document.getElementById('post-is-notice').checked = false;

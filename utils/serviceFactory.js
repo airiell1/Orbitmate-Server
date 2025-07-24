@@ -653,6 +653,9 @@ function createStreamController(serviceFunction, options = {}) {
 
       // 스트림 콜백 함수 생성
       const streamCallback = (chunk) => {
+        console.log(`[ServiceFactory Debug] Stream chunk received - Type: ${typeof chunk}, Length: ${chunk?.length || 0}`);
+        console.log(`[ServiceFactory Debug] Chunk preview: "${chunk?.substring ? chunk.substring(0, 50) : chunk}..."`);
+        
         if (streamType === 'sse') {
           res.write(`data: ${JSON.stringify(chunk)}\n\n`);
         } else {

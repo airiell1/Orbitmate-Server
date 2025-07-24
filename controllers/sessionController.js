@@ -279,6 +279,44 @@ async function getAllSessionsForAdminController(req, res, next) {
   }
 }
 
+/**
+ * 채팅 세션 제목 자동 생성 컨트롤러
+ * POST /api/chat/sessions/:session_id/generate-title
+ */
+async function generateSessionTitleController(req, res, next) {
+  try {
+    const { session_id } = req.params;
+    const { user_id } = req.body;
+
+    console.log(`[DEBUG] 제목 생성 요청 - Session: ${session_id}, User: ${user_id}`);
+
+    // 유효성 검사
+    if (!session_id || typeof session_id !== "string" || session_id.trim() === "") {
+      const error = new Error("세션 ID가 필요합니다.");
+      error.code = "INVALID_INPUT";
+      throw error;
+    }
+
+    if (!user_id || typeof user_id !== "string" || user_id.trim() === "") {
+      const error = new Error("사용자 ID가 필요합니다.");
+      error.code = "INVALID_INPUT";
+      throw error;
+    }
+
+    // chatService에서 제목 생성 서비스 호출
+    const chatService = require("../services/chatService");
+    const result = await chatService.generateSessionTitleService(session_id.trim(), user_id.trim());
+
+    console.log(`[DEBUG] 제목 생성 완료 - Session: ${session_id}, Title: "${result.generated_title}"`);
+
+    const apiResponse = standardizeApiResponse(result);
+    res.status(apiResponse.statusCode).json(apiResponse.body);
+  } catch (error) {
+    console.error(`[ERROR] 제목 생성 실패 - Session: ${req.params.session_id}:`, error);
+    next(error);
+  }
+}
+
 module.exports = {
   createSessionController,
   getUserSessionsController,
@@ -286,4 +324,5 @@ module.exports = {
   getSessionMessagesController,
   deleteSessionController,
   getAllSessionsForAdminController,
+  generateSessionTitleController,
 };

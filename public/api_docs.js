@@ -463,6 +463,28 @@ const apis = [
     exampleRes: `{\n  "message": "세션이 성공적으로 삭제되었습니다."\n}`
   },
   {
+    method: 'POST',
+    path: '/api/chat/sessions/:session_id/generate-title',
+    title: '채팅 제목 자동 생성',
+    desc: '채팅 세션의 대화 내용을 분석하여 적절한 제목을 자동으로 생성합니다. AI가 대화의 핵심 주제를 파악하여 10-30자의 간결한 제목을 만듭니다.<br>Validation Rules: <ul><li>`session_id` (URL param): 필수, 최대 36자.</li><li>`user_id` (body): 필수, 최대 36자.</li></ul><span class="api-desc-note">최소 1개 이상의 메시지가 있는 세션에서만 제목 생성이 가능합니다. 사용자의 언어 설정에 따라 한국어 또는 영어 제목이 생성됩니다.</span>',
+    params: [
+      { name: 'session_id', type: 'text', label: '세션 ID (최대 36자)', required: true, inPath: true },
+      { name: 'user_id', type: 'text', label: '사용자 ID (최대 36자)', required: true, inPath: false }
+    ],
+    exampleReq: `{\n  "user_id": "API_TEST_USER_ID"\n}`,
+    exampleRes: `{
+  "status": "success",
+  "data": {
+    "session_id": "API_TEST_SESSION_ID",
+    "generated_title": "React Hook 사용법 질문",
+    "message_count": 5,
+    "language": "ko",
+    "ai_provider": "geminiapi",
+    "model": "gemini-2.0-flash-thinking-exp-01-21"
+  }
+}`
+  },
+  {
     method: 'GET',
     path: '/api/chat/sessions/:session_id/messages',
     title: '세션 메시지 목록 조회',
@@ -1044,9 +1066,9 @@ data: {
     method: 'POST',
     path: '/api/posts',
     title: '게시물 생성',
-    desc: '새로운 게시물을 생성합니다. 원본 언어로 게시물을 작성하며, 다른 언어로 번역이 필요한 경우 자동으로 AI 번역을 요청합니다.<br>Validation Rules: <ul><li>`user_id`: 작성자 ID (필수, 최대 50자)</li><li>`subject`: 제목 (필수, 최대 1000자)</li><li>`content`: 내용 (필수, 최대 10000자)</li><li>`origin_language`: 원본 언어 코드 (필수, ko/en/ja/zh)</li><li>`pwd`: 비밀번호 (선택, 최대 255자, 공지사항은 NULL)</li><li>`is_notice`: 공지사항 여부 (선택, 0 또는 1, 기본값: 0)</li></ul>',
+    desc: '새로운 게시물을 생성합니다. 원본 언어로 게시물을 작성하며, 다른 언어로 번역이 필요한 경우 자동으로 AI 번역을 요청합니다.<br>Validation Rules: <ul><li>`user_name`: 작성자 이름 (필수, 최대 100자)</li><li>`subject`: 제목 (필수, 최대 1000자)</li><li>`content`: 내용 (필수, 최대 10000자)</li><li>`origin_language`: 원본 언어 코드 (필수, ko/en/ja/zh)</li><li>`pwd`: 비밀번호 (선택, 최대 255자, 공지사항은 NULL)</li><li>`is_notice`: 공지사항 여부 (선택, 0 또는 1, 기본값: 0)</li></ul>',
     params: [
-      { name: 'user_id', type: 'text', label: '작성자 ID (최대 50자)', required: true },
+      { name: 'user_name', type: 'text', label: '작성자 이름 (최대 100자)', required: true },
       { name: 'subject', type: 'text', label: '제목 (최대 1000자)', required: true },
       { name: 'content', type: 'text', label: '내용 (최대 10000자)', required: true },
       { name: 'origin_language', type: 'text', label: '원본 언어 (ko/en/ja/zh)', required: true },
@@ -1054,7 +1076,7 @@ data: {
       { name: 'is_notice', type: 'number', label: '공지사항 여부 (0 또는 1)', required: false }
     ],
     exampleReq: `{
-  "user_id": "user123",
+  "user_name": "홍길동",
   "subject": "안녕하세요",
   "content": "한국어로 작성된 게시물입니다.",
   "origin_language": "ko",
@@ -1065,7 +1087,7 @@ data: {
   "status": "success",
   "data": {
     "post_id": 123,
-    "user_id": "user123",
+    "user_name": "홍길동",
     "origin_language": "ko",
     "is_notice": 0,
     "created_at": "2025-07-15T10:30:00.000Z",
@@ -1097,7 +1119,7 @@ data: {
     "posts": [
       {
         "post_id": 123,
-        "user_id": "user123",
+        "user_name": "홍길동",
         "is_notice": 0,
         "subject": "안녕하세요",
         "content": "한국어로 작성된 게시물입니다.",
@@ -1110,7 +1132,7 @@ data: {
       },
       {
         "post_id": 124,
-        "user_id": "admin",
+        "user_name": "관리자",
         "is_notice": 1,
         "subject": "[공지] 시스템 점검 안내",
         "content": "내일 오전 2시부터 시스템 점검이 있습니다.",
@@ -1193,16 +1215,16 @@ data: {
     method: 'PUT',
     path: '/api/posts/:post_id',
     title: '게시물 수정',
-    desc: '특정 게시물을 수정합니다. 원본 언어의 번역만 수정 가능하며, 다른 언어 번역은 자동으로 업데이트됩니다.<br>Validation Rules: <ul><li>`post_id`: 게시물 ID (필수, URL 경로)</li><li>`user_id`: 작성자 ID (필수, 권한 확인용)</li><li>`subject`: 제목 (선택, 최대 1000자)</li><li>`content`: 내용 (선택, 최대 10000자)</li><li>`pwd`: 비밀번호 (일반 게시물의 경우 필수)</li></ul>',
+    desc: '특정 게시물을 수정합니다. 원본 언어의 번역만 수정 가능하며, 다른 언어 번역은 자동으로 업데이트됩니다.<br>Validation Rules: <ul><li>`post_id`: 게시물 ID (필수, URL 경로)</li><li>`user_name`: 작성자 이름 (필수, 권한 확인용)</li><li>`subject`: 제목 (선택, 최대 1000자)</li><li>`content`: 내용 (선택, 최대 10000자)</li><li>`pwd`: 비밀번호 (일반 게시물의 경우 필수)</li></ul>',
     params: [
       { name: 'post_id', type: 'number', label: '게시물 ID', required: true, inPath: true },
-      { name: 'user_id', type: 'text', label: '작성자 ID (권한 확인용)', required: true },
+      { name: 'user_name', type: 'text', label: '작성자 이름 (권한 확인용)', required: true },
       { name: 'subject', type: 'text', label: '제목 (최대 1000자)', required: false },
       { name: 'content', type: 'text', label: '내용 (최대 10000자)', required: false },
       { name: 'pwd', type: 'password', label: '비밀번호 (일반 게시물 수정 시 필수)', required: false }
     ],
     exampleReq: `{
-  "user_id": "user123",
+  "user_name": "홍길동",
   "subject": "수정된 제목",
   "content": "수정된 내용입니다.",
   "pwd": "mypassword"
@@ -1228,14 +1250,14 @@ data: {
     method: 'DELETE',
     path: '/api/posts/:post_id',
     title: '게시물 삭제',
-    desc: '특정 게시물을 삭제합니다. 모든 번역도 함께 삭제됩니다.<br>Validation Rules: <ul><li>`post_id`: 게시물 ID (필수, URL 경로)</li><li>`user_id`: 작성자 ID (필수, 권한 확인용)</li><li>`pwd`: 비밀번호 (일반 게시물의 경우 필수)</li></ul>',
+    desc: '특정 게시물을 삭제합니다. 모든 번역도 함께 삭제됩니다.<br>Validation Rules: <ul><li>`post_id`: 게시물 ID (필수, URL 경로)</li><li>`user_name`: 작성자 이름 (필수, 권한 확인용)</li><li>`pwd`: 비밀번호 (일반 게시물의 경우 필수)</li></ul>',
     params: [
       { name: 'post_id', type: 'number', label: '게시물 ID', required: true, inPath: true },
-      { name: 'user_id', type: 'text', label: '작성자 ID (권한 확인용)', required: true },
+      { name: 'user_name', type: 'text', label: '작성자 이름 (권한 확인용)', required: true },
       { name: 'pwd', type: 'password', label: '비밀번호 (일반 게시물 삭제 시 필수)', required: false }
     ],
     exampleReq: `{
-  "user_id": "user123",
+  "user_name": "홍길동",
   "pwd": "mypassword"
 }`,
     exampleRes: `{
@@ -1336,12 +1358,12 @@ data: {
     params: [
       { name: 'post_id', type: 'number', label: '게시물 ID', required: true, inPath: true },
       { name: 'content', type: 'text', label: '댓글 내용', required: true },
-      { name: 'user_id', type: 'text', label: '사용자 ID', required: true },
+        { name: 'user_name', type: 'text', label: '작성자 이름', required: true },
       { name: 'parent_comment_id', type: 'number', label: '부모 댓글 ID (대댓글인 경우)', required: false }
     ],
     exampleReq: `{
   "content": "좋은 게시물이네요!",
-  "user_id": "user123",
+    "user_name": "user123",
   "parent_comment_id": null
 }`,
     exampleRes: `{
@@ -1350,7 +1372,7 @@ data: {
     "comment_id": 1,
     "post_id": 21,
     "parent_comment_id": null,
-    "user_id": "user123",
+      "user_name": "user123",
     "user_ip": "192.168.1.100",
     "content": "좋은 게시물이네요!",
     "is_deleted": 0,
@@ -1379,7 +1401,7 @@ data: {
         "comment_id": 1,
         "post_id": 21,
         "parent_comment_id": null,
-        "user_id": "user123",
+      "user_name": "user123",
         "user_ip": "192.168.1.100",
         "content": "좋은 게시물이네요!",
         "is_deleted": 0,
@@ -1390,7 +1412,7 @@ data: {
             "comment_id": 2,
             "post_id": 21,
             "parent_comment_id": 1,
-            "user_id": "user456",
+        "user_name": "user456",
             "user_ip": "192.168.1.101",
             "content": "저도 동의합니다!",
             "is_deleted": 0,
@@ -1418,11 +1440,11 @@ data: {
     params: [
       { name: 'comment_id', type: 'number', label: '댓글 ID', required: true, inPath: true },
       { name: 'content', type: 'text', label: '수정할 댓글 내용', required: true },
-      { name: 'user_id', type: 'text', label: '사용자 ID', required: true }
+        { name: 'user_name', type: 'text', label: '작성자 이름', required: true }
     ],
     exampleReq: `{
   "content": "수정된 댓글 내용입니다.",
-  "user_id": "user123"
+    "user_name": "user123"
 }`,
     exampleRes: `{
   "status": "success",
@@ -1430,7 +1452,7 @@ data: {
     "comment_id": 1,
     "post_id": 21,
     "parent_comment_id": null,
-    "user_id": "user123",
+      "user_name": "user123",
     "user_ip": "192.168.1.100",
     "content": "수정된 댓글 내용입니다.",
     "is_deleted": 0,
@@ -1446,10 +1468,10 @@ data: {
     desc: '기존 댓글을 삭제합니다.<br>댓글 작성자만 삭제할 수 있습니다.<br>소프트 삭제 방식으로 처리됩니다.',
     params: [
       { name: 'comment_id', type: 'number', label: '댓글 ID', required: true, inPath: true },
-      { name: 'user_id', type: 'text', label: '사용자 ID', required: true }
+      { name: 'user_name', type: 'text', label: '작성자 이름', required: true }
     ],
     exampleReq: `{
-  "user_id": "user123"
+    "user_name": "user123"
 }`,
     exampleRes: `{
   "status": "success",

@@ -104,7 +104,7 @@ async function updateCommentService(commentId, updateData, userId) {
       // 댓글 존재 여부 및 권한 확인
       const comment = await commentModel.getCommentById(connection, commentId);
       
-      if (comment.user_id !== userId) {
+      if (comment.user_name !== userId) {
         const error = new Error("댓글을 수정할 권한이 없습니다.");
         error.code = "UNAUTHORIZED";
         throw error;
@@ -131,7 +131,7 @@ async function deleteCommentService(commentId, userId) {
       // 댓글 존재 여부 및 권한 확인
       const comment = await commentModel.getCommentById(connection, commentId);
       
-      if (comment.user_id !== userId) {
+      if (comment.user_name !== userId) {
         const error = new Error("댓글을 삭제할 권한이 없습니다.");
         error.code = "UNAUTHORIZED";
         throw error;

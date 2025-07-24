@@ -11,16 +11,16 @@ const { toSnakeCaseObj, clobToString } = require("../utils/dbUtils");
  */
 async function createComment(connection, commentData) {
   try {
-    const { post_id, parent_comment_id, user_id, user_ip, content } = commentData;
+  const { post_id, parent_comment_id, user_name, user_ip, content } = commentData;
     
     const result = await connection.execute(
-      `INSERT INTO post_comments (comment_id, post_id, parent_comment_id, user_id, user_ip, content, created_date, updated_date) 
-       VALUES (post_comments_seq.NEXTVAL, :post_id, :parent_comment_id, :user_id, :user_ip, :content, SYSDATE, SYSDATE) 
+      `INSERT INTO post_comments (comment_id, post_id, parent_comment_id, user_name, user_ip, content, created_date, updated_date) 
+       VALUES (post_comments_seq.NEXTVAL, :post_id, :parent_comment_id, :user_name, :user_ip, :content, SYSDATE, SYSDATE) 
        RETURNING comment_id INTO :comment_id`,
       {
         post_id,
         parent_comment_id: parent_comment_id || null,
-        user_id,
+        user_name,
         user_ip,
         content,
         comment_id: { type: oracledb.NUMBER, dir: oracledb.BIND_OUT }
@@ -32,7 +32,7 @@ async function createComment(connection, commentData) {
     
     // 생성된 댓글 정보 조회
     const commentResult = await connection.execute(
-      `SELECT comment_id, post_id, parent_comment_id, user_id, user_ip, content, is_deleted, created_date, updated_date
+      `SELECT comment_id, post_id, parent_comment_id, user_name, user_ip, content, is_deleted, created_date, updated_date
        FROM post_comments 
        WHERE comment_id = :comment_id`,
       { comment_id: commentId },
@@ -69,11 +69,11 @@ async function getCommentsByPostId(connection, postId, options = {}) {
     
     const result = await connection.execute(
       `SELECT * FROM (
-         SELECT comment_id, post_id, parent_comment_id, user_id, user_ip, content, is_deleted, created_date, updated_date, 
-                ROW_NUMBER() OVER (ORDER BY created_date ASC) as rn
-         FROM post_comments 
-         WHERE post_id = :post_id AND is_deleted = 0
-       ) WHERE rn > :offset AND rn <= :end_row`,
+    SELECT comment_id, post_id, parent_comment_id, user_name, user_ip, content, is_deleted, created_date, updated_date, 
+      ROW_NUMBER() OVER (ORDER BY created_date ASC) as rn
+    FROM post_comments 
+    WHERE post_id = :post_id AND is_deleted = 0
+  ) WHERE rn > :offset AND rn <= :end_row`,
       { 
         post_id: postId, 
         offset: offset, 
@@ -106,7 +106,7 @@ async function getCommentsByPostId(connection, postId, options = {}) {
 async function getCommentById(connection, commentId) {
   try {
     const result = await connection.execute(
-      `SELECT comment_id, post_id, parent_comment_id, user_id, user_ip, content, is_deleted, created_date, updated_date
+      `SELECT comment_id, post_id, parent_comment_id, user_name, user_ip, content, is_deleted, created_date, updated_date
        FROM post_comments 
        WHERE comment_id = :comment_id`,
       { comment_id: commentId },

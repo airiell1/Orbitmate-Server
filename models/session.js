@@ -440,6 +440,51 @@ async function getAllSessionsForAdmin(connection, options = {}) {
   }
 }
 
+/**
+ * 세션 제목 업데이트
+ * @param {Object} connection - 데이터베이스 연결 객체
+ * @param {string} sessionId - 세션 ID
+ * @param {string} title - 새로운 제목
+ * @returns {Promise<Object>} 업데이트 결과
+ */
+async function updateSessionTitle(connection, sessionId, title) {
+  try {
+    console.log(`[DEBUG] 세션 ${sessionId} 제목 업데이트 시작: "${title}"`);
+
+    const query = `
+      UPDATE chat_sessions 
+      SET title = :title,
+          updated_at = SYSTIMESTAMP
+      WHERE session_id = :session_id
+    `;
+
+    const result = await connection.execute(query, {
+      title: title,
+      session_id: sessionId
+    }, {
+      autoCommit: false
+    });
+
+    if (result.rowsAffected === 0) {
+      const error = new Error("세션을 찾을 수 없거나 업데이트할 수 없습니다.");
+      error.code = "SESSION_NOT_FOUND";
+      throw error;
+    }
+
+    console.log(`[DEBUG] 세션 ${sessionId} 제목 업데이트 완료: ${result.rowsAffected}행 영향`);
+
+    return {
+      session_id: sessionId,
+      title: title,
+      rows_affected: result.rowsAffected
+    };
+
+  } catch (err) {
+    if (err.code === "SESSION_NOT_FOUND") throw err;
+    throw handleOracleError(err);
+  }
+}
+
 module.exports = {
   createChatSession,
   getUserChatSessions,
@@ -448,4 +493,5 @@ module.exports = {
   deleteChatSession,
   getUserIdBySessionId, // export 추가
   getAllSessionsForAdmin, // export 추가
+  updateSessionTitle, // 제목 업데이트 함수 추가
 };

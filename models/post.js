@@ -12,7 +12,7 @@ const bcrypt = require("bcrypt");
  */
 async function createPost(connection, postData) {
   try {
-    const { user_id, user_ip, pwd, origin_language, subject, content, is_notice = 0 } = postData;
+    const { user_name, user_ip, pwd, origin_language, subject, content, is_notice = 0 } = postData;
     
     // 비밀번호 해시화 (공지사항이 아닌 경우만)
     let hashedPassword = null;
@@ -22,11 +22,11 @@ async function createPost(connection, postData) {
 
     // 게시물 생성
     const postResult = await connection.execute(
-      `INSERT INTO posts (idx, user_id, user_ip, pwd, origin_language, is_notice, created_date, updated_date) 
-       VALUES (posts_seq.NEXTVAL, :user_id, :user_ip, :pwd, :origin_language, :is_notice, SYSDATE, SYSDATE) 
+      `INSERT INTO posts (idx, user_name, user_ip, pwd, origin_language, is_notice, created_date, updated_date) 
+       VALUES (posts_seq.NEXTVAL, :user_name, :user_ip, :pwd, :origin_language, :is_notice, SYSDATE, SYSDATE) 
        RETURNING idx INTO :post_id`,
       {
-        user_id,
+        user_name,
         user_ip,
         pwd: hashedPassword,
         origin_language,
@@ -53,7 +53,7 @@ async function createPost(connection, postData) {
 
     return {
       post_id: postId,
-      user_id,
+      user_name,
       user_ip,
       origin_language,
       is_notice: is_notice === 1,
@@ -83,11 +83,11 @@ async function getPostList(connection, languageCode, options = {}) {
     // Oracle 11xe 호환: ROWNUM을 사용한 페이징
     const result = await connection.execute(
       `SELECT * FROM (
-         SELECT ROWNUM rn, post_data.idx, post_data.user_id, post_data.origin_language, post_data.is_notice, 
+         SELECT ROWNUM rn, post_data.idx, post_data.user_name, post_data.origin_language, post_data.is_notice, 
                 post_data.created_date, post_data.updated_date, post_data.subject, post_data.content, 
                 post_data.has_translation, post_data.translation_method
          FROM (
-           SELECT p.idx, p.user_id, p.origin_language, p.is_notice, p.created_date, p.updated_date, 
+           SELECT p.idx, p.user_name, p.origin_language, p.is_notice, p.created_date, p.updated_date, 
                   COALESCE(pt.subject, pt_orig.subject) as subject, 
                   COALESCE(pt.content, pt_orig.content) as content,
                   CASE WHEN pt.post_id IS NOT NULL THEN 1 ELSE 0 END as has_translation,
@@ -115,7 +115,7 @@ async function getPostList(connection, languageCode, options = {}) {
     for (const row of result.rows) {
       const post = {
         post_id: row.IDX,
-        user_id: row.USER_ID,
+        user_name: row.USER_NAME,
         origin_language: row.ORIGIN_LANGUAGE,
         is_notice: row.IS_NOTICE === 1,
         created_date: row.CREATED_DATE?.toISOString(),
@@ -146,7 +146,7 @@ async function getPostDetail(connection, postId, languageCode) {
   try {
     // 게시물 기본 정보 조회
     const postResult = await connection.execute(
-      `SELECT idx, user_id, user_ip, origin_language, is_notice, created_date, updated_date 
+      `SELECT idx, user_name, user_ip, origin_language, is_notice, created_date, updated_date 
        FROM posts WHERE idx = :post_id`,
       { post_id: postId },
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
@@ -183,7 +183,7 @@ async function getPostDetail(connection, postId, languageCode) {
 
     return {
       post_id: post.IDX,
-      user_id: post.USER_ID,
+      user_name: post.USER_NAME,
       user_ip: post.USER_IP,
       origin_language: post.ORIGIN_LANGUAGE,
       is_notice: post.IS_NOTICE === 1,
@@ -206,11 +206,11 @@ async function getPostDetail(connection, postId, languageCode) {
  */
 async function updatePost(connection, postId, updateData) {
   try {
-    const { subject, content, user_id, pwd } = updateData;
+    const { subject, content, user_name, pwd } = updateData;
     
     // 게시물 존재 여부 및 작성자 확인
     const postResult = await connection.execute(
-      `SELECT user_id, pwd, origin_language, is_notice FROM posts WHERE idx = :post_id`,
+      `SELECT user_name, pwd, origin_language, is_notice FROM posts WHERE idx = :post_id`,
       { post_id: postId },
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
@@ -224,7 +224,7 @@ async function updatePost(connection, postId, updateData) {
     const post = postResult.rows[0];
     
     // 권한 확인 (작성자이거나 공지사항인 경우 비밀번호 확인)
-    if (post.USER_ID !== user_id && !post.IS_NOTICE) {
+    if (post.USER_NAME !== user_name && !post.IS_NOTICE) {
       const error = new Error("게시물을 수정할 권한이 없습니다.");
       error.code = "FORBIDDEN";
       throw error;
@@ -282,15 +282,15 @@ async function updatePost(connection, postId, updateData) {
  * 게시물 삭제
  * @param {oracledb.Connection} connection - DB connection object
  * @param {number} postId - 게시물 ID
- * @param {string} user_id - 사용자 ID
+ * @param {string} user_name - 사용자 ID
  * @param {string} pwd - 비밀번호
  * @returns {Promise<Object>} 삭제 결과
  */
-async function deletePost(connection, postId, user_id, pwd) {
+async function deletePost(connection, postId, user_name, pwd) {
   try {
     // 게시물 존재 여부 및 작성자 확인
     const postResult = await connection.execute(
-      `SELECT user_id, pwd, is_notice FROM posts WHERE idx = :post_id`,
+      `SELECT user_name, pwd, is_notice FROM posts WHERE idx = :post_id`,
       { post_id: postId },
       { outFormat: oracledb.OUT_FORMAT_OBJECT }
     );
@@ -304,7 +304,7 @@ async function deletePost(connection, postId, user_id, pwd) {
     const post = postResult.rows[0];
     
     // 권한 확인
-    if (post.USER_ID !== user_id && !post.IS_NOTICE) {
+    if (post.USER_NAME !== user_name && !post.IS_NOTICE) {
       const error = new Error("게시물을 삭제할 권한이 없습니다.");
       error.code = "FORBIDDEN";
       throw error;
