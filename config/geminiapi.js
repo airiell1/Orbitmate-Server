@@ -1,14 +1,13 @@
 // config/geminiapi.js - Google Gemini API (AI Studio) 연동
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const config = require("./index"); // 중앙 설정 파일 import
-const { sanitizeModelId, validateAiModel } = require("../utils/modelValidator"); // 모델 검증
+const { sanitizeModelId } = require("../utils/modelValidator"); // 모델 검증
 const {
   getGeminiTools,
   executeAiTool,
   enhancePromptWithTools,
 } = require("../utils/aiTools");
 const {
-  generateSystemPrompt,
   validateAndCleanPrompt,
   enhancePromptWithContext,
   enhanceUserMessageWithMode,
@@ -94,7 +93,7 @@ async function getGeminiApiResponse(
     }
 
     // Function Calling 도구 사용 여부 결정
-    const useTools = options.enableTools !== false; // 기본적으로 도구 사용 활성화
+    const useTools = options.useTools !== false && options.enableTools !== false; // useTools 옵션 우선 적용
     const tools = useTools ? getGeminiTools() : [];
 
     const modelConfig = {
@@ -119,58 +118,38 @@ async function getGeminiApiResponse(
       };
     }
 
-    const model = genAI.getGenerativeModel(modelConfig);
-    const chatHistory = [];
-
-    // 시스템 프롬프트 처리 개선
+    // 시스템 프롬프트가 있는 경우 systemInstruction으로 설정
     if (systemMessageText) {
-      // systemMessageText가 문자열인지 확인하고 변환
       const systemText = typeof systemMessageText === 'string' ? systemMessageText : 
                         (systemMessageText && systemMessageText.content ? systemMessageText.content : String(systemMessageText));
       
       if (systemText && systemText.trim()) {
-        // 시스템 프롬프트 검증 및 정리
         const cleanedSystemPrompt = validateAndCleanPrompt(systemText.trim());
-      
-      // 특수 모드에 따른 컨텍스트 확장
-      let contextType = null;
-      if (specialModeType === "canvas") {
-        contextType = "canvas";
-      } else if (specialModeType === "search") {
-        contextType = "analysis";
-      } else if (specialModeType === "chatbot") {
-        contextType = "support";
-      }
-      
-      // 컨텍스트 확장 적용
-      const contextEnhancedPrompt = enhancePromptWithContext(cleanedSystemPrompt, contextType);
-      
-      // 도구 사용 가능 시 도구 관련 프롬프트 추가
-      const finalSystemPrompt = useTools
-        ? enhancePromptWithTools(contextEnhancedPrompt)
-        : contextEnhancedPrompt;
+        
+        let contextType = null;
+        if (specialModeType === "canvas") {
+          contextType = "canvas";
+        } else if (specialModeType === "search") {
+          contextType = "analysis";
+        } else if (specialModeType === "chatbot") {
+          contextType = "support";
+        }
+        
+        const contextEnhancedPrompt = enhancePromptWithContext(cleanedSystemPrompt, contextType);
+        const finalSystemPrompt = useTools 
+          ? enhancePromptWithTools(contextEnhancedPrompt)
+          : contextEnhancedPrompt;
 
-      chatHistory.push({
-        role: "user",
-        parts: [{ text: `시스템 지시사항: ${finalSystemPrompt}` }],
-      });
-      chatHistory.push({
-        role: "model",
-        parts: [{ text: "네, 이해했습니다. 지시사항에 따라 도움을 드리겠습니다." }],
-      });
+        modelConfig.systemInstruction = finalSystemPrompt;
       }
     } else if (useTools) {
       // 시스템 프롬프트가 없을 때 도구만 사용하는 경우
       const toolsOnlyPrompt = enhancePromptWithTools("");
-      chatHistory.push({
-        role: "user",
-        parts: [{ text: `시스템 지시사항: ${toolsOnlyPrompt}` }],
-      });
-      chatHistory.push({
-        role: "model",
-        parts: [{ text: "네, 이해했습니다. 필요시 도구를 활용하여 도움을 드리겠습니다." }],
-      });
+      modelConfig.systemInstruction = toolsOnlyPrompt;
     }
+
+    const model = genAI.getGenerativeModel(modelConfig);
+    const chatHistory = [];
 
     // 대화 이력 처리 (중복 방지 로직 추가)
     if (history && Array.isArray(history)) {
@@ -255,7 +234,7 @@ async function getGeminiApiResponse(
                 const functionCall = part.functionCall;
                 const { name, args } = functionCall;
                 try {
-                  const toolResult = await executeAiTool(name, args, context);
+                  const toolResult = await executeAiTool(name, args, context, streamResponseCallback);
                   functionResponses.push({ functionResponse: { name, response: toolResult } });
                 } catch (toolError) {
                   functionResponses.push({ functionResponse: { name, response: { success: false, error: toolError.message } } });
@@ -325,7 +304,7 @@ async function getGeminiApiResponse(
           }
         }
         
-        return {
+        const streamFinalResponse = {
           content: fullText,
           actual_input_tokens: usageMetadata.promptTokenCount || 0,
           actual_output_tokens: usageMetadata.candidatesTokenCount || 0,
@@ -336,6 +315,9 @@ async function getGeminiApiResponse(
           streaming: true,
           toolCalls: toolCalls // Function Calling Loop을 위한 toolCalls 추가
         };
+
+
+        return streamFinalResponse;
       } catch (streamError) {
         console.error("Gemini API 스트리밍 오류:", streamError);
         throw streamError;
@@ -356,7 +338,7 @@ async function getGeminiApiResponse(
               const functionCall = part.functionCall;
               const { name, args } = functionCall;
               try {
-                const toolResult = await executeAiTool(name, args, context);
+                const toolResult = await executeAiTool(name, args, context, streamResponseCallback);
                 functionResponses.push({ functionResponse: { name, response: toolResult } });
               } catch (toolError) {
                  functionResponses.push({ functionResponse: { name, response: { success: false, error: toolError.message } } });
@@ -382,8 +364,9 @@ async function getGeminiApiResponse(
       }
 
       const responseContent = response.text();
+      
       const usageMetadata = response.usageMetadata || {};
-      return {
+      const finalResponse = {
         content: responseContent,
         actual_input_tokens: usageMetadata.promptTokenCount || 0,
         actual_output_tokens: usageMetadata.candidatesTokenCount || 0,
@@ -392,6 +375,9 @@ async function getGeminiApiResponse(
         provider: "geminiapi",
         finish_reason: "stop",
       };
+
+
+      return finalResponse;
     }
   } catch (error) {
     console.error("Gemini API 오류:", error);

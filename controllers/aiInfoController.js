@@ -3,7 +3,6 @@ const {
   createController
 } = require("../utils/serviceFactory");
 const config = require("../config");
-const { standardizeApiResponse } = require("../utils/apiResponse");
 
 // =========================
 // 🤖 AI 모델 정보 (AI Information)

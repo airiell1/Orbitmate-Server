@@ -155,7 +155,10 @@ async function translatePostContent(post, targetLanguage) {
       systemPrompt,
       null,
       null,
-      { max_tokens: 2500 }
+      { 
+        max_tokens: 2500,
+        useTools: false // 번역 시 도구 사용 안 함
+      }
     );
 
     console.log('[translatePostContent] combined translation:', typeof translation, translation);

@@ -2,12 +2,12 @@
  * AI 도구 함수들 (Function Calling)
  * AI가 필요에 따라 호출할 수 있는 도구들을 정의합니다.
  */
-
 const {
   searchWikipedia,
   getWeatherByIP,
   getWeatherByLocation,
 } = require("../models/search");
+const { enhancePromptWithTools } = require('./systemPrompt');
 
 // 코드 실행을 위한 추가 모듈
 const { spawn } = require('child_process');
@@ -16,7 +16,7 @@ const path = require('path');
 const crypto = require('crypto');
 
 /**
- * AI가 사용할 수 있는 도구들의 정의
+ * Ai가 사용할 수 있는 도구들의 정의
  */
 const AI_TOOLS = {
   search_wikipedia: {
@@ -34,7 +34,6 @@ const AI_TOOLS = {
           type: "string",
           description: "검색 언어 (ko: 한국어, en: 영어)",
           enum: ["ko", "en", "ja", "zh"],
-          default: "ko",
         },
         limit: {
           type: "integer",
@@ -47,7 +46,6 @@ const AI_TOOLS = {
       required: ["query"],
     },
   },
-
   get_weather: {
     name: "get_weather",
     description:
@@ -75,7 +73,6 @@ const AI_TOOLS = {
       required: [],
     },
   },
-
   execute_code: {
     name: "execute_code",
     description: "코드를 실행하고 결과를 반환합니다. Python, JavaScript, shell 등을 지원합니다. 계산, 데이터 처리, 알고리즘 실행 등에 사용하세요.",
@@ -110,10 +107,22 @@ const AI_TOOLS = {
  * @param {string} toolName - 실행할 도구 이름
  * @param {Object} parameters - 도구 실행에 필요한 매개변수
  * @param {Object} context - 요청 컨텍스트 (IP 주소 등)
+ * @param {Function} streamCallback - 스트리밍 콜백 (선택사항)
  * @returns {Promise<Object>} 도구 실행 결과
  */
-async function executeAiTool(toolName, parameters, context = {}) {
+async function executeAiTool(toolName, parameters, context = {}, streamCallback = null) {
   try {
+    // 도구 호출 시작 알림
+    if (streamCallback) {
+      streamCallback({
+        type: "tool_start",
+        tool_name: toolName,
+        parameters: parameters,
+        status: "starting",
+        message: `🔧 ${toolName} 도구를 실행 중입니다...`
+      });
+    }
+
     console.log(
       `[AI Tool] Executing ${toolName} with parameters:`,
       JSON.stringify(parameters, null, 2)
@@ -122,6 +131,15 @@ async function executeAiTool(toolName, parameters, context = {}) {
 
     switch (toolName) {
       case "search_wikipedia":
+        if (streamCallback) {
+          streamCallback({
+            type: "tool_progress",
+            tool_name: toolName,
+            status: "searching",
+            message: `🔍 위키피디아에서 "${parameters.query}" 검색 중...`
+          });
+        }
+        
         console.log(
           `[AI Tool] Starting Wikipedia search for: "${parameters.query}"`
         );
@@ -165,9 +183,31 @@ async function executeAiTool(toolName, parameters, context = {}) {
           count: formattedWikiResult.count,
         });
 
+        // 도구 완료 알림
+        if (streamCallback) {
+          streamCallback({
+            type: "tool_complete",
+            tool_name: toolName,
+            status: "completed",
+            message: `✅ 위키피디아 검색 완료: ${formattedWikiResult.count}개 결과 발견`,
+            result_summary: `"${parameters.query}" 검색으로 ${formattedWikiResult.count}개의 결과를 찾았습니다.`
+          });
+        }
+
         return formattedWikiResult;
 
       case "get_weather":
+        if (streamCallback) {
+          streamCallback({
+            type: "tool_progress",
+            tool_name: toolName,
+            status: "fetching",
+            message: parameters.city 
+              ? `🌤️ ${parameters.city} 날씨 정보 조회 중...`
+              : `🌍 현재 위치 날씨 정보 조회 중...`
+          });
+        }
+
         let weatherResult;
 
         if (parameters.city) {
@@ -189,7 +229,7 @@ async function executeAiTool(toolName, parameters, context = {}) {
         }
 
         // AI가 이해하기 쉬운 형태로 결과 포맷팅
-        return {
+        const formattedWeatherResult = {
           success: true,
           tool: "get_weather",
           location: weatherResult.location,
@@ -205,12 +245,33 @@ async function executeAiTool(toolName, parameters, context = {}) {
           source: "OpenWeatherMap",
         };
 
+        // 도구 완료 알림
+        if (streamCallback) {
+          streamCallback({
+            type: "tool_complete",
+            tool_name: toolName,
+            status: "completed",
+            message: `✅ 날씨 정보 조회 완료: ${weatherResult.location} ${weatherResult.current.temperature}°C`,
+            result_summary: `${weatherResult.location}의 현재 날씨는 ${weatherResult.current.description}, 기온 ${weatherResult.current.temperature}°C입니다.`
+          });
+        }
+
+        return formattedWeatherResult;
+
       case "execute_code":
+        if (streamCallback) {
+          streamCallback({
+            type: "tool_progress",
+            tool_name: toolName,
+            status: "executing",
+            message: `⚡ ${parameters.language || 'Python'} 코드 실행 중...`
+          });
+        }
+
         console.log(`[AI Tool] Executing ${parameters.language || 'python'} code`);
         const codeResult = await executeCode(
           parameters.code,
-          parameters.language || 'python',
-          parameters.timeout || 10
+          parameters.language || 'python'
         );
         
         console.log(`[AI Tool] Code execution completed:`, {
@@ -219,7 +280,7 @@ async function executeAiTool(toolName, parameters, context = {}) {
           outputLength: codeResult.output?.length || 0
         });
 
-        return {
+        const formattedCodeResult = {
           success: codeResult.success,
           tool: "execute_code",
           language: codeResult.language,
@@ -230,11 +291,40 @@ async function executeAiTool(toolName, parameters, context = {}) {
           source: "Code Executor"
         };
 
+        // 도구 완료 알림
+        if (streamCallback) {
+          streamCallback({
+            type: "tool_complete",
+            tool_name: toolName,
+            status: codeResult.success ? "completed" : "failed",
+            message: codeResult.success 
+              ? `✅ 코드 실행 완료 (${codeResult.executionTime}ms)`
+              : `❌ 코드 실행 실패: ${codeResult.error}`,
+            result_summary: codeResult.success 
+              ? `${codeResult.language} 코드가 성공적으로 실행되었습니다.`
+              : `코드 실행 중 오류가 발생했습니다.`
+          });
+        }
+
+        return formattedCodeResult;
+
       default:
         throw new Error(`Unknown tool: ${toolName}`);
     }
   } catch (error) {
     console.error(`[AI Tool] Error executing ${toolName}:`, error);
+    
+    // 도구 실패 알림
+    if (streamCallback) {
+      streamCallback({
+        type: "tool_error",
+        tool_name: toolName,
+        status: "failed",
+        message: `❌ ${toolName} 도구 실행 실패: ${error.message}`,
+        error: error.message
+      });
+    }
+
     return {
       success: false,
       tool: toolName,
@@ -253,14 +343,27 @@ async function executeAiTool(toolName, parameters, context = {}) {
  *   { toolName: 'get_weather', parameters: { city: '서울' } },
  *   { toolName: 'execute_code', parameters: { code: 'print("Hello")', language: 'python' } }
  * ];
- * const results = await executeMultipleAiTools(toolCalls, context);
+ * const results = await executeMultipleAiTools(toolCalls, context, streamCallback);
  * 
  * @param {Array} toolCalls - 실행할 도구들의 배열 [{toolName, parameters}, ...]
  * @param {Object} context - 요청 컨텍스트 (IP 주소 등)
+ * @param {Function} streamCallback - 스트리밍 콜백 (선택사항)
  * @returns {Promise<Array>} 도구 실행 결과 배열
  */
-async function executeMultipleAiTools(toolCalls, context = {}) {
+async function executeMultipleAiTools(toolCalls, context = {}, streamCallback = null) {
   console.log(`[AI Tool] Executing ${toolCalls.length} tools in parallel`);
+  
+  // 병렬 실행 시작 알림
+  if (streamCallback) {
+    streamCallback({
+      type: "tools_batch_start",
+      execution_type: "parallel",
+      total_tools: toolCalls.length,
+      status: "starting",
+      message: `🚀 ${toolCalls.length}개 도구를 병렬로 실행 시작...`,
+      tool_names: toolCalls.map(tc => tc.toolName)
+    });
+  }
   
   try {
     // 모든 도구를 병렬로 실행
@@ -268,7 +371,7 @@ async function executeMultipleAiTools(toolCalls, context = {}) {
       const { toolName, parameters } = toolCall;
       console.log(`[AI Tool] Starting parallel execution ${index + 1}/${toolCalls.length}: ${toolName}`);
       
-      return executeAiTool(toolName, parameters, context)
+      return executeAiTool(toolName, parameters, context, streamCallback)
         .then(result => ({
           index,
           toolName,
@@ -288,12 +391,30 @@ async function executeMultipleAiTools(toolCalls, context = {}) {
     
     console.log(`[AI Tool] Parallel execution completed. ${results.length} results ready`);
     
-    return results.map(item => ({
+    const finalResults = results.map(item => ({
       toolName: item.toolName,
       success: item.success,
       result: item.success ? item.result : null,
       error: item.success ? null : item.error
     }));
+
+    // 병렬 실행 완료 알림
+    if (streamCallback) {
+      const successCount = finalResults.filter(r => r.success).length;
+      const failureCount = finalResults.length - successCount;
+      
+      streamCallback({
+        type: "tools_batch_complete",
+        execution_type: "parallel",
+        total_tools: toolCalls.length,
+        success_count: successCount,
+        failure_count: failureCount,
+        status: "completed",
+        message: `✅ 병렬 실행 완료: ${successCount}개 성공, ${failureCount}개 실패`
+      });
+    }
+    
+    return finalResults;
     
   } catch (error) {
     console.error(`[AI Tool] Error in parallel execution:`, error);
@@ -310,10 +431,23 @@ async function executeMultipleAiTools(toolCalls, context = {}) {
  * AI 도구 순차 실행 함수 (여러 도구 순서대로 실행)
  * @param {Array} toolCalls - 실행할 도구들의 배열 [{toolName, parameters}, ...]
  * @param {Object} context - 요청 컨텍스트 (IP 주소 등)
+ * @param {Function} streamCallback - 스트리밍 콜백 (선택사항)
  * @returns {Promise<Array>} 도구 실행 결과 배열
  */
-async function executeSequentialAiTools(toolCalls, context = {}) {
+async function executeSequentialAiTools(toolCalls, context = {}, streamCallback = null) {
   console.log(`[AI Tool] Executing ${toolCalls.length} tools sequentially`);
+  
+  // 순차 실행 시작 알림
+  if (streamCallback) {
+    streamCallback({
+      type: "tools_batch_start",
+      execution_type: "sequential",
+      total_tools: toolCalls.length,
+      status: "starting",
+      message: `🔄 ${toolCalls.length}개 도구를 순차적으로 실행 시작...`,
+      tool_names: toolCalls.map(tc => tc.toolName)
+    });
+  }
   
   const results = [];
   
@@ -321,8 +455,21 @@ async function executeSequentialAiTools(toolCalls, context = {}) {
     const { toolName, parameters } = toolCalls[i];
     console.log(`[AI Tool] Sequential execution ${i + 1}/${toolCalls.length}: ${toolName}`);
     
+    // 도구별 순차 실행 진행 상황 알림
+    if (streamCallback) {
+      streamCallback({
+        type: "tools_batch_progress",
+        execution_type: "sequential",
+        current_step: i + 1,
+        total_tools: toolCalls.length,
+        current_tool: toolName,
+        status: "processing",
+        message: `📝 단계 ${i + 1}/${toolCalls.length}: ${toolName} 실행 중...`
+      });
+    }
+    
     try {
-      const result = await executeAiTool(toolName, parameters, context);
+      const result = await executeAiTool(toolName, parameters, context, streamCallback);
       results.push({
         toolName,
         success: true,
@@ -341,6 +488,23 @@ async function executeSequentialAiTools(toolCalls, context = {}) {
   }
   
   console.log(`[AI Tool] Sequential execution completed. ${results.length} results ready`);
+  
+  // 순차 실행 완료 알림
+  if (streamCallback) {
+    const successCount = results.filter(r => r.success).length;
+    const failureCount = results.length - successCount;
+    
+    streamCallback({
+      type: "tools_batch_complete",
+      execution_type: "sequential",
+      total_tools: toolCalls.length,
+      success_count: successCount,
+      failure_count: failureCount,
+      status: "completed",
+      message: `✅ 순차 실행 완료: ${successCount}개 성공, ${failureCount}개 실패`
+    });
+  }
+  
   return results;
 }
 
@@ -361,98 +525,12 @@ function getGeminiTools() {
 }
 
 /**
- * 시스템 프롬프트에 도구 사용법 추가
- * @param {string} originalPrompt - 기존 시스템 프롬프트
- * @returns {string} 도구 사용법이 추가된 시스템 프롬프트
- */
-function enhancePromptWithTools(originalPrompt = "") {
-  const toolInstructions = `
-
-**사용 가능한 도구들:**
-1. search_wikipedia: 위키피디아에서 정보를 검색할 때 사용하세요. 역사, 인물, 개념, 기술 등에 대한 정확한 정보가 필요할 때 활용하세요.
-2. get_weather: 날씨 정보가 필요할 때 사용하세요. 도시명을 지정하거나 현재 위치 기반으로 조회할 수 있습니다.
-3. execute_code: 코드를 실행하고 결과를 반환할 때 사용하세요. Python, JavaScript, SQL 등의 언어를 지원합니다. 계산, 데이터 처리, 알고리즘 실행, 예제 코드 실행 등에 활용하세요.
-
-**코드 실행기 사용법 (샌드박스 환경):**
-- Python: 수학 계산, 데이터 분석, 알고리즘 구현 등 (제한된 내장 모듈만 사용 가능)
-- JavaScript: 프론트엔드 로직, JSON 처리, 문자열 조작 등 (기본 모듈만 허용)
-- SQL: 데이터베이스 쿼리, 데이터 조작 등 (메모리 내 SQLite, 테스트용 테이블 제공)
-- 실행 시간 제한: 10초 (기본값)
-- **보안 제한사항**: 
-  * 파일 시스템 접근 완전 차단
-  * 외부 네트워크 접근 완전 차단 (requests, urllib, http, socket 등 불가)
-  * 시스템 명령어 실행 불가 (os, subprocess 등 불가)
-  * 격리된 환경에서 실행 (temp 디렉토리 내에서만 동작)
-  * 위험한 내장 함수 제거 (eval, exec, __import__ 등)
-
-**도구 사용 가이드라인:**
-- 사용자가 특정 정보를 요청하거나 질문할 때, 관련 도구를 적극적으로 활용하세요.
-- "계산해줘", "코드 실행", "결과 보여줘", "예제 실행" 등의 요청 시 execute_code 도구를 사용하세요.
-- "대한민국", "서울", "날씨" 등의 키워드가 나오면 관련 도구를 사용하세요.
-- 검색어나 정보 요청이 명확하지 않더라도, 관련성이 있다면 도구를 사용해서 정확한 정보를 제공하세요.
-- 검색 결과를 바탕으로 정확하고 유용한 답변을 제공하세요.
-- 여러 출처의 정보를 종합하여 균형잡힌 답변을 만드세요.
-- 도구 사용 결과를 인용할 때는 출처를 명시하세요.
-
-**도구 사용 사이클 정책:**
-- 기본: 한 번에 하나의 도구만 순차적으로 호출
-- 예외: 반드시 병렬 호출이 필요한 경우(여러 데이터 동시 처리 등)에만 여러 도구를 동시에 호출
-- 사용자가 "동시 병렬 실행"을 명확히 요청한 경우에만 executeMultipleAiTools 등 병렬 호출 허용
-
-**중요: 사용자가 "검색", "찾아봐", "알려줘", "무엇인가", "언제", "어디", "누구", "계산", "실행", "코드", "결과" 등의 키워드를 사용하면 관련 도구를 사용하세요.**`;
-
-  return originalPrompt + toolInstructions;
-}
-
-/**
- * Windows 환경에서 프로세스 메모리 사용량 모니터링 (Docker 사용 시 불필요)
- * @param {Object} child - child_process 객체
- * @param {number} maxMemoryMB - 최대 메모리 사용량 (MB)
- */
-function _monitorProcessMemory(child, maxMemoryMB = 100) {
-  const interval = setInterval(() => {
-    try {
-      // Windows에서 tasklist 명령어로 메모리 사용량 체크
-      const { execSync } = require('child_process');
-      const result = execSync(`tasklist /FI "PID eq ${child.pid}" /FO CSV`, { encoding: 'utf8' });
-      
-      if (result.includes(child.pid.toString())) {
-        const lines = result.split('\n');
-        const processLine = lines.find(line => line.includes(child.pid.toString()));
-        if (processLine) {
-          const memoryMatch = processLine.match(/(\d+,?\d*)\s*K/);
-          if (memoryMatch) {
-            const memoryKB = parseInt(memoryMatch[1].replace(',', ''));
-            const memoryMB = memoryKB / 1024;
-            
-            if (memoryMB > maxMemoryMB) {
-              console.log(`[Code Executor] Memory limit exceeded: ${memoryMB.toFixed(1)}MB > ${maxMemoryMB}MB`);
-              child.kill('SIGTERM');
-              clearInterval(interval);
-            }
-          }
-        }
-      }
-    } catch {
-      // 프로세스가 이미 종료된 경우 등
-      clearInterval(interval);
-    }
-  }, 500); // 0.5초마다 체크
-
-  // 프로세스 종료 시 인터벌 정리
-  child.on('exit', () => clearInterval(interval));
-
-  return interval;
-}
-
-/**
  * 코드 실행 함수 (Docker 샌드박스 환경)
  * @param {string} code - 실행할 코드
  * @param {string} language - 코드 언어 (python, javascript, sql, shell)
- * @param {number} timeout - 실행 제한 시간 (초)
  * @returns {Promise<Object>} 실행 결과
  */
-async function executeCode(code, language = 'python', timeout = 10) {
+async function executeCode(code, language = 'python') {
   const startTime = Date.now();
   let tempFilePath = null;
 
@@ -503,14 +581,14 @@ async function executeCode(code, language = 'python', timeout = 10) {
     // 코드 파일 작성
     await fs.writeFile(tempFilePath, code);
 
-    // Docker 명령어 생성
-    const dockerCommand = getDockerCommand(language, tempFilePath, timeout);
+  // Docker 명령어 생성 (timeout은 컨테이너 프로세스 관리용, 명령어 생성에는 사용하지 않음)
+    const dockerCommand = getDockerCommand(language, tempFilePath);
     
     console.log(`[Code Executor] Executing Docker command: ${dockerCommand.cmd} ${dockerCommand.args.join(' ')}`);
 
     // Docker 컨테이너에서 코드 실행
     const result = await new Promise((resolve, reject) => {
-      const timeoutMs = (timeout + 5) * 1000; // Docker 자체 timeout보다 5초 여유
+    const timeoutMs = (15) * 1000; // 컨테이너 프로세스 관리용 timeout (명령어 생성에는 사용하지 않음)
       let stdout = '';
       let stderr = '';
 
@@ -546,7 +624,7 @@ async function executeCode(code, language = 'python', timeout = 10) {
       // 타임아웃 처리
       setTimeout(() => {
         child.kill();
-        reject(new Error(`Docker 컨테이너 실행이 ${timeout + 5}초 시간 제한을 초과했습니다.`));
+        reject(new Error(`Docker 컨테이너 실행이 15초 시간 제한을 초과했습니다.`));
       }, timeoutMs);
     });
 
@@ -599,9 +677,8 @@ async function executeCode(code, language = 'python', timeout = 10) {
  * 언어별 Docker 실행 명령어 반환 (완전한 격리 환경)
  * @param {string} language - 코드 언어
  * @param {string} filePath - 실행할 파일 경로
- * @param {number} timeout - 실행 제한 시간
  */
-function getDockerCommand(language, filePath, _timeout = 10) {
+function getDockerCommand(language, filePath) {
   const fileName = path.basename(filePath);
   const dirPath = path.dirname(filePath);
   
@@ -626,7 +703,7 @@ function getDockerCommand(language, filePath, _timeout = 10) {
           ...commonOptions,
           '--user=1000:1000', // 비권한 사용자로 실행
           'python:3.9-alpine', // 경량 Python 이미지
-          'timeout', '30s', // 30초 timeout (컨테이너 내부 명령어)
+          'timeout', '30s', // 30초 timeout
           'python', fileName
         ]
       };
@@ -692,7 +769,8 @@ async function runFunctionCallingLoop(aiPromptFunc, initialPrompt, maxSteps = 10
   let step = 0;
   let aiResponse = null;
   let allToolResults = [];
-  let currentMessage = initialPrompt.message;
+    let currentMessage = initialPrompt.message;
+    
   let conversationHistory = [...(initialPrompt.chatHistory || [])];
 
   console.log(`[Function Calling Loop] 시작 - 최대 ${maxSteps}단계`);
@@ -734,10 +812,11 @@ async function runFunctionCallingLoop(aiPromptFunc, initialPrompt, maxSteps = 10
     if (aiResponse && aiResponse.toolCalls && aiResponse.toolCalls.length > 0) {
       console.log(`[Function Calling Loop] ${aiResponse.toolCalls.length}개 도구 실행 중...`);
       
-      // 3. 도구 호출 실행 (순차적)
+      // 3. 도구 호출 실행 (순차적, 스트리밍 포함)
       const toolResults = await executeSequentialAiTools(
         aiResponse.toolCalls, 
-        { clientIp: prompt.clientIp, ...prompt.context }
+        { clientIp: prompt.clientIp, ...prompt.context },
+        initialPrompt.streamResponseCallback // 스트리밍 콜백 전달
       );
       
       // 도구 결과 저장
@@ -795,7 +874,7 @@ module.exports = {
   executeMultipleAiTools, // 병렬 도구 실행 (새로 추가)
   executeSequentialAiTools, // 순차 도구 실행 (새로 추가)
   getGeminiTools,
-  enhancePromptWithTools,
+  enhancePromptWithTools, // systemPrompt.js에서 가져옴
   executeCode, // Docker 기반 코드 실행 함수
   checkDockerAvailability, // Docker 사용 가능 여부 체크
   runFunctionCallingLoop, // Function Calling 루프 지원 (새로 추가)

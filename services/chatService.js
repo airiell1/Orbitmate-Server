@@ -576,15 +576,18 @@ async function generateSessionTitleService(sessionId, userId) {
 
     const language = userSettings?.language || 'ko';
 
-    // 4. 메시지를 분석용 텍스트로 변환
+    // 4. 메시지를 분석용 텍스트로 변환 (언어에 따라)
+    const userLabel = language === 'en' ? 'User' : '사용자';
+    const aiLabel = language === 'en' ? 'AI' : 'AI';
     const conversationText = messages
-      .map(msg => `${msg.message_type === 'user' ? '사용자' : 'AI'}: ${msg.message}`)
+      .map(msg => `${msg.message_type === 'user' ? userLabel : aiLabel}: ${msg.message}`)
       .join('\n\n');
 
     console.log(`[DEBUG] 대화 내용 길이: ${conversationText.length}자`);
 
-    // 5. 제목 생성을 위한 시스템 프롬프트 생성
-    const titleSystemPrompt = generateTitleGenerationPrompt(language);
+    // 5. 제목 생성을 위한 프롬프트 정보 생성
+    const titlePromptInfo = generateTitleGenerationPrompt(language);
+    
 
     // 6. AI 제공자 설정 (기본값 사용)
     const aiProvider = config.ai.defaultProvider;
@@ -608,44 +611,56 @@ async function generateSessionTitleService(sessionId, userId) {
 
     console.log(`[DEBUG] 제목 생성 AI 설정 - Provider: ${aiProvider}, Model: ${modelId}`);
 
-    // 7. AI API 호출하여 제목 생성
+    // 7. AI API 호출하여 제목 생성 (속도 제한 고려하여 1초 대기)
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
     let generatedTitle;
     try {
+      // 프롬프트 정보를 활용한 요청 메시지 생성
+      const requestMessage = `${titlePromptInfo.requestPrefix}\n\n${conversationText}`;
+
+
       const aiResponse = await fetchChatCompletion(
         aiProvider, // AI 제공자
-        `다음 대화를 분석하여 적절한 제목을 생성해주세요:\n\n${conversationText}`, // 사용자 메시지
+        requestMessage, // 사용자 메시지
         [], // 히스토리 (제목 생성은 독립적)
-        titleSystemPrompt, // 시스템 프롬프트
+        titlePromptInfo.systemPrompt, // 시스템 프롬프트 복구
         null, // 특수 모드 없음
         null, // 스트리밍 콜백 없음
         { 
           model_id_override: modelId,
-          max_output_tokens_override: 100,
-          temperature: 0.3
+          max_output_tokens_override: 1000, // thinking 모델용 토큰 넉넉하게
+          temperature: 0.3,
+          useTools: false // 제목 생성 시 도구 사용 안 함
         }, // 옵션
         {} // 컨텍스트
       );
 
-      // AI 응답 타입 확인
-      console.log(`[DEBUG] AI 응답 타입: ${typeof aiResponse}`);
       
       // AI 응답 처리 - 다양한 응답 형태에 대응
       if (typeof aiResponse === 'string') {
         generatedTitle = aiResponse.trim();
       } else if (aiResponse && typeof aiResponse === 'object') {
-        // 가능한 모든 속성을 체크
-        generatedTitle = aiResponse.content?.trim() || 
-                        aiResponse.text?.trim() || 
-                        aiResponse.message?.trim() ||
-                        aiResponse.response?.trim() ||
-                        '';
+        // content 속성만 확인 (가장 일반적)
+        generatedTitle = aiResponse.content?.trim() || '';
         
-        // content가 비어있는 경우 처리
+        console.log(`[DEBUG] AI 응답 content: "${generatedTitle}"`);
+        
+        // content가 비어있는 경우 원인 분석
         if (!generatedTitle) {
-          generatedTitle = ''; // 빈 문자열로 설정하여 아래 기본 제목 로직 실행
+          if (aiResponse.finish_reason === 'SAFETY') {
+            console.log(`[WARN] 제목 생성이 안전 필터에 의해 차단됨`);
+          } else if (aiResponse.finish_reason === 'MAX_TOKENS') {
+            console.log(`[WARN] 제목 생성이 토큰 한도로 인해 중단됨`);
+          } else if (aiResponse.error) {
+            console.log(`[ERROR] AI 응답 오류:`, aiResponse.error);
+          } else {
+            console.log(`[DEBUG] AI 응답에서 제목을 추출할 수 없음 (finish_reason: ${aiResponse.finish_reason}), 기본 제목 사용`);
+          }
         }
       } else {
         generatedTitle = '';
+        console.log(`[DEBUG] AI 응답이 예상치 못한 타입: ${typeof aiResponse}`);
       }
       
       // 제목이 비어있거나 생성되지 않은 경우 기본 제목 사용
@@ -655,31 +670,29 @@ async function generateSessionTitleService(sessionId, userId) {
           const shortMessage = firstUserMessage.message.length > 30 
             ? firstUserMessage.message.substring(0, 27) + '...'
             : firstUserMessage.message;
-          generatedTitle = `대화: ${shortMessage}`;
+          generatedTitle = `${titlePromptInfo.fallbackPrefix} ${shortMessage}`;
         } else {
-          generatedTitle = "새로운 대화";
+          generatedTitle = language === 'en' ? "New Chat" : "새로운 대화";
         }
-        console.log(`[DEBUG] 기본 제목 사용: "${generatedTitle}"`);
       } else {
         // 제목 길이 제한 및 정리 (정상적으로 생성된 경우만)
         if (generatedTitle.length > 50) {
           generatedTitle = generatedTitle.substring(0, 47) + '...';
         }
-        console.log(`[DEBUG] AI 생성 제목: "${generatedTitle}"`);
       }
 
     } catch (aiError) {
       console.error(`[ERROR] 제목 생성 AI 호출 실패:`, aiError);
       
-      // AI 호출 실패 시 기본 제목 생성
+      // AI 호출 실패 시 기본 제목 생성 (프롬프트 정보 활용)
       const firstUserMessage = messages.find(msg => msg.message_type === 'user');
       if (firstUserMessage) {
         const shortMessage = firstUserMessage.message.length > 30 
           ? firstUserMessage.message.substring(0, 27) + '...'
           : firstUserMessage.message;
-        generatedTitle = `대화: ${shortMessage}`;
+        generatedTitle = `${titlePromptInfo.fallbackPrefix} ${shortMessage}`;
       } else {
-        generatedTitle = "새로운 대화";
+        generatedTitle = language === 'en' ? "New Chat" : "새로운 대화";
       }
       
       console.log(`[DEBUG] 기본 제목 사용: "${generatedTitle}"`);

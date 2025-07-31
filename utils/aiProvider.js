@@ -33,23 +33,6 @@ async function fetchChatCompletion(
   options = {}, // Added options parameter
   context = {} // Added context parameter
 ) {
-  // Consolidate model selection for logging
-  let modelToLog;
-  if (aiProvider === "geminiapi") {
-    modelToLog =
-      options.model_id_override ||
-      options.geminiModel ||
-      "gemini-2.0-flash-thinking-exp-01-21";
-  } else if (aiProvider === "vertexai") {
-    modelToLog =
-      options.vertexModelId ||
-      `Vertex AI default (${
-        process.env.VERTEX_AI_MODEL || "gemini-2.5-pro-exp-03-25"
-      })`;
-  } else if (aiProvider === "ollama") {
-    modelToLog = options.ollamaModel || "gemma3:4b";
-  }
-
   if (aiProvider === "geminiapi") {
     return await getGeminiApiResponse(
       currentUserMessage,
