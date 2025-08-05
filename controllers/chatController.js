@@ -125,7 +125,7 @@ const editMessageController = createUpdateController(
       // message 또는 new_content 둘 다 지원
       const content = message || new_content || '';
       
-      return [message_id, user_id, content.trim(), edit_reason];
+      return [message_id, content.trim(), edit_reason, user_id];
     },
     validations: [
       (req) => {

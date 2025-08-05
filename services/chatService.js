@@ -213,7 +213,7 @@ async function editMessageService(messageId, newContent, editReason = null, user
     }
 
     // 2. 메시지 내용 업데이트
-    const editResult = await chatModel.editMessageContent(connection, messageId, newContent, editReason);
+    const editResult = await chatModel.editUserMessage(connection, messageId, userId, newContent, editReason);
     if (!editResult || !editResult.success) {
       const error = new Error("메시지 편집에 실패했습니다.");
       error.code = "DB_ERROR";

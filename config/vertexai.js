@@ -158,8 +158,8 @@ async function getVertexAiApiResponse(
 
   conversationContents = [...history];
   
-  // 🔧 중복 방지: 대화 이력의 마지막 메시지가 현재 사용자 메시지와 같으면 제거
-  if (conversationContents.length > 0) {
+  // 🔧 중복 방지: 대화 이력의 마지막 메시지가 현재 사용자 메시지와 같으면 모두 제거
+  while (conversationContents.length > 0) {
     const lastMsg = conversationContents[conversationContents.length - 1];
     if (lastMsg.role === "user" && 
         lastMsg.parts && 
@@ -167,6 +167,8 @@ async function getVertexAiApiResponse(
         lastMsg.parts[0].text === currentUserMessage) {
       console.log(`[VertexAI] 중복된 사용자 메시지 발견, 이력에서 제거: "${currentUserMessage.substring(0, 50)}..."`);
       conversationContents.pop(); // 마지막 중복 메시지 제거
+    } else {
+      break; // 중복이 아니면 루프 종료
     }
   }
   
