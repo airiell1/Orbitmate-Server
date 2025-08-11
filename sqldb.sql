@@ -54,7 +54,8 @@ CREATE TABLE users (
   profile_image_path VARCHAR2(512), -- 프로필 이미지 경로 컬럼 추가
   created_at TIMESTAMP DEFAULT SYSTIMESTAMP,
   last_login TIMESTAMP,
-  is_active NUMBER(1) DEFAULT 1
+  is_active NUMBER(1) DEFAULT 1,
+  IS_ADMIN NUMBER(1) DEFAULT 0
 );
 
 CREATE TABLE chat_sessions (
@@ -434,14 +435,18 @@ CREATE INDEX idx_trans_lang ON post_translations(language_code);
 CREATE INDEX idx_trans_post ON post_translations(post_id);
 
 -- 게시물 샘플 데이터 생성
+
 INSERT INTO posts (idx, user_name, user_ip, pwd, origin_language, is_notice, created_date, updated_date) VALUES 
 (posts_seq.NEXTVAL, 'admin', '127.0.0.1', NULL, 'ko', 1, SYSDATE, SYSDATE);
+
 
 INSERT INTO post_translations (post_id, language_code, subject, content, is_original, translation_method, created_date) VALUES 
 (posts_seq.CURRVAL, 'ko', '[공지] 오비메이트 게시판 오픈', '오비메이트 다국어 게시판이 오픈되었습니다. AI 자동 번역 기능을 통해 다양한 언어로 소통할 수 있습니다.', 1, 'manual', SYSDATE);
 
+
 INSERT INTO posts (idx, user_name, user_ip, pwd, origin_language, is_notice, created_date, updated_date) VALUES 
 (posts_seq.NEXTVAL, 'user123', '192.168.1.100', 'password123', 'ko', 0, SYSDATE, SYSDATE);
+
 
 INSERT INTO post_translations (post_id, language_code, subject, content, is_original, translation_method, created_date) VALUES 
 (posts_seq.CURRVAL, 'ko', '첫 번째 게시물입니다', '안녕하세요! 오비메이트를 사용해보고 있습니다. 정말 신기한 기능들이 많네요.', 1, 'manual', SYSDATE);
@@ -621,4 +626,4 @@ LEFT JOIN user_profiles up ON u.user_id = up.user_id
 WHERE u.user_id = 'A66C8382886C4EA6B57B9F1033E49EB2';
 
 COMMIT;
-
+EXIT;
